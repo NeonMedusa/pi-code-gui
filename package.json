@@ -1,0 +1,270 @@
+{
+  "name": "pi-code-gui",
+  "publisher": "NimbleTron Inc.",
+  "author": "Jack Noppé",
+  "displayName": "Pi Code Gui",
+  "description": "Native VS Code editor experience for Pi coding agent",
+  "version": "0.0.2",
+  "license": "MIT",
+  "icon": "pi-icon-light.png",
+  "galleryBanner": {
+    "color": "#1a1a2e",
+    "theme": "dark"
+  },
+  "keywords": ["pi", "coding-agent", "ai", "chat", "agent", "llm"],
+  "bugs": {
+    "url": "https://github.com/NimbleTronAI/pi-code-gui/issues"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NimbleTronAI/pi-code-gui"
+  },
+  "homepage": "https://github.com/NimbleTronAI/pi-code-gui#readme",
+  "type": "module",
+  "engines": {
+    "vscode": "^1.118.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pi-code-gui.codeAgent",
+        "title": "PiGui: Code Agent",
+        "icon": "$(hubot)"
+      },
+      {
+        "command": "pi-code-gui.abort",
+        "title": "PiGui: Abort"
+      },
+      {
+        "command": "pi-code-gui.installPi",
+        "title": "PiGui: Install Pi Coding Agent"
+      },
+      {
+        "command": "pi-code-gui.pickModel",
+        "title": "PiGui: Switch Model"
+      },
+      {
+        "command": "pi-code-gui.cycleModel",
+        "title": "PiGui: Cycle Model"
+      },
+      {
+        "command": "pi-code-gui.pickThinkingLevel",
+        "title": "PiGui: Set Thinking Level"
+      },
+      {
+        "command": "pi-code-gui.cycleThinkingLevel",
+        "title": "PiGui: Cycle Thinking Level"
+      },
+      {
+        "command": "pi-code-gui.pickFile",
+        "title": "PiGui: Pick File to Reference"
+      },
+      {
+        "command": "pi-code-gui.pickCommand",
+        "title": "PiGui: Slash Command Picker"
+      },
+      {
+        "command": "pi-code-gui.pickFork",
+        "title": "PiGui: Fork Session from Message"
+      },
+      {
+        "command": "pi-code-gui.exportSession",
+        "title": "PiGui: Export Session to HTML"
+      },
+      {
+        "command": "pi-code-gui.login",
+        "title": "PiGui: Set Up API Key / Login"
+      },
+      {
+        "command": "pi-code-gui.resumeSession",
+        "title": "PiGui: Resume Session"
+      },
+      {
+        "command": "pi-code-gui.compact",
+        "title": "PiGui: Compact Context"
+      },
+      {
+        "command": "pi-code-gui.toggleAutoCompaction",
+        "title": "PiGui: Toggle Auto-Compaction"
+      },
+      {
+        "command": "pi-code-gui.toggleAutoRetry",
+        "title": "PiGui: Toggle Auto-Retry"
+      },
+      {
+        "command": "pi-code-gui.addSession",
+        "title": "PiGui: Add Pi Session",
+        "icon": {
+        "light": "media/pi-editor-button.svg",
+        "dark": "media/pi-editor-dark.svg"
+      }
+      },
+      {
+        "command": "pi-code-gui.revealEntry",
+        "title": "PiGui: Reveal Entry in Chat"
+      },
+      {
+        "command": "pi-code-gui.copyEntryText",
+        "title": "PiGui: Copy Entry Text"
+      },
+      {
+        "command": "pi-code-gui.focusSession",
+        "title": "PiGui: Focus Session"
+      },
+      {
+        "command": "pi-code-gui.pickSessionModel",
+        "title": "PiGui: Pick Model for Session"
+      },
+      {
+        "command": "pi-code-gui.pickSessionThinking",
+        "title": "PiGui: Pick Thinking Level for Session"
+      },
+      {
+        "command": "pi-code-gui.reloadContext",
+        "title": "PiGui: Reload Context Files"
+      },
+      {
+        "command": "pi-code-gui.forkSession",
+        "title": "PiGui: Fork Session from Message"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pi-code-gui",
+          "title": "Pi Code Gui",
+          "icon": "media/pi-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "pi-code-gui": [
+        {
+          "type": "tree",
+          "id": "pi-code-gui.sessions",
+          "name": "Sessions"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "pi-code-gui.codeAgent",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i"
+      },
+      {
+        "command": "pi-code-gui.pickModel",
+        "key": "ctrl+l",
+        "mac": "cmd+l"
+      },
+      {
+        "command": "pi-code-gui.cycleModel",
+        "key": "ctrl+p",
+        "mac": "cmd+p"
+      },
+      {
+        "command": "pi-code-gui.pickThinkingLevel",
+        "key": "ctrl+shift+tab",
+        "mac": "cmd+shift+tab"
+      },
+      {
+        "command": "pi-code-gui.pickFile",
+        "key": "ctrl+shift+@",
+        "mac": "cmd+shift+@"
+      },
+      {
+        "command": "pi-code-gui.pickCommand",
+        "key": "ctrl+/",
+        "mac": "cmd+/"
+      }
+    ],
+    "configuration": {
+      "title": "Pi Code Gui",
+      "properties": {
+        "pi-code-gui.promptToInstall": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prompt to install Pi if not found"
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "pi-code-gui.addSession",
+          "group": "navigation",
+          "when": "resourceScheme != pi"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "pi-code-gui.revealEntry",
+          "when": "view == pi-code-gui.sessions && viewItem == sessionEntry",
+          "group": "navigation"
+        },
+        {
+          "command": "pi-code-gui.copyEntryText",
+          "when": "view == pi-code-gui.sessions && viewItem == sessionEntry",
+          "group": "1_copy"
+        },
+        {
+          "command": "pi-code-gui.forkSession",
+          "when": "view == pi-code-gui.sessions && viewItem == sessionEntry",
+          "group": "2_actions"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "pi-code-gui.addSession",
+          "when": "view == pi-code-gui.sessions",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run package",
+    "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test",
+    "vsix": "pnpm run package && npx @vscode/vsce package --no-dependencies",
+    "vsix:openvsx": "pnpm run package && npx ovsx publish"
+  },
+  "dependencies": {},
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@vscode/vsce-sign",
+      "keytar"
+    ]
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.118.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.27.3",
+    "eslint": "^9.39.3",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1"
+  }
+}
