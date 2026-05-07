@@ -293,6 +293,8 @@
     "lint": "eslint src",
     "test": "vscode-test",
     "vsix": "pnpm run package && npx @vscode/vsce package --no-dependencies",
+    "publish": "vsce publish --no-yarn --skip-duplicate",
+    "un-publish": "vsce unpublish",
     "vsix:openvsx": "pnpm run package && npx ovsx publish"
   },
   "dependencies": {},
