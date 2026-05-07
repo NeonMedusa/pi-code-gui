@@ -312,6 +312,10 @@
       contentEl.setAttribute("data-raw", raw);
       contentEl.innerHTML = renderMarkdown(raw);
       contentEl.classList.add("streaming-cursor");
+      // Preserve the thinking block across innerHTML re-renders
+      if (currentThinkingEl) {
+        contentEl.prepend(currentThinkingEl);
+      }
     }
     scrollToBottom();
   }

@@ -1,145 +1,87 @@
-# Pi Code Gui for VS Code
+# Pi Code Gui
 
-A native VS Code editor experience for the [Pi coding agent](https://pi.dev). Runs Pi directly inside VS Code — not in a terminal — while maintaining the familiar Pi Code workflow. Most of it was built under my direction, using the Pi coding agent against DeepSeek v4 Pro model - for less than $1 in token costs.
-
-## Why?
-
-This was built by a grumpy old guy who spent the first 10 years of his tech career programming on 80×24 green screen dumb terminals. Beloved editors like `vi` and `emacs` were the IDEs of then, and knowing 100s of keystrokes was a badge of honour. Then I got a PC with a mouse and it could do all of that without the cognitive load and distractions. If you feel equally grumpy about the 2020s fascination to regress to CLI, then this extension is for you.
-
-## Architecture
+> A native VS Code editor experience for the [Pi coding agent](https://pi.dev). Runs Pi inside VS Code — not in a terminal — with full access to your editor state, diagnostics, symbols, and more.
 
 ![Architecture](media/architecture.png)
 
-### Key design decisions
+## Quick Start
 
-- **Pi SDK in-process**: Uses the `@mariozechner/pi-coding-agent` SDK directly inside the extension. The SDK resolves from the user's global npm install at runtime, so `pi update --self` picks up new versions without an extension update.
-- **Event-driven communication**: Same pattern as Pi's own interactive TUI. `PiWebviewPanel` subscribes to `AgentSession` events (agent_start, text_delta, tool_execution, etc.) and renders them in the webview chat UI.
-- **Native VS Code bridge tools**: 17 tools that call VS Code APIs directly (editor state, diagnostics, symbols, definitions, hover, references, code actions, formatting). The AI sees and interacts with your editor natively.
-- **Webview chat UI**: Replaces the terminal TUI with a native webview panel that renders streaming text, thinking blocks, and tool execution in real-time.
+1. **Install Pi**: `npm install -g @mariozechner/pi-coding-agent`
+2. **Set an API key**: Run **PiGui: Set Up API Key / Login** from the command palette (`Ctrl+Shift+P`), or set `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in your environment.
+3. **Open the chat**: Click the Pi icon in the activity bar, or run **PiGui: Code Agent** from the command palette.
+4. **Start prompting**: The agent can see your editor, check diagnostics, read files, and make edits.
 
-## What Works (Phase 4)
+## Why Pi Code Gui?
 
-| Feature | Status |
-|---------|--------|
-| Chat panel with streaming responses | ✅ |
-| Thinking block display (collapsible) | ✅ |
-| Tool call/result blocks | ✅ |
-| Send/abort prompts | ✅ |
-| Status bar (model, thinking level) | ✅ |
-| VS Code bridge tools (17 tools) | ✅ |
-| Install detection + one-click install | ✅ |
-| Official pixel-art Pi logo | ✅ |
-| Activity bar icon + session tree view | ✅ |
-| Model picker (`Ctrl+L` / `Cmd+L`) | ✅ |
-| Cycle model (`Ctrl+P` / `Cmd+P`) | ✅ |
-| Thinking level picker (`Ctrl+Shift+Tab`) | ✅ |
-| Slash command picker (`Ctrl+/` / `Cmd+/`) | ✅ |
-| File reference picker (`Ctrl+Shift+@`) | ✅ |
-| Fork session from message | ✅ |
-| Export session to HTML | ✅ |
-| `/login` API key setup UI | ✅ |
-| Session browser (list & resume) | ✅ |
-| Manual compaction + auto-compaction toggle | ✅ |
-| Auto-retry toggle | ✅ |
-| Context file reload (`/reload`) | ✅ |
+The Pi coding agent is a powerful AI pair programmer, but the default terminal TUI clashes with the editor workflow — you end up juggling a split terminal, switching contexts, and copy-pasting file paths. This extension embeds Pi directly in VS Code's native UI:
 
-## Keybindings
+- **In-editor chat** — streaming responses, thinking blocks, and tool execution results rendered in a webview panel, not a terminal buffer.
+- **Native VS Code bridge** — 17 tools that call VS Code APIs directly. The agent can inspect your active editor, check diagnostics, find symbols, look up types, apply edits, and format code, all through the same APIs VS Code uses.
+- **Session persistence** — conversation history survives VS Code restarts. Sessions are stored in Pi's standard `.jsonl` format alongside your project.
+- **Multi-session support** — multiple chat sessions in separate panels, each with independent model and thinking level settings.
 
-These mirror Pi Code shortcuts, translated to VS Code:
+## Features
 
-| Pi Code | VS Code | Action |
-|---------|---------|--------|
-| `Ctrl+L` | `Ctrl+L` / `Cmd+L` | Switch model |
-| `Ctrl+P` | `Ctrl+P` / `Cmd+P` | Cycle model |
-| `Shift+Tab` | `Ctrl+Shift+Tab` | Pick thinking level |
-| `/` | `Ctrl+/` / `Cmd+/` | Slash command picker |
-| `@` | `Ctrl+Shift+@` | File reference picker |
-| — | `Ctrl+Alt+I` / `Cmd+Alt+I` | Open chat panel |
-
-> **Note:** `Ctrl+P` is commonly bound to VS Code's "Go to File" and `Ctrl+L` to "Expand Line Selection". When the Pi Code chat panel is focused, these shortcuts trigger Pi commands. Outside the chat, they retain default VS Code behavior.
-
-## Commands
-
-All commands available via the palette (`Ctrl+Shift+P`):
-
-| Command | Description |
+| Feature | Description |
 |---------|-------------|
-| `PiGui: Code Agent` | Open the Pi Code chat panel |
-| `PiGui: Switch Model` | Pick a model from available providers |
-| `PiGui: Cycle Model` | Cycle to the next available model |
-| `PiGui: Set Thinking Level` | Pick a thinking/reasoning level |
-| `PiGui: Cycle Thinking Level` | Cycle through thinking levels |
-| `PiGui: Slash Command Picker` | Pick a slash command (`/login`, `/new`, etc.) |
-| `PiGui: Pick File to Reference` | Fuzzy-search and reference a file (`@`) |
-| `PiGui: ` | Start a fresh session |
-| `PiGui: Fork Session from Message` | Branch from a previous message |
-| `PiGui: Export Session to HTML` | Save session as HTML file |
-| `PiGui: Set Up API Key / Login` | Configure a provider API key or OAuth |
-| `PiGui: Resume Session` | Browse and resume a past session |
-| `PiGui: Compact Context` | Manually compact conversation context |
-| `PiGui: Toggle Auto-Compaction` | Enable/disable automatic compaction |
-| `PiGui: Toggle Auto-Retry` | Enable/disable automatic retry on errors |
-| `PiGui: Reload Context Files` | Reload AGENTS.md and context files |
-| `PiGui: Abort` | Abort the current agent operation |
-| `PiGui: Install Pi Coding Agent` | Install pi via npm |
+| 💬 **Chat panel** | Streaming text, collapsible thinking blocks, tool call/result rendering, markdown with syntax-highlighted code blocks |
+| 🧰 **Editor bridge** | Agent reads open editors, checks diagnostics, inspects symbols/types, applies edits, formats code — all through VS Code APIs |
+| 🔄 **Session history** | Auto-saved conversations survive VS Code restarts via `SessionManager.continueRecent()` |
+| 🪟 **Multi-session** | Multiple independent chat panels, each with its own model, thinking level, and conversation tree |
+| 🌲 **Session tree view** | Browse entries, fork from any message, copy entry text, right-click to reveal in chat |
+| 🔐 **Flexible auth** | Runtime API key overrides via VS Code settings, env vars, or the built-in auth config |
+| 📋 **Custom slash commands** | `/fix-diagnostics`, `/explain-code`, `/refactor` — plus all standard Pi commands |
+| 🔧 **Settings** | Toggle auto-compaction, auto-retry, skills loading, context files, and prompt templates from the UI |
 
 ## VS Code Bridge Tools
 
-The AI agent has access to these VS Code capabilities:
+The agent has native access to your editor through these tools:
 
-| Tool | Description |
-|------|-------------|
-| `vscode_get_editor_state` | Active editor, selection, open editors, workspace folders |
-| `vscode_get_selection` | Current selection with text and coordinates |
-| `vscode_get_diagnostics` | LSP/lint/type errors for a file or workspace |
-| `vscode_get_open_editors` | All open editors with dirty state |
-| `vscode_get_workspace_folders` | Workspace folder listing |
-| `vscode_open_file` | Open file with optional selection range |
-| `vscode_check_document_dirty` | Check if a file has unsaved changes |
-| `vscode_save_document` | Save a document via VS Code |
-| `vscode_get_document_symbols` | Document outline symbols |
-| `vscode_get_definitions` | Go-to-definition |
-| `vscode_get_hover` | Type info and docs on hover |
-| `vscode_get_references` | Find all references |
-| `vscode_get_workspace_symbols` | Search workspace symbols |
-| `vscode_get_code_actions` | Quick fixes and refactorings |
-| `vscode_apply_workspace_edit` | Apply range-based text edits |
-| `vscode_format_document` | Format document with VS Code formatter |
-| `vscode_show_notification` | Show info/warning/error notifications |
+`vscode_get_editor_state` · `vscode_get_selection` · `vscode_get_diagnostics` · `vscode_get_open_editors` · `vscode_get_workspace_folders` · `vscode_open_file` · `vscode_check_document_dirty` · `vscode_save_document` · `vscode_get_document_symbols` · `vscode_get_definitions` · `vscode_get_hover` · `vscode_get_references` · `vscode_get_workspace_symbols` · `vscode_get_code_actions` · `vscode_apply_workspace_edit` · `vscode_format_document`
 
-## Requirements
+## Architecture
 
-- [VS Code](https://code.visualstudio.com/) 1.118+
-- [Pi coding agent](https://pi.dev) installed (`npm install -g @mariozechner/pi-coding-agent`)
-- At least one API key configured (Anthropic, OpenAI, DeepSeek, etc.)
+Pi Code Gui loads the `@mariozechner/pi-coding-agent` SDK at runtime from your global npm install. This means `pi update --self` picks up new SDK versions without an extension update.
 
-The extension auto-detects the `pi` binary from common global install paths or workspace `node_modules/.bin/pi`. Use **PiGui: Set Up API Key / Login** to configure authentication.
+- **PiService** manages the agent lifecycle: creates the SDK session, subscribes to events, translates them into chat UI messages, handles model/thinking/settings changes, and tracks usage stats.
+- **PiWebviewPanel** renders a webview chat UI. It subscribes to PiService events and re-renders streaming text, thinking blocks, tool execution, bash output, compaction summaries, and custom messages in real time.
+- **Bridge tools** are registered as SDK `customTools` constructed with `defineTool()` and Typebox schemas, the same way the SDK's own built-in tools are defined.
 
 ## Extension Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `pi-code-gui.promptToInstall` | boolean | `true` | Prompt to install Pi if not found |
+| `pi-code-gui.anthropicApiKey` | string | `""` | Runtime Anthropic API key (overrides env var, not persisted to disk) |
+| `pi-code-gui.openaiApiKey` | string | `""` | Runtime OpenAI API key (overrides env var, not persisted to disk) |
+| `pi-code-gui.systemPromptAppend` | string | `""` | Additional instructions appended to the system prompt |
+| `pi-code-gui.enableSkills` | boolean | `true` | Load project and global pi skills |
+| `pi-code-gui.enableContextFiles` | boolean | `true` | Inject project context files |
+| `pi-code-gui.enablePromptTemplates` | boolean | `true` | Register custom slash commands |
+
+## Requirements
+
+- VS Code 1.118+
+- `@mariozechner/pi-coding-agent` installed globally: `npm install -g @mariozechner/pi-coding-agent`
+- At least one API key (Anthropic, OpenAI, DeepSeek, Gemini, etc.)
 
 ## Development
 
 ```bash
-pnpm install          # Install dependencies
-pnpm run compile      # Type-check + lint + build
+pnpm install          # Install dev dependencies
+pnpm run compile      # Type-check, lint, and build with esbuild
 pnpm run watch        # Watch mode for development
 ```
 
-Press `F5` in VS Code to launch the Extension Development Host. The extension is loaded from your workspace, so it has access to the workspace `node_modules` and can find the `pi` binary.
+Press `F5` in VS Code to launch the Extension Development Host.
 
-To package for distribution:
+To package a `.vsix`:
+
 ```bash
 pnpm run vsix         # Creates pi-code-gui-x.x.x.vsix
 ```
 
-**Architecture notes:** This extension loads the pi SDK (`@mariozechner/pi-coding-agent`) at runtime from the user's global npm install. All tools call VS Code APIs directly. The SDK resolves from common global install paths and falls back to Node module resolution.
-
 ## License
 
-MIT — see the LICENSE file for details.
+MIT — see [LICENSE](LICENSE) for details.
 
-The Pi logo is from [pi.dev](https://pi.dev) and is used under the MIT license of the [pi-mono](https://github.com/badlogic/pi-mono) project.

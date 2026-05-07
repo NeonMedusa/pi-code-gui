@@ -14,6 +14,10 @@ interface PiSdk {
   ModelRegistry: any;
   createCodingTools: Function;
   createReadOnlyTools: Function;
+  DefaultResourceLoader: any;
+  defineTool: Function;
+  getAgentDir: Function;
+  createSyntheticSourceInfo: Function;
 }
 
 interface PiAi {
@@ -70,7 +74,7 @@ function resolvePiPackagePath(): string {
   for (const candidate of candidates) {
     try {
       const pkgPath = path.join(candidate, "package.json");
-      if (fs.existsSync(pkgPath)) {return candidate;}
+      if (fs.existsSync(pkgPath)) { return candidate; }
     } catch {}
   }
 
@@ -80,13 +84,166 @@ function resolvePiPackagePath(): string {
   );
 }
 
+// ── System Prompt ────────────────────────────────────────
+
+/** Build the VS Code-aware system prompt */
+function buildSystemPrompt(): string {
+  return `You are a coding assistant running inside VS Code through the Pi Code Gui extension.
+You have full access to the VS Code editor state through bridge tools.
+
+Key information about your environment:
+- You are embedded in VS Code as an extension with a webview chat UI.
+- You can see open editors, selections, diagnostics, symbols, and more via vscode_* tools.
+- Use vscode_get_editor_state to see what the user is looking at.
+- Use vscode_open_file to open files in the editor.
+- Use vscode_apply_workspace_edit to edit files safely through VS Code (buffers stay in sync).
+- Use vscode_get_diagnostics to see lint/type errors.
+- Use vscode_get_hover and vscode_get_definitions for type info.
+
+When the user asks you to fix something:
+1. Check diagnostics first with vscode_get_diagnostics.
+2. Look at the relevant code with the read tool.
+3. Make edits with the edit or write tool (they keep VS Code buffers in sync).
+
+Be concise and helpful. Prefer editing existing files over creating new ones.`;
+}
+
+// ── Context Files ────────────────────────────────────────
+
+/** Build virtual context files (project guidelines for VS Code context) */
+function buildContextFiles(cwd: string): Array<{ path: string; content: string }> {
+  const files: Array<{ path: string; content: string }> = [];
+
+  // Check if project has a package.json to infer project type
+  let pkgJson: any = null;
+  try {
+    const pkgPath = path.join(cwd, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      pkgJson = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    }
+  } catch {}
+
+  // Check for common config files
+  const hasTypeScript = fs.existsSync(path.join(cwd, "tsconfig.json"));
+  const hasVite = fs.existsSync(path.join(cwd, "vite.config.ts")) || fs.existsSync(path.join(cwd, "vite.config.js"));
+  const hasNextJS = pkgJson?.dependencies?.next || pkgJson?.devDependencies?.next;
+  const hasReact = pkgJson?.dependencies?.react || pkgJson?.devDependencies?.react;
+  const hasNodeBackend = pkgJson?.dependencies?.express || pkgJson?.dependencies?.fastify || pkgJson?.dependencies?.hono;
+
+  files.push({
+    path: "/virtual/vscode-guidelines.md",
+    content: `# VS Code Extension Guidelines
+
+## Running in Pi Code Gui
+- You are an AI coding assistant inside VS Code.
+- The user interacts with you through a chat webview.
+- You have access to the full VS Code API via bridge tools (vscode_*).
+- Always check what the user has open with vscode_get_editor_state.
+
+## Interaction Tips
+- Before making changes, check diagnostics with vscode_get_diagnostics.
+- If the user mentions a file, verify it exists and check its content.
+- When editing, use VS Code's workspace edit API to keep buffers in sync.`,
+  });
+
+  if (hasTypeScript) {
+    files.push({
+      path: "/virtual/project-stack-typescript.md",
+      content: `# Project Stack
+
+This project uses TypeScript. Follow these conventions:
+- Use strict typing, avoid 'any'.
+- Import using ES module syntax.
+- Use const over let where possible.
+- Prefer async/await over raw promises.`,
+    });
+  }
+
+  if (hasReact || hasNextJS || hasVite) {
+    files.push({
+      path: "/virtual/project-stack-frontend.md",
+      content: `# Frontend Project Guidelines
+
+This is a ${hasNextJS ? "Next.js" : hasVite ? "Vite-based" : "React"} project.
+- Use functional components with hooks.
+- Keep components focused and single-responsibility.
+- Use proper TypeScript types for props.`,
+    });
+  }
+
+  if (hasNodeBackend) {
+    files.push({
+      path: "/virtual/project-stack-backend.md",
+      content: `# Backend Project Guidelines
+
+This is a Node.js backend project.
+- Handle errors gracefully with proper status codes.
+- Validate inputs.
+- Use async/await for async operations.`,
+    });
+  }
+
+  return files;
+}
+
+// ── Prompt Templates ─────────────────────────────────────
+
+/** Build custom slash commands */
+function buildPromptTemplates(
+  createSyntheticSourceInfo: Function,
+): Array<{ name: string; description: string; filePath: string; sourceInfo: any; content: string }> {
+  const syn = (p: string) => createSyntheticSourceInfo(p, { source: "vscode-gui" });
+
+  return [
+    {
+      name: "fix-diagnostics",
+      description: "Fix all diagnostics in open file",
+      filePath: "/virtual/prompts/fix-diagnostics.md",
+      sourceInfo: syn("/virtual/prompts/fix-diagnostics.md"),
+      content: `# Fix Diagnostics
+
+Check the currently open file for diagnostics using vscode_get_diagnostics.
+For each diagnostic, analyze the root cause and apply a fix.
+Explain what you're fixing and why.`,
+    },
+    {
+      name: "explain-code",
+      description: "Explain the code at current cursor position",
+      filePath: "/virtual/prompts/explain-code.md",
+      sourceInfo: syn("/virtual/prompts/explain-code.md"),
+      content: `# Explain Code
+
+Use vscode_get_editor_state to find what file and selection the user has open.
+Read the relevant code section and explain what it does, its purpose, and how it works.
+If the selection is empty, explain the function/module at the cursor position (use vscode_get_hover for additional context).`,
+    },
+    {
+      name: "refactor",
+      description: "Refactor the selected code",
+      filePath: "/virtual/prompts/refactor.md",
+      sourceInfo: syn("/virtual/prompts/refactor.md"),
+      content: `# Refactor
+
+Get the current selection with vscode_get_selection.
+Analyze the code and suggest/apply refactoring improvements:
+- Extract repeated logic into functions
+- Simplify complex expressions
+- Improve variable naming
+- Add missing type annotations
+- Reduce nesting
+
+Apply your changes using edit tools.`,
+    },
+  ];
+}
+
 // ── PiService ────────────────────────────────────────────
 
 export class PiService {
   private session: any = null;
   private unsubscribe: (() => void) | null = null;
   private listeners: EventListener[] = [];
-  private _model: { id?: string; name?: string } | null = null;
+  private _model: { id?: string; name?: string; provider?: string } | null = null;
   private _thinkingLevel = "off";
   private _effort = "auto";
   private _isStreaming = false;
@@ -102,8 +259,9 @@ export class PiService {
   private modelRegistry: any = null;
   private settingsManager: any = null;
   private sessionManager: any = null;
+  private resourceLoader: any = null;
 
-  // Model cycling state
+  // Model cycling state (populated dynamically from registry)
   private cycleModels: Array<{ provider: string; id: string }> = [];
   private cycleIndex = 0;
 
@@ -147,7 +305,26 @@ export class PiService {
     }
   }
 
-  async initialize(): Promise<{ success: boolean; error?: string }> {
+  /** List past (saved-on-disk) sessions for the given cwd. */
+  static async listSessions(cwd: string): Promise<any[]> {
+    try {
+      const piRoot = resolvePiPackagePath();
+      const SDK = await import(path.join(piRoot, "dist/index.js"));
+      return SDK.SessionManager.list(cwd);
+    } catch { return []; }
+  }
+
+  /** Delete a session file from disk. */
+  static async deleteSessionFile(filePath: string): Promise<void> {
+    if (typeof filePath !== "string") {
+      throw new Error("deleteSessionFile: filePath must be a string");
+    }
+    await fs.promises.unlink(filePath);
+  }
+
+  async initialize(opts?: { fresh?: boolean; openPath?: string }): Promise<{ success: boolean; error?: string }> {
+    const fresh = opts?.fresh ?? false;
+    const openPath = opts?.openPath ?? null;
     // ── Step 1: Resolve SDK ────────────────────────────
     try {
       this._piRoot = resolvePiPackagePath();
@@ -168,36 +345,73 @@ export class PiService {
     } catch (e: any) {
       return { success: false, error: `Failed to load pi-ai: ${e.message ?? e}` };
     }
+    // Load typebox for defineTool usage
+    let Type: any;
+    try {
+      const Typebox = await import(path.join(this._piRoot, "node_modules/typebox/build/index.mjs"));
+      Type = Typebox.Type ?? Typebox;
+    } catch (e: any) {
+      return { success: false, error: `Failed to load typebox: ${e.message ?? e}` };
+    }
 
-    // ── Step 3: Auth & model registry ──────────────────
     const SDK = this.SDK;
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+
+    // ── Step 3: Auth & model registry ──────────────────
     try {
       this.authStorage = SDK.AuthStorage.create();
+
+      // Runtime API key override from VS Code secrets or env
+      const config = vscode.workspace.getConfiguration("pi-code-gui");
+      const anthropicKey = config.get<string>("anthropicApiKey");
+      if (anthropicKey) {
+        this.authStorage.setRuntimeApiKey("anthropic", anthropicKey);
+      }
+      const openaiKey = config.get<string>("openaiApiKey");
+      if (openaiKey) {
+        this.authStorage.setRuntimeApiKey("openai", openaiKey);
+      }
+
       this.modelRegistry = SDK.ModelRegistry.create(this.authStorage);
       this.settingsManager = SDK.SettingsManager.create(cwd);
     } catch (e: any) {
       return { success: false, error: `Auth/registry setup failed: ${e.message ?? e}` };
     }
 
-    // ── Step 4: Pick a model ───────────────────────────
+    // ── Step 4: Pick a model (dynamic from registry) ──
     const AI = this.AI;
     let model: any = null;
     try {
+      // Try registry first (respects API keys)
       const available = await this.modelRegistry.getAvailable();
       if (available.length > 0) {
         model = available[0];
         this.cycleModels = available.map((m: any) => ({ provider: m.provider, id: m.id }));
       } else {
+        // Fallback: try built-in models via modelRegistry.find() and getModel()
+        this.cycleModels = [];
         for (const candidate of [
           ["anthropic", "claude-sonnet-4-5"],
           ["anthropic", "claude-haiku-4-5"],
           ["openai", "gpt-4o"],
         ]) {
-          const m = AI.getModel(candidate[0], candidate[1]);
-          if (m) { model = m; break; }
+          const found = this.modelRegistry.find(candidate[0], candidate[1]);
+          if (found) {
+            this.cycleModels.push({ provider: candidate[0], id: candidate[1] });
+            if (!model) { model = found; }
+          }
         }
-        this.cycleModels = model ? [{ provider: model.provider, id: model.id }] : [];
+        // Try getModel for models not in registry but built-in
+        if (!model) {
+          for (const candidate of [
+            ["anthropic", "claude-sonnet-4-5"],
+            ["anthropic", "claude-haiku-4-5"],
+            ["openai", "gpt-4o"],
+          ]) {
+            const m = AI.getModel(candidate[0], candidate[1]);
+            if (m) { model = m; break; }
+          }
+        }
       }
     } catch (e: any) {
       return { success: false, error: `Model lookup failed: ${e.message ?? e}` };
@@ -210,28 +424,84 @@ export class PiService {
       };
     }
 
-    // ── Step 5: Session tools ──────────────────────────
+    this._model = { id: model.id, name: model.name, provider: model.provider };
+
+    // ── Step 5: ResourceLoader ─────────────────────────
+    // Builds custom system prompt, skills, context files, and prompt templates
+    try {
+      const DefaultResourceLoader = SDK.DefaultResourceLoader;
+      const getAgentDir = SDK.getAgentDir;
+
+      const contextFiles = buildContextFiles(cwd);
+      const templates = buildPromptTemplates(SDK.createSyntheticSourceInfo);
+
+      this.resourceLoader = new DefaultResourceLoader({
+        cwd,
+        agentDir: getAgentDir ? getAgentDir() : undefined,
+        // Custom system prompt with VS Code context
+        systemPromptOverride: () => buildSystemPrompt(),
+        // Prevent DefaultResourceLoader from appending default append files
+        appendSystemPromptOverride: () => [],
+        // Inject virtual context files with project-specific guidelines
+        agentsFilesOverride: (current: any) => ({
+          agentsFiles: [...current.agentsFiles, ...contextFiles],
+        }),
+        // Inject custom slash commands
+        promptsOverride: (current: any) => ({
+          prompts: [...current.prompts, ...templates],
+          diagnostics: current.diagnostics,
+        }),
+      });
+      await this.resourceLoader.reload();
+
+      // Report discovered resources
+      const { skills: discoveredSkills } = this.resourceLoader.getSkills();
+      const { prompts: discoveredPrompts } = this.resourceLoader.getPrompts();
+      const { agentsFiles } = this.resourceLoader.getAgentsFiles();
+      console.log(`[pi-gui] Skills: ${discoveredSkills.map((s: any) => s.name).join(", ") || "none"}`);
+      console.log(`[pi-gui] Prompt templates: ${discoveredPrompts.map((p: any) => `/${p.name}`).join(", ") || "none"}`);
+      console.log(`[pi-gui] Context files: ${agentsFiles.length}`);
+    } catch (e: any) {
+      console.warn(`[pi-gui] ResourceLoader setup warning: ${e.message}`);
+      // Non-fatal: ResourceLoader is optional, session can work without it
+    }
+
+    // ── Step 6: Session tools ──────────────────────────
     let tools: any[];
     try {
       tools = [
         ...SDK.createCodingTools(cwd),
-        ...createBridgeTools(),
+        ...createBridgeTools(SDK.defineTool, Type),
       ];
     } catch (e: any) {
       return { success: false, error: `Tool setup failed: ${e.message ?? e}` };
     }
 
-    // ── Step 6: Session manager ────────────────────────
+    // ── Step 7: Session manager ─────────────────────
     try {
-      this.sessionManager = SDK.SessionManager.create(cwd);
+      if (openPath) {
+        // Open a specific saved session file
+        this.sessionManager = SDK.SessionManager.open(openPath);
+      } else if (fresh) {
+        // Explicit new session — always a fresh file
+        this.sessionManager = SDK.SessionManager.create(cwd);
+      } else {
+        // First load: try to continue the most recent session (persists across VS Code restarts)
+        // If none exists, create a new one.
+        try {
+          this.sessionManager = await SDK.SessionManager.continueRecent(cwd);
+        } catch {
+          this.sessionManager = SDK.SessionManager.create(cwd);
+        }
+      }
     } catch (e: any) {
       return { success: false, error: `Session manager failed: ${e.message ?? e}` };
     }
 
-    // ── Step 7: Create agent session ───────────────────
+    // ── Step 8: Create agent session ───────────────────
     let result: any;
     try {
-      result = await SDK.createAgentSession({
+      const opts: any = {
         model,
         thinkingLevel: "off",
         authStorage: this.authStorage,
@@ -239,27 +509,37 @@ export class PiService {
         settingsManager: this.settingsManager,
         sessionManager: this.sessionManager,
         customTools: tools,
-        scopedModels: this.cycleModels.map((m: any) => ({
+        cwd,
+      };
+
+      // Scoped models from registry (dynamic)
+      if (this.cycleModels.length > 0) {
+        opts.scopedModels = this.cycleModels.map((m: any) => ({
           model: AI.getModel(m.provider, m.id),
           thinkingLevel: "off",
-        })),
-        cwd,
-      });
+        }));
+      }
+
+      // ResourceLoader with custom system prompt, context files, templates
+      if (this.resourceLoader) {
+        opts.resourceLoader = this.resourceLoader;
+      }
+
+      result = await SDK.createAgentSession(opts);
     } catch (e: any) {
       return { success: false, error: `createAgentSession failed: ${e.message ?? e}` };
     }
 
     this.session = result.session;
-    this._model = { id: model.id, name: model.name };
     this._thinkingLevel = "off";
     this.sessionId = this.session.sessionId;
 
-    // ── Step 8: Subscribe to events ────────────────────
+    // ── Step 9: Subscribe to events ────────────────────
     this.unsubscribe = this.session.subscribe((event: any) => {
       this.handleAgentEvent(event);
     });
 
-    // ── Step 9: Send initial message history (like TUI renderInitialMessages) ──
+    // ── Step 10: Send initial message history (like TUI renderInitialMessages) ──
     this.sendInitialMessages();
 
     this.reportStatus();
@@ -364,7 +644,6 @@ export class PiService {
 
   private handleAgentEvent(event: any) {
     switch (event.type) {
-      // ── Agent lifecycle ────────────────────────────────
       case "agent_start":
         this._isStreaming = true;
         this.currentAssistantToolCalls.clear();
@@ -376,54 +655,30 @@ export class PiService {
         this._isStreaming = false;
         this.currentAssistantToolCalls.clear();
         this.turnIndex = 0;
-        this.emit({
-          type: "agent-end",
-          data: { messages: event.messages },
-        });
+        this.emit({ type: "agent-end", data: { messages: event.messages } });
         this.reportStatus();
         break;
 
-      // ── Turn lifecycle ─────────────────────────────────
       case "turn_start":
-        this.emit({
-          type: "turn-start",
-          data: { turnIndex: this.turnIndex },
-        });
+        this.emit({ type: "turn-start", data: { turnIndex: this.turnIndex } });
         break;
 
       case "turn_end":
-        this.emit({
-          type: "turn-end",
-          data: {
-            turnIndex: this.turnIndex,
-            message: event.message,
-            toolResults: event.toolResults,
-          },
-        });
+        this.emit({ type: "turn-end", data: { turnIndex: this.turnIndex, message: event.message, toolResults: event.toolResults } });
         this.turnIndex++;
         break;
 
-      // ── Message lifecycle ──────────────────────────────
       case "message_start":
         if (event.message?.role === "user") {
           const text = this.extractTextFromContent(event.message.content);
           if (text) {
-            // Track user message for resend/reuse (#2)
-            this._userMessages.push({
-              id: event.message.id ?? `user-${Date.now()}`,
-              text,
-              timestamp: event.message.timestamp ?? Date.now(),
-            });
-            // Keep only last 50 messages
+            this._userMessages.push({ id: event.message.id ?? `user-${Date.now()}`, text, timestamp: event.message.timestamp ?? Date.now() });
             if (this._userMessages.length > 50) { this._userMessages.shift(); }
-            // #9: Include entryId for scroll-to
             const entry = this.sessionManager?.getEntries?.()?.find((e: any) => e.message?.id === event.message.id);
             this.emit({ type: "chat-message", data: { role: "user", content: text, entryId: entry?.id ?? event.message.id } });
           }
         } else if (event.message?.role === "assistant") {
           this.currentAssistantToolCalls.clear();
-          // Emit assistant-start to create the container eagerly (like TUI)
-          // #9: Include entryId for scroll-to
           const entry = this.sessionManager?.getEntries?.()?.find((e: any) => e.message?.id === event.message.id);
           this.emit({ type: "assistant-start", data: { messageId: event.message.id, entryId: entry?.id ?? event.message.id } });
         }
@@ -442,45 +697,21 @@ export class PiService {
             this.emit({ type: "thinking-delta", data: { delta: "", done: true } });
             break;
           case "error":
-            this.emit({
-              type: "error",
-              data: { message: d.error ?? "Unknown error" },
-            });
+            this.emit({ type: "error", data: { message: d.error ?? "Unknown error" } });
             break;
         }
 
-        // Emit tool call stubs from message_update content (like TUI creates ToolExecutionComponent eagerly)
         if (event.message?.role === "assistant" && event.message?.content) {
           const toolCalls = this.extractToolCallsFromContent(event.message.content);
           for (const tc of toolCalls) {
             if (!this.currentAssistantToolCalls.has(tc.id)) {
-              this.currentAssistantToolCalls.set(tc.id, {
-                toolName: tc.name,
-                toolCallId: tc.id,
-                args: tc.arguments,
-              });
-              this.emit({
-                type: "tool-start",
-                data: {
-                  toolCallId: tc.id,
-                  toolName: tc.name,
-                  args: tc.arguments,
-                  fromMessage: true, // flag: created eagerly from message content
-                },
-              });
+              this.currentAssistantToolCalls.set(tc.id, { toolName: tc.name, toolCallId: tc.id, args: tc.arguments });
+              this.emit({ type: "tool-start", data: { toolCallId: tc.id, toolName: tc.name, args: tc.arguments, fromMessage: true } });
             } else {
-              // Update args for existing stub (arguments may stream in)
               const existing = this.currentAssistantToolCalls.get(tc.id);
               if (existing) {
                 existing.args = tc.arguments;
-                this.emit({
-                  type: "tool-update",
-                  data: {
-                    toolCallId: tc.id,
-                    toolName: tc.name,
-                    partialResult: { content: [{ type: "text", text: JSON.stringify(tc.arguments, null, 2) }] },
-                  },
-                });
+                this.emit({ type: "tool-update", data: { toolCallId: tc.id, toolName: tc.name, partialResult: { content: [{ type: "text", text: JSON.stringify(tc.arguments, null, 2) }] } } });
               }
             }
           }
@@ -489,133 +720,57 @@ export class PiService {
       }
 
       case "message_end":
-        if (event.message?.role === "user") {
-          break;
-        }
+        if (event.message?.role === "user") { break; }
         if (event.message?.role === "assistant") {
           const toolCalls = this.extractToolCallsFromContent(event.message.content);
-          this.emit({
-            type: "assistant-end",
-            data: {
-              stopReason: event.message.stopReason,
-              errorMessage: event.message.errorMessage,
-              toolCalls: toolCalls.map((tc) => tc.id),
-            },
-          });
-          // Update status with new usage data after each assistant message
+          this.emit({ type: "assistant-end", data: { stopReason: event.message.stopReason, errorMessage: event.message.errorMessage, toolCalls: toolCalls.map((tc) => tc.id) } });
           this.reportStatus();
         } else if (event.message?.role === "custom") {
-          // Forward custom messages with full metadata (#7)
           const custEntry = this.sessionManager?.getEntries?.()?.findLast?.(
             (e: any) => e.type === "message" && e.message?.role === "custom",
           );
-          this.emit({
-            type: "custom-message",
-            data: {
-              customType: event.message.customType,
-              content: event.message.content,
-              timestamp: event.message.timestamp,
-              entryId: custEntry?.id ?? event.message.id,
-            },
-          });
+          this.emit({ type: "custom-message", data: { customType: event.message.customType, content: event.message.content, timestamp: event.message.timestamp, entryId: custEntry?.id ?? event.message.id } });
         }
         break;
 
-      // ── Tool lifecycle ─────────────────────────────────
       case "tool_execution_start": {
-        // Look up the entry for this tool call to get its entry ID
         const tcEntry = this.sessionManager?.getEntries?.()?.find(
           (e: any) => e.type === "message" && e.message?.role === "toolResult" && e.message?.toolCallId === event.toolCallId,
         );
         const tcEntryId = tcEntry?.id ?? event.toolCallId;
 
-        // Detect bash execution tools (bash, exec) for distinct rendering (#10)
         if (event.toolName === "bash" || event.toolName === "exec") {
-          this.emit({
-            type: "bash-start",
-            data: {
-              toolCallId: event.toolCallId,
-              command: event.args?.command ?? "",
-              entryId: tcEntryId,
-            },
-          });
+          this.emit({ type: "bash-start", data: { toolCallId: event.toolCallId, command: event.args?.command ?? "", entryId: tcEntryId } });
         } else {
-          this.emit({
-            type: "tool-start",
-            data: {
-              toolCallId: event.toolCallId,
-              toolName: event.toolName,
-              args: event.args,
-              fromMessage: false,
-              entryId: tcEntryId,
-            },
-          });
+          this.emit({ type: "tool-start", data: { toolCallId: event.toolCallId, toolName: event.toolName, args: event.args, fromMessage: false, entryId: tcEntryId } });
         }
         break;
       }
 
       case "tool_execution_update":
         if (event.toolName === "bash" || event.toolName === "exec") {
-          const text = event.partialResult?.content
-            ?.filter((c: any) => c.type === "text")
-            .map((c: any) => c.text)
-            .join("");
-          this.emit({
-            type: "bash-output",
-            data: { toolCallId: event.toolCallId, output: text ?? "" },
-          });
+          const text = event.partialResult?.content?.filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+          this.emit({ type: "bash-output", data: { toolCallId: event.toolCallId, output: text ?? "" } });
         } else {
-          this.emit({
-            type: "tool-update",
-            data: {
-              toolCallId: event.toolCallId,
-              toolName: event.toolName,
-              partialResult: event.partialResult,
-            },
-          });
+          this.emit({ type: "tool-update", data: { toolCallId: event.toolCallId, toolName: event.toolName, partialResult: event.partialResult } });
         }
         break;
 
       case "tool_execution_end": {
-        // Look up the entry for this tool call
         const tcEntry = this.sessionManager?.getEntries?.()?.find(
           (e: any) => e.type === "message" && e.message?.role === "toolResult" && e.message?.toolCallId === event.toolCallId,
         );
         const tcEntryId = tcEntry?.id ?? event.toolCallId;
 
         if (event.toolName === "bash" || event.toolName === "exec") {
-          const text = event.result?.content
-            ?.filter((c: any) => c.type === "text")
-            .map((c: any) => c.text)
-            .join("");
-          this.emit({
-            type: "bash-end",
-            data: {
-              toolCallId: event.toolCallId,
-              command: event.args?.command ?? "",
-              exitCode: event.isError ? 1 : 0,
-              cancelled: false,
-              output: text ?? "",
-              isError: event.isError,
-              entryId: tcEntryId,
-            },
-          });
+          const text = event.result?.content?.filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+          this.emit({ type: "bash-end", data: { toolCallId: event.toolCallId, command: event.args?.command ?? "", exitCode: event.isError ? 1 : 0, cancelled: false, output: text ?? "", isError: event.isError, entryId: tcEntryId } });
         } else {
-          this.emit({
-            type: "tool-end",
-            data: {
-              toolCallId: event.toolCallId,
-              toolName: event.toolName,
-              result: event.result,
-              isError: event.isError,
-              entryId: tcEntryId,
-            },
-          });
+          this.emit({ type: "tool-end", data: { toolCallId: event.toolCallId, toolName: event.toolName, result: event.result, isError: event.isError, entryId: tcEntryId } });
         }
         break;
       }
 
-      // ── Session events ─────────────────────────────────
       case "session_info_changed":
         this.reportStatus();
         break;
@@ -627,73 +782,28 @@ export class PiService {
         break;
 
       case "queue_update":
-        this.emit({
-          type: "queue-update",
-          data: {
-            steering: Array.from(event.steering ?? []),
-            followUp: Array.from(event.followUp ?? []),
-          },
-        });
+        this.emit({ type: "queue-update", data: { steering: Array.from(event.steering ?? []), followUp: Array.from(event.followUp ?? []) } });
         break;
 
       case "compaction_start":
-        this.emit({
-          type: "compaction-start",
-          data: { reason: event.reason },
-        });
+        this.emit({ type: "compaction-start", data: { reason: event.reason } });
         break;
 
       case "compaction_end":
-        this.emit({
-          type: "compaction-end",
-          data: {
-            reason: event.reason,
-            aborted: event.aborted,
-            willRetry: event.willRetry,
-            result: event.result,
-            errorMessage: event.errorMessage,
-          },
-        });
-        // Emit compaction summary message for in-chat display (#1)
+        this.emit({ type: "compaction-end", data: { reason: event.reason, aborted: event.aborted, willRetry: event.willRetry, result: event.result, errorMessage: event.errorMessage } });
         if (event.result) {
-          // Try to find the compaction entry that was just created
           const compactEntries = this.sessionManager?.getEntries?.();
-          const compactEntry = compactEntries?.findLast?.(
-            (e: any) => e.type === "compaction",
-          );
-          this.emit({
-            type: "compaction-summary-message",
-            data: {
-              summary: event.result.summary,
-              tokensBefore: event.result.tokensBefore,
-              timestamp: Date.now(),
-              entryId: compactEntry?.id,
-            },
-          });
+          const compactEntry = compactEntries?.findLast?.((e: any) => e.type === "compaction");
+          this.emit({ type: "compaction-summary-message", data: { summary: event.result.summary, tokensBefore: event.result.tokensBefore, timestamp: Date.now(), entryId: compactEntry?.id } });
         }
         break;
 
       case "auto_retry_start":
-        this.emit({
-          type: "auto-retry-start",
-          data: {
-            attempt: event.attempt,
-            maxAttempts: event.maxAttempts,
-            delayMs: event.delayMs,
-            errorMessage: event.errorMessage,
-          },
-        });
+        this.emit({ type: "auto-retry-start", data: { attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs, errorMessage: event.errorMessage } });
         break;
 
       case "auto_retry_end":
-        this.emit({
-          type: "auto-retry-end",
-          data: {
-            success: event.success,
-            attempt: event.attempt,
-            finalError: event.finalError,
-          },
-        });
+        this.emit({ type: "auto-retry-end", data: { success: event.success, attempt: event.attempt, finalError: event.finalError } });
         break;
     }
   }
@@ -716,7 +826,7 @@ export class PiService {
   // ── User actions ───────────────────────────────────────
 
   async sendPrompt(text: string, images?: any[]) {
-    if (!this.session) {throw new Error("Pi session not initialized");}
+    if (!this.session) { throw new Error("Pi session not initialized"); }
     if (this._isStreaming) {
       if (images && images.length > 0) {
         throw new Error("Cannot attach images while agent is streaming");
@@ -724,32 +834,75 @@ export class PiService {
       await this.session.steer(text);
     } else {
       const opts: any = {};
-      if (images && images.length > 0) { opts.images = images; }
+      if (images && images.length > 0) {
+        // Check if current model supports images; if not, try to auto-switch
+        if (!this.activeModelSupportsImages()) {
+          const visionModel = this.findVisionModel();
+          if (visionModel) {
+            // Auto-switch to a vision-capable model
+            await this.setModel(visionModel.provider, visionModel.id);
+            this.emit({
+              type: "custom-message",
+              data: {
+                customType: "info",
+                content: `Auto-switched to ${visionModel.id} (vision-capable) for image support.`,
+                timestamp: Date.now(),
+              },
+            });
+          } else {
+            throw new Error(
+              `Cannot send images: no vision-capable model available. ` +
+              "Add an API key for Claude, GPT-4o, or Gemini to use images."
+            );
+          }
+        }
+        opts.images = images;
+      }
       await this.session.prompt(text, opts);
     }
   }
 
+  /** Check whether the active model's input capabilities include images. */
+  private activeModelSupportsImages(): boolean {
+    const rawModel = (this.session as any)?.model;
+    if (!rawModel) { return true; }
+    const input = rawModel.input as string[] | undefined;
+    return input?.includes("image") ?? true;
+  }
+
+  /** Find a vision-capable model from the available scoped models. */
+  private findVisionModel(): { provider: string; id: string } | null {
+    if (!this.AI) { return null; }
+    for (const cm of this.cycleModels) {
+      const m = this.AI.getModel(cm.provider, cm.id);
+      if (m?.input?.includes("image")) {
+        return { provider: cm.provider, id: cm.id };
+      }
+    }
+    return null;
+  }
+
   async abort() {
-    if (!this.session) {return;}
-    try {
-      this.session.agent.abort();
-    } catch { /* ignore */ }
+    if (!this.session) { return; }
+    try { this.session.agent.abort(); } catch { /* ignore */ }
   }
 
   async newSession() {
-    if (!this.session) {return;}
+    if (!this.session) { return; }
     await this.session.agent.waitForIdle();
-    // Create a fresh in-memory session
     this.dispose();
-    await this.initialize();
+    await this.initialize({ fresh: true });
   }
 
-  /**
-   * After a branch/fork operation, re-emit the branched entries to the webview
-   * so the chat panel shows the correct history from the fork point.
-   */
+  /** Resume a past session from a .jsonl file path. Disposes current and re-initializes. */
+  async resumeSession(filePath: string): Promise<{ success: boolean; error?: string }> {
+    try { await this.session?.agent.waitForIdle(); } catch { /* ignore */ }
+    this.dispose();
+    return this.initialize({ openPath: filePath });
+  }
+
+  /** After a branch/fork operation, re-emit the branched entries to the webview */
   replayBranchEntries(path: any[]) {
-    // Clear tracked user messages (they'll be re-added during replay)
     this._userMessages = [];
 
     for (const entry of path) {
@@ -767,16 +920,8 @@ export class PiService {
           if (text) {
             this.emit({ type: "assistant-start", data: { messageId: msg.id, entryId: entry.id } });
             this.emit({ type: "stream-delta", data: { delta: text } });
-            this.emit({
-              type: "assistant-end",
-              data: {
-                stopReason: msg.stopReason,
-                errorMessage: msg.errorMessage,
-                toolCalls: this.extractToolCallsFromContent(msg.content).map((tc: any) => tc.id),
-              },
-            });
+            this.emit({ type: "assistant-end", data: { stopReason: msg.stopReason, errorMessage: msg.errorMessage, toolCalls: this.extractToolCallsFromContent(msg.content).map((tc: any) => tc.id) } });
 
-            // Replay tool results
             const toolCalls = this.extractToolCallsFromContent(msg.content);
             for (const tc of toolCalls) {
               const toolResultEntry = path.find(
@@ -784,13 +929,8 @@ export class PiService {
               );
               if (tc.name === "bash" || tc.name === "exec") {
                 this.emit({ type: "bash-start", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", entryId: toolResultEntry?.id } });
-                const outputText = toolResultEntry?.message
-                  ? this.extractTextFromContent(toolResultEntry.message.content)
-                  : "";
-                this.emit({
-                  type: "bash-end",
-                  data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", exitCode: 0, cancelled: false, output: outputText, isError: false, entryId: toolResultEntry?.id },
-                });
+                const outputText = toolResultEntry?.message ? this.extractTextFromContent(toolResultEntry.message.content) : "";
+                this.emit({ type: "bash-end", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", exitCode: 0, cancelled: false, output: outputText, isError: false, entryId: toolResultEntry?.id } });
               } else {
                 this.emit({ type: "tool-start", data: { toolCallId: tc.id, toolName: tc.name, args: tc.arguments, fromMessage: true, entryId: toolResultEntry?.id } });
                 if (toolResultEntry?.message) {
@@ -809,10 +949,7 @@ export class PiService {
           this.emit({ type: "bash-end", data: { toolCallId: bashEntryId, command: msg.command ?? "", exitCode: msg.exitCode, cancelled: msg.cancelled, output: msg.output ?? "", isError: msg.exitCode !== 0 && msg.exitCode !== null, entryId: entry.id } });
         }
       } else if (entry.type === "compaction") {
-        this.emit({
-          type: "compaction-summary-message",
-          data: { summary: entry.summary ?? "", tokensBefore: entry.tokensBefore ?? 0, timestamp: entry.timestamp ?? Date.now(), entryId: entry.id },
-        });
+        this.emit({ type: "compaction-summary-message", data: { summary: entry.summary ?? "", tokensBefore: entry.tokensBefore ?? 0, timestamp: entry.timestamp ?? Date.now(), entryId: entry.id } });
       }
     }
 
@@ -820,46 +957,62 @@ export class PiService {
   }
 
   async setModel(provider: string, modelId: string) {
-    if (!this.session || !this.AI) {return;}
-    const model = this.AI.getModel(provider, modelId);
+    if (!this.session || !this.AI) { return; }
+    // Try registry first, then fall back to getModel
+    let model: any = null;
+    if (this.modelRegistry) {
+      model = this.modelRegistry.find(provider, modelId);
+    }
+    if (!model) {
+      model = this.AI.getModel(provider, modelId);
+    }
     if (model) {
       await this.session.setModel(model);
-      this._model = { id: modelId };
-      this.cycleIndex = this.cycleModels.findIndex(
-        (m) => m.provider === provider && m.id === modelId,
-      );
-      if (this.cycleIndex === -1) {this.cycleIndex = 0;}
+      this._model = { id: modelId, provider };
+      this.cycleIndex = this.cycleModels.findIndex((m) => m.provider === provider && m.id === modelId);
+      if (this.cycleIndex === -1) { this.cycleIndex = 0; }
       this.reportStatus();
     }
   }
 
   async cycleModel() {
-    if (!this.session || !this.AI || this.cycleModels.length === 0) {return;}
+    if (!this.session || !this.AI || this.cycleModels.length === 0) { return; }
     this.cycleIndex = (this.cycleIndex + 1) % this.cycleModels.length;
     const next = this.cycleModels[this.cycleIndex];
     const model = this.AI.getModel(next.provider, next.id);
     if (model) {
       await this.session.setModel(model);
-      this._model = { id: next.id };
+      this._model = { id: next.id, provider: next.provider };
       this.reportStatus();
     }
   }
 
   async setThinkingLevel(level: string) {
-    if (!this.session) {return;}
+    if (!this.session) { return; }
     this.session.setThinkingLevel(level);
     this._thinkingLevel = level;
     this.reportStatus();
   }
 
-  // ── Settings & scoped models (#3, #4) ──────────────
+  // ── Settings, models, scoped models ──────────────────
 
   get autoCompactionEnabled(): boolean { return this._autoCompactionEnabled; }
   get autoRetryEnabled(): boolean { return this._autoRetryEnabled; }
   get showImages(): boolean { return this._showImages; }
   get userMessages(): Array<{ id: string; text: string; timestamp?: number }> { return this._userMessages; }
 
-  /** Get scoped models from the session (#4) */
+  /** Get available models from the model registry (for dynamic model pickers) */
+  async getAvailableModels(): Promise<Array<{ provider: string; id: string; name?: string }>> {
+    if (!this.modelRegistry) { return []; }
+    try {
+      const available = await this.modelRegistry.getAvailable();
+      return available.map((m: any) => ({ provider: m.provider, id: m.id, name: m.name }));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Get scoped models from the session */
   getScopedModels(): Array<{ provider: string; id: string; thinkingLevel: string }> {
     if (!this.session || !this.session.scopedModels) { return []; }
     return this.session.scopedModels.map((s: any) => ({
@@ -876,11 +1029,7 @@ export class PiService {
   emitSettings() {
     this.emit({
       type: "settings-update",
-      data: {
-        autoCompaction: this._autoCompactionEnabled,
-        autoRetry: this._autoRetryEnabled,
-        showImages: this._showImages,
-      },
+      data: { autoCompaction: this._autoCompactionEnabled, autoRetry: this._autoRetryEnabled, showImages: this._showImages },
     });
   }
 
@@ -909,14 +1058,20 @@ export class PiService {
 
   async setEffort(effort: string) {
     this._effort = effort;
-    // If the session supports effort, set it
     if (this.session && typeof this.session.setEffort === "function") {
       await this.session.setEffort(effort);
     }
     this.reportStatus();
   }
 
-  // ── Usage / token stats (mirrors TUI footer) ─────────
+  /** Set a runtime API key (not persisted to disk) */
+  setRuntimeApiKey(provider: string, key: string) {
+    if (this.authStorage && typeof this.authStorage.setRuntimeApiKey === "function") {
+      this.authStorage.setRuntimeApiKey(provider, key);
+    }
+  }
+
+  // ── Usage / token stats ──────────────────────────────
 
   getUsageStats(): {
     input: number;
@@ -951,7 +1106,6 @@ export class PiService {
       }
     }
 
-    // Context usage (percentage of window used)
     let contextPercent: number | null = null;
     let contextWindow = 0;
     try {
@@ -962,51 +1116,21 @@ export class PiService {
       }
     } catch { /* ignore */ }
 
-    return {
-      input: totalInput,
-      output: totalOutput,
-      cacheRead: totalCacheRead,
-      cacheWrite: totalCacheWrite,
-      cost: totalCost,
-      contextPercent,
-      contextWindow,
-    };
+    return { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheWrite: totalCacheWrite, cost: totalCost, contextPercent, contextWindow };
   }
 
   // ── Getters ────────────────────────────────────────────
 
-  get isStreaming() {
-    return this._isStreaming;
-  }
-
-  get model() {
-    return this._model;
-  }
-
-  get thinkingLevel() {
-    return this._thinkingLevel;
-  }
-
-  get effort() {
-    return this._effort;
-  }
-
-  get sdkRoot(): string | null {
-    return this._piRoot;
-  }
-
-  get sessionManagerInstance(): any {
-    return this.sessionManager;
-  }
-
-  get sessionIdValue(): string | null {
-    return this.sessionId;
-  }
-
-  /** Raw agent session instance (for advanced operations like forking) */
-  get rawSession(): any {
-    return this.session;
-  }
+  get isStreaming() { return this._isStreaming; }
+  get model() { return this._model; }
+  get thinkingLevel() { return this._thinkingLevel; }
+  get effort() { return this._effort; }
+  get sdkRoot(): string | null { return this._piRoot; }
+  get sessionManagerInstance(): any { return this.sessionManager; }
+  get sessionIdValue(): string | null { return this.sessionId; }
+  get rawSession(): any { return this.session; }
+  /** Expose the model registry for dynamic model pickers in the webview */
+  get modelRegistryInstance(): any { return this.modelRegistry; }
 
   // ── Cleanup ────────────────────────────────────────────
 
@@ -1017,5 +1141,6 @@ export class PiService {
     this.unsubscribe = null;
     this.SDK = null;
     this.AI = null;
+    this.resourceLoader = null;
   }
 }

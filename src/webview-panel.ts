@@ -9,6 +9,12 @@ export class PiWebviewPanel {
   /** Cleanup function returned by piService.onEvent() */
   private piCleanup: (() => void) | null = null;
 
+  // Tab indicator state
+  private _tabInitialized = false;
+  private _tabStreaming = false;
+  private _tabPulseOn = false;
+  private _tabPulseInterval: any = null;
+
   constructor(
     private context: vscode.ExtensionContext,
     piService: PiService
@@ -36,8 +42,8 @@ export class PiWebviewPanel {
     );
 
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-icon-light.svg"),
-      dark: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-icon-dark.svg"),
+      light: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-init-light.svg"),
+      dark: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-init-dark.svg"),
     };
 
     this.panel.webview.html = this.getWebviewContent(this.panel.webview);
@@ -45,6 +51,7 @@ export class PiWebviewPanel {
     this.setupServiceHandlers();
 
     this.panel.onDidDispose(() => {
+      this.stopTabPulse();
       this.panel = null;
       this.disposables.forEach((d) => d.dispose());
       this.disposables = [];
@@ -74,6 +81,8 @@ export class PiWebviewPanel {
         if (model !== null && statusInterval) {
           clearInterval(statusInterval);
           statusInterval = null;
+          this._tabInitialized = true;
+          this.updateTabIndicator();
         }
       }, 500);
     };
@@ -172,7 +181,93 @@ export class PiWebviewPanel {
     this.cleanupPiListener();
     this.piCleanup = this.piService.onEvent((event: PiServiceEvent) => {
       this.postMessage(event);
+
+      // Track streaming state for the tab indicator
+      if (event.type === "agent-start") {
+        this._tabStreaming = true;
+        this.updateTabIndicator();
+      } else if (event.type === "agent-end") {
+        this._tabStreaming = false;
+        this.updateTabIndicator();
+      } else if (event.type === "status-update" && event.data) {
+        const wasStreaming = this._tabStreaming;
+        this._tabStreaming = !!event.data.isStreaming;
+        if (!event.data.ready && event.data.ready !== undefined) {
+          this._tabInitialized = false;
+        }
+        if (this._tabStreaming !== wasStreaming) {
+          this.updateTabIndicator();
+        }
+      }
     });
+  }
+
+  /** Update the tab icon and title to indicate streaming / idle / init state. */
+  private updateTabIndicator() {
+    if (!this.panel) { return; }
+
+    const media = (uri: string) =>
+      vscode.Uri.joinPath(this.context.extensionUri, "media", uri);
+
+    if (!this._tabInitialized) {
+      this.panel.iconPath = {
+        light: media("pi-dot-init-light.svg"),
+        dark: media("pi-dot-init-dark.svg"),
+      };
+      this.panel.title = `$(circle) Pi Code Gui`;
+      this.stopTabPulse();
+      return;
+    }
+
+    const level = this.piService.thinkingLevel;
+    const label = level === "off" ? "Pi" : `Pi: ${level}`;
+
+    if (this._tabStreaming) {
+      // Start pulsing the dot (slow flash)
+      this.startTabPulse();
+      this.panel.title = `${this._tabPulseOn ? "$(circle-filled)" : "$(circle)"} ${label}`;
+    } else {
+      this.stopTabPulse();
+      // Green dot = idle / ready
+      this.panel.iconPath = {
+        light: media("pi-dot-idle-light.svg"),
+        dark: media("pi-dot-idle-dark.svg"),
+      };
+      this.panel.title = `$(circle-filled) ${label}`;
+    }
+  }
+
+  private startTabPulse() {
+    if (this._tabPulseInterval) { return; }
+    this._tabPulseOn = true;
+    // Slow ~1.2s cycle: 600ms each state
+    this._tabPulseInterval = setInterval(() => {
+      if (!this.panel) { return; }
+      this._tabPulseOn = !this._tabPulseOn;
+      const level = this.piService.thinkingLevel;
+      const label = level === "off" ? "Pi" : `Pi: ${level}`;
+      this.panel.title = `${this._tabPulseOn ? "$(circle-filled)" : "$(circle)"} ${label}`;
+      // Also toggle icon to show colored active dot while streaming
+      if (this._tabPulseOn) {
+        this.panel.iconPath = {
+          light: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-active-light.svg"),
+          dark: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-active-dark.svg"),
+        };
+      } else {
+        this.panel.iconPath = {
+          light: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-idle-light.svg"),
+          dark: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-idle-dark.svg"),
+        };
+      }
+    }, 600);
+  }
+
+  private stopTabPulse() {
+    if (this._tabPulseInterval) {
+      clearInterval(this._tabPulseInterval);
+      this._tabPulseInterval = null;
+    }
+    this._tabPulseOn = false;
   }
 
   private cleanupPiListener() {
@@ -1226,15 +1321,13 @@ export class PiWebviewPanel {
   /** Open VS Code quick pick to pick a model for the current session */
   private async triggerModelPicker() {
     const ps = this.piService;
-    // Gather available models from the model registry (which is already loaded)
     let modelItems: Array<{ label: string; description: string; provider: string; modelId: string }> = [];
 
-    // Try to get models from modelRegistry
+    // Use the PiService's getAvailableModels for dynamic registry discovery
     try {
-      const registry = (ps as any).modelRegistry;
-      if (registry && typeof registry.getAvailable === "function") {
-        const available = await registry.getAvailable();
-        modelItems = available.map((m: any) => ({
+      const available = await ps.getAvailableModels();
+      if (available.length > 0) {
+        modelItems = available.map((m) => ({
           label: m.name || m.id,
           description: m.provider,
           provider: m.provider,
@@ -1243,7 +1336,7 @@ export class PiWebviewPanel {
       }
     } catch { /* fall through */ }
 
-    // Fallback: static list
+    // Fallback: static list of common models
     if (modelItems.length === 0) {
       const fallbackModels = [
         { label: "Claude Sonnet 4.5", description: "anthropic", provider: "anthropic", modelId: "claude-sonnet-4-5" },

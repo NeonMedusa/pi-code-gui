@@ -147,23 +147,34 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Fork session from a selected entry — branches the session manager to that entry
   // and replaces the agent's messages so further prompts continue from the fork point.
+  // Accepts (sessionId, entryId) from TreeItem.command / context-menu auto-arg passing,
+  // or reads from tree view selection as fallback.
   context.subscriptions.push(
-    vscode.commands.registerCommand("pi-code-gui.forkSession", async () => {
-      const selection = sessionTreeView?.selection;
-      if (!selection || selection.length === 0) { return; }
-      const item = selection[0] as SessionTreeItem;
-      if (item.contextValue !== "sessionEntry") { return; }
+    vscode.commands.registerCommand("pi-code-gui.forkSession", async (forkSessionId?: string, forkEntryId?: string) => {
+      let resolvedSessionId = forkSessionId;
+      let resolvedEntryId = forkEntryId;
 
-      // Extract entry ID from the item's command arguments
-      const cmdArgs = item.command?.arguments;
-      if (!cmdArgs || cmdArgs.length < 2) {
+      // Fallback: read from tree view selection (right-click context menu)
+      if (!resolvedSessionId || !resolvedEntryId) {
+        const selection = sessionTreeView?.selection;
+        if (selection && selection.length > 0) {
+          const item = selection[0] as SessionTreeItem;
+          if (item.contextValue === "sessionEntry" && item.command?.arguments) {
+            const cmdArgs = item.command.arguments;
+            if (cmdArgs.length >= 2) {
+              resolvedSessionId = cmdArgs[0] as string;
+              resolvedEntryId = cmdArgs[1] as string;
+            }
+          }
+        }
+      }
+
+      if (!resolvedSessionId || !resolvedEntryId) {
         vscode.window.showErrorMessage("Cannot fork: missing entry information.");
         return;
       }
 
-      const sessionId = cmdArgs[0] as string;
-      const entryId = cmdArgs[1] as string;
-      const sw = sessions.find((s) => s.id === sessionId);
+      const sw = sessions.find((s) => s.id === resolvedSessionId);
       if (!sw || !sw.piService.sessionManagerInstance) {
         vscode.window.showErrorMessage("Cannot fork: session not found.");
         return;
@@ -179,7 +190,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const sm = sw.piService.sessionManagerInstance;
 
         // Branch the session manager to this entry — discards subsequent messages
-        sm.branch(entryId);
+        sm.branch(resolvedEntryId!);
 
         // Get the path entries from root to the fork point
         const path = sm.getPath();
@@ -215,6 +226,82 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
+  // ── Resume a past session from the tree view ─────
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.resumePastSession", async (filePath?: string) => {
+      let resolved: string | undefined;
+      // When triggered from a context menu, VS Code passes the tree item as the first arg.
+      // Only accept the argument if it's actually a string (file path).
+      if (typeof filePath === "string") {
+        resolved = filePath;
+      }
+      if (!resolved) {
+        const sel = sessionTreeView?.selection?.[0];
+        if ((sel as any)?.contextValue === "pastSessionEntry" && (sel as any)?.command?.arguments) {
+          const arg = (sel as any).command.arguments[0];
+          if (typeof arg === "string") { resolved = arg; }
+        }
+      }
+      if (!resolved) {
+        vscode.window.showErrorMessage("Cannot resume: missing session file path.");
+        return;
+      }
+      const primary = primarySession();
+      if (!primary) {
+        vscode.window.showErrorMessage("No active session to resume into.");
+        return;
+      }
+      try {
+        const r = await primary.piService.resumeSession(resolved);
+        if (!r.success) {
+          vscode.window.showErrorMessage(`Resume failed: ${r.error}`);
+          return;
+        }
+        primary.webviewPanel.postMessage({ type: "sessionReset" });
+        sessionTreeProvider?.refresh();
+        await refreshPastSessionsList();
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Resume failed: ${e.message ?? e}`);
+      }
+    }),
+  );
+
+  // ── Delete a past session from the tree view ──────
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.deletePastSession", async (filePath?: string) => {
+      let resolved: string | undefined;
+      // When triggered from a context menu, VS Code passes the tree item as the first arg.
+      // Only accept the argument if it's actually a string (file path).
+      if (typeof filePath === "string") {
+        resolved = filePath;
+      }
+      if (!resolved) {
+        const sel = sessionTreeView?.selection?.[0];
+        if ((sel as any)?.contextValue === "pastSessionEntry" && (sel as any)?.command?.arguments) {
+          const arg = (sel as any).command.arguments[0];
+          if (typeof arg === "string") { resolved = arg; }
+        }
+      }
+      if (!resolved) {
+        vscode.window.showErrorMessage("Cannot delete: missing session file path.");
+        return;
+      }
+      const confirm = await vscode.window.showWarningMessage(
+        "Delete this session permanently?",
+        { modal: true },
+        "Delete",
+      );
+      if (confirm !== "Delete") { return; }
+      try {
+        await PiService.deleteSessionFile(resolved);
+        await refreshPastSessionsList();
+        sessionTreeProvider?.refresh();
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Delete failed: ${e.message ?? e}`);
+      }
+    }),
+  );
+
   // Per-session model picker
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.pickSessionModel", async (sessionId?: string) => {
@@ -237,6 +324,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const level = await pickThinkingLevel(sw.piService.thinkingLevel);
       if (level) {
         await sw.piService.setThinkingLevel(level);
+        updateStatusBar();
         sessionTreeProvider?.refresh();
       }
     }),
@@ -244,9 +332,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // ── Step 2: Status bar ─────────────────────────────────
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  statusBarItem.command = "pi-code-gui.addSession";
-  statusBarItem.text = "\u03C0 Pi";
-  statusBarItem.tooltip = "Add Pi Session";
+  statusBarItem.command = "pi-code-gui.pickSessionThinking";
+  statusBarItem.text = "\u03C0 Pi: off";
+  statusBarItem.tooltip = "Click to change thinking level";
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 
@@ -264,7 +352,7 @@ function addSession(context: vscode.ExtensionContext) {
   const sw = createSessionWindow(context);
   sw.webviewPanel.show();
   sessionTreeProvider?.refresh();
-  initSessionInBackground(context, sw);
+  initSessionInBackground(context, sw, { fresh: true });
 }
 
 
@@ -272,7 +360,7 @@ function addSession(context: vscode.ExtensionContext) {
 
 function ensureTreeProvider(context: vscode.ExtensionContext) {
   if (!sessionTreeProvider) {
-    sessionTreeProvider = new MultiSessionTreeProvider(sessions);
+    sessionTreeProvider = new MultiSessionTreeProvider(sessions, context);
     sessionTreeView = vscode.window.createTreeView("pi-code-gui.sessions", {
       treeDataProvider: sessionTreeProvider,
     });
@@ -290,17 +378,32 @@ function ensureTreeProvider(context: vscode.ExtensionContext) {
       }
     });
 
-    // Handle click on session entries via selection change (more reliable than TreeItem.command)
-    sessionTreeView.onDidChangeSelection((e) => {
-      const element = e.selection?.[0];
-      if (element && element.contextValue === "sessionEntry" && element.command) {
-        vscode.commands.executeCommand(element.command.command, ...(element.command.arguments ?? []));
-      }
-    });
+    // We rely on TreeItem.command for single-click navigation (standard VS Code
+    // pattern).  Context menus also work because VS Code passes the TreeItem's
+    // command arguments to the action handler automatically.
   }
 }
 
-async function initSessionInBackground(context: vscode.ExtensionContext, sw: SessionWindow) {
+/** Update the status bar text to reflect the primary session's thinking level. */
+function updateStatusBar() {
+  if (!statusBarItem) { return; }
+  const primary = primarySession();
+  const level = primary?.piService?.thinkingLevel ?? "off";
+  statusBarItem.text = `\u03C0 Pi: ${level}`;
+  statusBarItem.tooltip = `Thinking: ${level} \u2014 Click to change`;
+}
+
+/**
+ * Refresh the past-sessions list from disk.  Called on activation and after
+ * delete / resume operations that change the pool of saved sessions.
+ */
+async function refreshPastSessionsList() {
+  const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+  await sessionTreeProvider?.refreshPastSessions(cwd);
+}
+
+async function initSessionInBackground(context: vscode.ExtensionContext, sw: SessionWindow, opts?: { fresh?: boolean }) {
+  const fresh = opts?.fresh ?? false;
   // Ensure tree provider exists ASAP so the tree view shows something
   ensureTreeProvider(context);
 
@@ -338,7 +441,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
     return;
   }
 
-  const result = await sw.piService.initialize();
+  const result = await sw.piService.initialize({ fresh });
 
   if (!result.success) {
     sw.webviewPanel.postMessage({
@@ -386,6 +489,10 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
     } else if (event.type === "status-update" && event.data) {
       sw.isStreaming = !!event.data.isStreaming;
     }
+    // Keep status bar in sync
+    if (event.type === "status-update" || event.type === "thinking-level-changed") {
+      updateStatusBar();
+    }
     sessionTreeProvider?.refresh();
   });
 
@@ -401,6 +508,11 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   });
 
   sessionTreeProvider?.refresh();
+  updateStatusBar();
+
+  // Refresh the past-sessions list once the primary session initialises,
+  // so the tree view shows saved sessions from disk.
+  if (sw === primarySession()) { refreshPastSessionsList(); }
 
   console.log(`Pi Code Gui session ${sw.id} ready`);
 }
@@ -440,77 +552,112 @@ async function installPi(): Promise<void> {
 // ── Multi-Session Tree Provider ───────────────────────────
 
 /**
- * The Sessions view in the VS Code sidebar shows sessions in a tree:
+ * The Sessions view in the VS Code sidebar:
  *
- * 1. TOP LEVEL: "Sessions (N)" header.
- * 2. Per-session: Model + Thinking sub-items and "Entries" expandable.
- * 3. Entries: recent chat messages.
- *
- * Because VS Code tree views are flat at the top, we use a virtual nesting approach:
- * - "sessions-header" children are individual session nodes.
- * - Each session node has model, thinking, and entries-header children.
- * - entries-header children are the recent chat messages.
+ *   Pi Sessions
+ *     ▼ Open Sessions (2)              ← open-sessions-header
+ *         Session 1  ●  claude-sonnet  ← session (active/live)
+ *           Model: ...
+ *           Thinking: ...
+ *           ↑ 2k / ↓5k  $0.042
+ *           Entries (12)               ← entries-header
+ *             📝 hello
+ *             🤖 Hi! I can...
+ *         Session 2  ●  gpt-4o
+ *           ...
+ *     ▼ Past Sessions (5)             ← past-sessions-header
+ *         chat about auth (3 msgs)     ← pastSessionEntry
+ *         refactor done (12 msgs)
+ *         ...
  */
 
 class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeItem | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
   /** Track which sessions have their entries header expanded so refresh doesn't collapse them. */
   private expandedEntries = new Set<string>();
+  /** Past sessions loaded from disk via SessionManager.list(). */
+  private _pastSessions: any[] = [];
+  /** True while we are refreshing past sessions. */
+  private _loadingPast = false;
 
-  constructor(private sessions: SessionWindow[]) {}
+  constructor(private sessions: SessionWindow[], private context: vscode.ExtensionContext) {}
 
   /** Called by TreeView expand/collapse events to track entries-header state. */
   setEntryHeaderExpanded(sessionId: string, expanded: boolean) {
-    if (expanded) {
-      this.expandedEntries.add(sessionId);
-    } else {
-      this.expandedEntries.delete(sessionId);
-    }
+    if (expanded) { this.expandedEntries.add(sessionId); }
+    else { this.expandedEntries.delete(sessionId); }
   }
 
-  refresh() {
-    this._onDidChangeTreeData.fire();
+  get pastSessions(): any[] { return this._pastSessions; }
+
+  /** Reload past sessions from disk asynchronously and fire refresh. */
+  async refreshPastSessions(cwd: string) {
+    this._loadingPast = true;
+    try {
+      this._pastSessions = await PiService.listSessions(cwd);
+    } catch { this._pastSessions = []; }
+    this._loadingPast = false;
+    this.refresh();
   }
 
-  getTreeItem(element: SessionTreeItem): vscode.TreeItem {
-    return element;
-  }
+  /** Lightweight refresh (does not re-fetch past sessions). */
+  refresh() { this._onDidChangeTreeData.fire(); }
+
+  getTreeItem(element: SessionTreeItem): vscode.TreeItem { return element; }
 
   async getChildren(element?: SessionTreeItem): Promise<SessionTreeItem[]> {
-    // ── Root level: Sessions list only ────────────────────────
+    // ── Root level: two headers (open sessions / past sessions) ──
     if (!element) {
-      if (this.sessions.length === 0) { return []; }
+      const children: SessionTreeItem[] = [];
 
-      return [
-        new SessionTreeItem(
-          `Sessions (${this.sessions.length})`,
-          "sessions-header",
-          undefined,
-          this.sessions.length >= 1
-            ? vscode.TreeItemCollapsibleState.Expanded
-            : vscode.TreeItemCollapsibleState.None,
-        ),
-      ];
+      // Open Sessions
+      children.push(new SessionTreeItem(
+        `Open Sessions`,
+        "open-sessions-header",
+        undefined,
+        this.sessions.length > 0
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed,
+      ));
+
+      // Past Sessions
+      const pastCount = this._pastSessions.length;
+      children.push(new SessionTreeItem(
+        pastCount > 0 ? `Past Sessions (${pastCount})` : "Past Sessions",
+        "past-sessions-header",
+        undefined,
+        pastCount > 0
+          ? vscode.TreeItemCollapsibleState.Collapsed
+          : vscode.TreeItemCollapsibleState.None,
+      ));
+
+      return children;
     }
 
-    // ── Sessions group children: individual session items ─────
-    if (element.contextValue === "sessions-header") {
+    // ── Open sessions ────────────────────────────────────
+    if (element.contextValue === "open-sessions-header") {
       return this.sessions.map((sw) => this.makeSessionItem(sw));
     }
 
-    // ── Session children: model, thinking, entries ────────────
     if (element.contextValue === "session") {
       return this.getSessionChildren(element);
     }
 
-    // ── Entries children: recent chat messages ────────────────
     if (element.contextValue === "entries-header") {
       return this.getEntryChildren(element);
     }
 
+    // ── Past sessions ────────────────────────────────────
+    if (element.contextValue === "past-sessions-header") {
+      return this._pastSessions.map((s) => this.makePastSessionItem(s));
+    }
+
     return [];
   }
+
+  // ── Open session items (unchanged logic) ──────────────
 
   private makeSessionItem(sw: SessionWindow): SessionTreeItem {
     const label = sw.initialized
@@ -531,25 +678,16 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
         : vscode.TreeItemCollapsibleState.None,
     );
     item.sessionId = sw.id;
-    item.contextValue = "session";
     item.description = sw.initialized ? (sw.piService.model?.id ?? "...") : "initializing";
     item.tooltip = new vscode.MarkdownString(
       `**${sw.id}**\n\nModel: ${sw.piService.model?.id ?? "-"}\nThinking: ${sw.piService.thinkingLevel}\nEntries: ${entryCount}\nInitialized: ${sw.initialized}\nStreaming: ${sw.isStreaming}`,
     );
 
-    // ── Status dot ────────────────────────────────────────
-    // Show a coloured dot next to the session name that mirrors the status bar dot.
-    //   - Not initialized:   grey dot
-    //   - Initialized + idle: green dot
-    //   - Streaming:          blue dot with pulsing animation (iconPath is set per-refresh,
-    //                          so we use a ThemeIcon trick via the label)
     if (!sw.initialized) {
       item.iconPath = new vscode.ThemeIcon("circle", new vscode.ThemeColor("disabledForeground"));
     } else if (sw.isStreaming) {
-      // Blue/pulsing dot via a themable colour close to focusBorder
       item.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("focusBorder"));
     } else {
-      // Green dot for idle
       item.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("testing.iconPassed"));
     }
 
@@ -560,36 +698,27 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
     const sw = this.sessions.find((s) => s.id === element.sessionId);
     if (!sw || !sw.initialized) { return []; }
     const ps = sw.piService;
-
     const children: SessionTreeItem[] = [];
 
-    // Model info (clickable per-session picker)
+    // Model
     const modelItem = new SessionTreeItem(
       `Model: ${ps.model?.id ?? "..."}`,
       "model",
-      {
-        command: "pi-code-gui.pickSessionModel",
-        title: "Change Model",
-        arguments: [sw.id],
-      },
+      { command: "pi-code-gui.pickSessionModel", title: "Change Model", arguments: [sw.id] },
     );
     modelItem.contextValue = "session-model";
     children.push(modelItem);
 
-    // Thinking level (clickable per-session picker)
+    // Thinking level
     const thinkingItem = new SessionTreeItem(
       `Thinking: ${ps.thinkingLevel}`,
       "thinking",
-      {
-        command: "pi-code-gui.pickSessionThinking",
-        title: "Change Thinking Level",
-        arguments: [sw.id],
-      },
+      { command: "pi-code-gui.pickSessionThinking", title: "Change Thinking Level", arguments: [sw.id] },
     );
     thinkingItem.contextValue = "session-thinking";
     children.push(thinkingItem);
 
-    // Usage stats (tokens + cost)
+    // Usage
     const stats = ps.getUsageStats();
     const statsParts: string[] = [];
     if (stats.input > 0) { statsParts.push(`\u2191${formatTokens(stats.input)}`); }
@@ -599,20 +728,15 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
     if (stats.cost > 0) { statsParts.push(`$${stats.cost.toFixed(3)}`); }
     if (stats.contextWindow > 0 && stats.contextPercent !== null) {
       statsParts.push(`${stats.contextPercent.toFixed(1)}%`);
-    } else if (stats.contextWindow > 0) {
-      statsParts.push("?%");
-    }
+    } else if (stats.contextWindow > 0) { statsParts.push("?%"); }
     if (statsParts.length > 0) {
-      const usageItem = new SessionTreeItem(
-        statsParts.join(" "),
-        "usage",
-      );
+      const usageItem = new SessionTreeItem(statsParts.join(" "), "usage");
       usageItem.contextValue = "session-usage";
       usageItem.description = "tokens / cost";
       children.push(usageItem);
     }
 
-    // Entries (expandable) — preserve user toggle state across refreshes
+    // Entries
     const sm = ps.sessionManagerInstance;
     const entries = sm ? sm.getEntries() : [];
     if (entries && entries.length > 0) {
@@ -653,6 +777,37 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
       return item;
     });
   }
+
+  // ── Past session items ────────────────────────────────
+
+  private makePastSessionItem(s: any): SessionTreeItem {
+    const label = s.name
+      ? s.name
+      : truncate(s.firstMessage || "(no messages)", 50);
+
+    const dateStr = s.modified
+      ? formatRelativeTime(new Date(s.modified))
+      : "";
+    const msgCount = s.messageCount ?? 0;
+    const desc = `${msgCount} msg${msgCount === 1 ? "" : "s"}${dateStr ? " · " + dateStr : ""}`;
+
+    const item = new SessionTreeItem(
+      label,
+      "pastSessionEntry",
+      {
+        command: "pi-code-gui.resumePastSession",
+        title: "Resume Session",
+        arguments: [s.path],
+      },
+    );
+    item.description = desc;
+    item.iconPath = new vscode.ThemeIcon("archive");
+    item.tooltip = new vscode.MarkdownString(
+      `**${s.name || "Session"}**\n\nPath: \`${s.path}\`\nMessages: ${msgCount}\nCreated: ${s.created ? new Date(s.created).toLocaleString() : "-"}\nModified: ${s.modified ? new Date(s.modified).toLocaleString() : "-"}`,
+    );
+    item.contextValue = "pastSessionEntry";
+    return item;
+  }
 }
 
 /**
@@ -666,7 +821,7 @@ function formatEntryLabel(entry: any): { label: string; tooltip: string; type: s
     const role = entry.message?.role;
     if (role === "user") {
       const text = truncate(extractText(entry.message?.content), maxLen);
-      return { label: `🧑 ${text || "(empty)"}`, tooltip: text, type: "user" };
+      return { label: `📝 ${text || "(empty)"}`, tooltip: text, type: "user" };
     }
     if (role === "assistant") {
       const text = truncate(extractText(entry.message?.content), maxLen);
@@ -753,17 +908,48 @@ function formatTokens(count: number): string {
   return `${Math.round(count / 1000000)}M`;
 }
 
+function formatRelativeTime(date: Date): string {
+  const now = Date.now();
+  const diff = now - date.getTime();
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (mins < 1) { return "just now"; }
+  if (mins < 60) { return `${mins}m ago`; }
+  if (hours < 24) { return `${hours}h ago`; }
+  if (days < 7) { return `${days}d ago`; }
+  return date.toLocaleDateString();
+}
+
 // ── UI pickers for per-session model / thinking level ──────
 
 async function pickModelForSession(ps: PiService): Promise<{ provider: string; modelId: string } | null> {
-  const models = [
-    { label: "Claude Sonnet 4.5", provider: "anthropic", modelId: "claude-sonnet-4-5" },
-    { label: "Claude Haiku 4.5", provider: "anthropic", modelId: "claude-haiku-4-5" },
-    { label: "Claude Opus 4.5", provider: "anthropic", modelId: "claude-opus-4-5" },
-    { label: "GPT 4o", provider: "openai", modelId: "gpt-4o" },
-    { label: "Gemini 2.5 Pro", provider: "google", modelId: "gemini-2.5-pro" },
-    { label: "DeepSeek V3", provider: "deepseek", modelId: "deepseek-chat" },
-  ];
+  // Use dynamic model discovery from the registry
+  let models: Array<{ label: string; provider: string; modelId: string }> = [];
+
+  try {
+    const available = await ps.getAvailableModels();
+    if (available.length > 0) {
+      models = available.map((m) => ({
+        label: m.name || m.id,
+        provider: m.provider,
+        modelId: m.id,
+      }));
+    }
+  } catch { /* fallback below */ }
+
+  // Fallback: static list of common models
+  if (models.length === 0) {
+    models = [
+      { label: "Claude Sonnet 4.5", provider: "anthropic", modelId: "claude-sonnet-4-5" },
+      { label: "Claude Haiku 4.5", provider: "anthropic", modelId: "claude-haiku-4-5" },
+      { label: "Claude Opus 4.5", provider: "anthropic", modelId: "claude-opus-4-5" },
+      { label: "GPT 4o", provider: "openai", modelId: "gpt-4o" },
+      { label: "Gemini 2.5 Pro", provider: "google", modelId: "gemini-2.5-pro" },
+      { label: "DeepSeek V3", provider: "deepseek", modelId: "deepseek-chat" },
+    ];
+  }
+
   const currentId = ps.model?.id;
   const items = models.map((m) => ({
     label: `${m.label}${m.modelId === currentId ? " $(check)" : ""}`,

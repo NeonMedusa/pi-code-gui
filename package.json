@@ -1,6 +1,6 @@
 {
   "name": "pi-code-gui",
-  "publisher": "NimbleTron Inc.",
+  "publisher": "NimbleTron",
   "author": "Jack Noppé",
   "displayName": "Pi Code Gui",
   "description": "Native VS Code editor experience for Pi coding agent",
@@ -135,6 +135,14 @@
       {
         "command": "pi-code-gui.forkSession",
         "title": "PiGui: Fork Session from Message"
+      },
+      {
+        "command": "pi-code-gui.resumePastSession",
+        "title": "PiGui: Resume Past Session"
+      },
+      {
+        "command": "pi-code-gui.deletePastSession",
+        "title": "PiGui: Delete Past Session"
       }
     ],
     "viewsContainers": {
@@ -194,6 +202,36 @@
           "type": "boolean",
           "default": true,
           "description": "Prompt to install Pi if not found"
+        },
+        "pi-code-gui.anthropicApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic API key for Claude models (overrides ANTHROPIC_API_KEY env var at runtime)"
+        },
+        "pi-code-gui.openaiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI API key for GPT models (overrides OPENAI_API_KEY env var at runtime)"
+        },
+        "pi-code-gui.systemPromptAppend": {
+          "type": "string",
+          "default": "",
+          "description": "Additional instructions appended to the pi system prompt"
+        },
+        "pi-code-gui.enableSkills": {
+          "type": "boolean",
+          "default": true,
+          "description": "Load project and global pi skills"
+        },
+        "pi-code-gui.enableContextFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Inject project context files (AGENTS.md, inferred project guidelines)"
+        },
+        "pi-code-gui.enablePromptTemplates": {
+          "type": "boolean",
+          "default": true,
+          "description": "Register custom slash commands (e.g. /fix-diagnostics, /explain-code)"
         }
       }
     },
@@ -219,6 +257,16 @@
         {
           "command": "pi-code-gui.forkSession",
           "when": "view == pi-code-gui.sessions && viewItem == sessionEntry",
+          "group": "2_actions"
+        },
+        {
+          "command": "pi-code-gui.resumePastSession",
+          "when": "view == pi-code-gui.sessions && viewItem == pastSessionEntry",
+          "group": "navigation"
+        },
+        {
+          "command": "pi-code-gui.deletePastSession",
+          "when": "view == pi-code-gui.sessions && viewItem == pastSessionEntry",
           "group": "2_actions"
         }
       ],
