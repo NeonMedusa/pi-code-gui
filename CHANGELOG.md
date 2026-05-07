@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.0.8] — Login & Logout
+
+### Changes
+- `/login` slash command — opens full auth flow: pick OAuth or API key, select provider, complete login
+- `/logout` slash command — removes stored credentials for a selected provider
+- OAuth providers open the browser; API key providers show a password input saved to auth.json
+- Startup install check now verifies transitive dependency files exist, not just the package directory
+- Better error message when pi-ai can't find its bundled dependencies
+
 ## [0.0.7] — Initial Release
 
 First public release of Pi Code Gui — a native VS Code editor experience for the Pi coding agent.

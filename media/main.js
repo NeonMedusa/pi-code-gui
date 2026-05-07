@@ -1736,6 +1736,20 @@
     var text = promptInput.value.trim();
     if (!text && attachments.length === 0) return;
 
+    // Intercept local slash commands before sending to LLM
+    if (text && localSlashCommands.indexOf(text) !== -1) {
+      var cmd = text.slice(1); // strip leading "/"
+      vscode.postMessage({
+        type: "slashCommand",
+        command: cmd,
+      });
+      promptInput.value = "";
+      promptInput.style.height = "auto";
+      promptInput.style.overflowY = "hidden";
+      clearAttachments();
+      return;
+    }
+
     // Build images array from image attachments with loaded data
     var images = attachments
       .filter(function (a) { return a.type === "image" && a.data; })
@@ -2204,7 +2218,12 @@
     { cmd: "/thinking", desc: "Set thinking level" },
     { cmd: "/new", desc: "Start new session" },
     { cmd: "/settings", desc: "Open settings" },
+    { cmd: "/login", desc: "Configure provider authentication" },
+    { cmd: "/logout", desc: "Remove provider authentication" },
   ];
+
+  // Slash commands that should be handled locally (not sent to LLM)
+  var localSlashCommands = ["/login", "/logout"];
 
   function updateSlashAutocomplete(filter) {
     if (!filter || filter.length === 0) {

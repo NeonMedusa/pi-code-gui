@@ -153,6 +153,11 @@ export class PiWebviewPanel {
             vscode.env.openExternal(vscode.Uri.parse(message.url));
             break;
 
+          // Slash commands intercepted locally (not sent to LLM)
+          case "slashCommand":
+            this.handleSlashCommand(message.command);
+            break;
+
           // Settings toggle messages from webview (#3)
           case "toggleAutoCompaction":
             await this.piService.toggleAutoCompaction();
@@ -324,6 +329,25 @@ export class PiWebviewPanel {
   /** Insert a command or file reference into the chat input */
   postCommand(command: string) {
     this.panel?.webview.postMessage({ type: "insertCommand", command });
+  }
+
+  /** Handle a locally-intercepted slash command (not sent to LLM) */
+  private async handleSlashCommand(command: string) {
+    switch (command) {
+      case "login":
+        await this.piService.login();
+        break;
+      case "logout":
+        await this.piService.logout();
+        break;
+      default:
+        // Unknown command — send as regular prompt so LLM can respond
+        this.postMessage({
+          type: "custom-message",
+          data: { customType: "info", content: `Unknown command: /${command}`, timestamp: Date.now() },
+        });
+        break;
+    }
   }
 
   private getNonce(): string {
