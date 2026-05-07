@@ -47,20 +47,3 @@ if command -v pi &>/dev/null; then
 else
     echo "    warn: pi not found — skipping package updates"
 fi
-
-# ── pi-code-gui VSIX ─────────────────────────────────
-# Install the bundled extension VSIX into this container's VS Code Server so
-# the extension is available alongside its own source. --force lets repeat
-# starts pick up an updated build of the same version.
-VSIX="pi-code-gui-0.0.1.vsix"
-echo "==> pi-code-gui extension"
-if [ -f "$VSIX" ] && command -v code &>/dev/null; then
-    if code --install-extension "$VSIX" --force >/dev/null 2>&1; then
-        echo "    installed $(basename "$VSIX")"
-    else
-        echo "    warn: code --install-extension failed for $VSIX"
-    fi
-else
-    [ -f "$VSIX" ] || echo "    skip: $VSIX not found"
-    command -v code &>/dev/null || echo "    skip: 'code' CLI not on PATH yet"
-fi
