@@ -1,6 +1,6 @@
 # Triggered when a GitHub Release is published.
 # The publish jobs run inside the `marketplace` environment, which gates them
-# behind required reviewers and branch policy. See PUBLISH.md for full setup.
+# behind required reviewers and branch policy.
 
 name: Publish the VS Code Extension
 
@@ -21,17 +21,19 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - run: npm ci
-      - run: npm run pretest
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run pretest
       - uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           allow-no-subscriptions: true
-      - run: npm run publish -- --azure-credential
+      - run: pnpm run publish -- --azure-credential
 
   publish-ovsx:
     name: Publish to Open VSX
@@ -41,9 +43,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - run: npm ci
-      - run: npm run pretest
-      - run: npx ovsx publish --pat ${{ secrets.OPEN_VSX_MARKETPLACE_TOKEN }}
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run package
+      - run: pnpm exec ovsx publish --pat ${{ secrets.OPEN_VSX_MARKETPLACE_TOKEN }}
