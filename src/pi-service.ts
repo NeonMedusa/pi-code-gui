@@ -23,6 +23,7 @@ interface PiSdk {
 interface PiAi {
   getModel: Function;
   getProviders: Function;
+  complete: Function;
 }
 
 export interface InstallStatus {
@@ -498,12 +499,42 @@ export class PiService {
       return { success: false, error: `Session manager failed: ${e.message ?? e}` };
     }
 
-    // ── Step 8: Create agent session ───────────────────
+    // ── Step 8: Restore model & thinking from session file (if resuming) ──
+    let resumeModel: any = model;
+    let resumeThinkingLevel = "off";
+    if (openPath && this.sessionManager) {
+      const entries = this.sessionManager.getEntries?.();
+      if (Array.isArray(entries)) {
+        // Walk entries in reverse to find the last model_change and thinking_level_change
+        for (let i = entries.length - 1; i >= 0; i--) {
+          const e = entries[i];
+          if (e.type === "model_change" && e.provider && e.modelId && !resumeModel._fromSession) {
+            // Try to resolve the model from the registry
+            const found = this.modelRegistry.find(e.provider, e.modelId);
+            if (found) {
+              resumeModel = found;
+              (resumeModel as any)._fromSession = true;
+            } else {
+              // Fallback: try getModel
+              const m = AI.getModel(e.provider, e.modelId);
+              if (m) { resumeModel = m; (resumeModel as any)._fromSession = true; }
+            }
+          }
+          if (e.type === "thinking_level_change" && e.thinkingLevel && resumeThinkingLevel === "off") {
+            resumeThinkingLevel = e.thinkingLevel;
+          }
+          // Stop early once both are resolved
+          if ((resumeModel as any)._fromSession && resumeThinkingLevel !== "off") { break; }
+        }
+      }
+    }
+
+    // ── Step 9: Create agent session ───────────────────
     let result: any;
     try {
       const opts: any = {
-        model,
-        thinkingLevel: "off",
+        model: resumeModel,
+        thinkingLevel: resumeThinkingLevel,
         authStorage: this.authStorage,
         modelRegistry: this.modelRegistry,
         settingsManager: this.settingsManager,
@@ -531,15 +562,20 @@ export class PiService {
     }
 
     this.session = result.session;
-    this._thinkingLevel = "off";
+    this._thinkingLevel = resumeThinkingLevel;
     this.sessionId = this.session.sessionId;
 
-    // ── Step 9: Subscribe to events ────────────────────
+    // Update cached model if resume overrode it
+    if (resumeModel !== model) {
+      this._model = { id: resumeModel.id, name: resumeModel.name, provider: resumeModel.provider };
+    }
+
+    // ── Step 10: Subscribe to events ───────────────────
     this.unsubscribe = this.session.subscribe((event: any) => {
       this.handleAgentEvent(event);
     });
 
-    // ── Step 10: Send initial message history (like TUI renderInitialMessages) ──
+    // ── Step 11: Send initial message history (like TUI renderInitialMessages) ──
     this.sendInitialMessages();
 
     this.reportStatus();
@@ -567,9 +603,17 @@ export class PiService {
           }
         } else if (msg.role === "assistant") {
           const text = this.extractTextFromContent(msg.content);
-          if (text) {
+          const thinking = this.extractThinkingFromContent(msg.content);
+          if (text || thinking) {
             this.emit({ type: "assistant-start", data: { messageId: msg.id, entryId: entry.id } });
-            this.emit({ type: "stream-delta", data: { delta: text } });
+            // Emit thinking content first, then text
+            if (thinking) {
+              this.emit({ type: "thinking-delta", data: { delta: thinking } });
+              this.emit({ type: "thinking-delta", data: { delta: "", done: true } });
+            }
+            if (text) {
+              this.emit({ type: "stream-delta", data: { delta: text } });
+            }
             this.emit({
               type: "assistant-end",
               data: {
@@ -629,6 +673,18 @@ export class PiService {
       return content
         .filter((c: any) => c.type === "text")
         .map((c: any) => c.text)
+        .join("\n");
+    }
+    return "";
+  }
+
+  /** Extract thinking content blocks from an assistant message content array */
+  private extractThinkingFromContent(content: any): string {
+    if (!content) { return ""; }
+    if (Array.isArray(content)) {
+      return content
+        .filter((c: any) => c.type === "thinking")
+        .map((c: any) => c.thinking)
         .join("\n");
     }
     return "";
@@ -917,9 +973,17 @@ export class PiService {
           }
         } else if (msg.role === "assistant") {
           const text = this.extractTextFromContent(msg.content);
-          if (text) {
+          const thinking = this.extractThinkingFromContent(msg.content);
+          if (text || thinking) {
             this.emit({ type: "assistant-start", data: { messageId: msg.id, entryId: entry.id } });
-            this.emit({ type: "stream-delta", data: { delta: text } });
+            // Emit thinking content first, then text
+            if (thinking) {
+              this.emit({ type: "thinking-delta", data: { delta: thinking } });
+              this.emit({ type: "thinking-delta", data: { delta: "", done: true } });
+            }
+            if (text) {
+              this.emit({ type: "stream-delta", data: { delta: text } });
+            }
             this.emit({ type: "assistant-end", data: { stopReason: msg.stopReason, errorMessage: msg.errorMessage, toolCalls: this.extractToolCallsFromContent(msg.content).map((tc: any) => tc.id) } });
 
             const toolCalls = this.extractToolCallsFromContent(msg.content);
@@ -1064,6 +1128,41 @@ export class PiService {
     this.reportStatus();
   }
 
+  /** Generate a short 3-word tab title summary for the first user input in a session. */
+  async generateTabSummary(userInput: string): Promise<string | null> {
+    if (!this.AI || !this._model) { return null; }
+
+    try {
+      const model = this.AI.getModel(this._model.provider, this._model.id);
+      if (!model) { return null; }
+
+      const apiKey = this.authStorage
+        ? await this.authStorage.getApiKey(this._model.provider!)
+        : undefined;
+
+      const context = {
+        systemPrompt: "Generate a concise 3-word summary of the following user request. Respond with ONLY the three words, lowercase, no punctuation, no quotes, no explanation.",
+        messages: [
+          { role: "user", content: userInput, timestamp: Date.now() },
+        ],
+      };
+
+      const result = await this.AI.complete(model, context, {
+        maxTokens: 20,
+        apiKey,
+      });
+
+      const text = this.extractTextFromContent(result.content);
+      if (text) {
+        // Clean up: take first line, trim, limit to ~40 chars
+        return text.split("\n")[0].trim().replace(/^["']|["']$/g, "").slice(0, 40);
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Set a runtime API key (not persisted to disk) */
   setRuntimeApiKey(provider: string, key: string) {
     if (this.authStorage && typeof this.authStorage.setRuntimeApiKey === "function") {
@@ -1131,6 +1230,11 @@ export class PiService {
   get rawSession(): any { return this.session; }
   /** Expose the model registry for dynamic model pickers in the webview */
   get modelRegistryInstance(): any { return this.modelRegistry; }
+
+  /** Get the session display name from the session manager, if set. */
+  get sessionName(): string | undefined {
+    return this.sessionManager?.getSessionName?.();
+  }
 
   // ── Cleanup ────────────────────────────────────────────
 

@@ -1,8 +1,17 @@
 # Pi Code Gui
 
+[![Version](https://img.shields.io/visual-studio-marketplace/v/NimbleTron.pi-code-gui?label=VS%20Code&color=0066b8)](https://marketplace.visualstudio.com/items?itemName=NimbleTron.pi-code-gui)
+[![Downloads](https://img.shields.io/visual-studio-marketplace/d/NimbleTron.pi-code-gui?color=0066b8)](https://marketplace.visualstudio.com/items?itemName=NimbleTron.pi-code-gui)
+[![Rating](https://img.shields.io/visual-studio-marketplace/r/NimbleTron.pi-code-gui?color=0066b8)](https://marketplace.visualstudio.com/items?itemName=NimbleTron.pi-code-gui)
+[![Open VSX](https://img.shields.io/open-vsx/v/NimbleTron/pi-code-gui?label=Open%20VSX&color=a160e4)](https://open-vsx.org/extension/NimbleTron/pi-code-gui)
+[![Publish](https://github.com/NimbleTronAI/pi-code-gui/actions/workflows/publish.yml/badge.svg)](https://github.com/NimbleTronAI/pi-code-gui/actions/workflows/publish.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 > A native VS Code editor experience for the [Pi coding agent](https://pi.dev). Runs Pi inside VS Code — not in a terminal — with full access to your editor state, diagnostics, symbols, and more.
 
-![Architecture](media/architecture.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/NimbleTronAI/pi-code-gui/main/media/pi-code-gui-readme.png" alt="Pi Code GUI">
+</p>
 
 ## Quick Start
 
@@ -26,18 +35,10 @@ The Pi coding agent is a powerful AI pair programmer, but the default terminal T
 |---------|-------------|
 | 💬 **Chat panel** | Streaming text, collapsible thinking blocks, tool call/result rendering, markdown with syntax-highlighted code blocks |
 | 🧰 **Editor bridge** | Agent reads open editors, checks diagnostics, inspects symbols/types, applies edits, formats code — all through VS Code APIs |
-| 🔄 **Session history** | Auto-saved conversations survive VS Code restarts via `SessionManager.continueRecent()` |
+| 🔄 **Session history** | Auto-saved conversations can be resumed or deleted. Find with text search |
 | 🪟 **Multi-session** | Multiple independent chat panels, each with its own model, thinking level, and conversation tree |
-| 🌲 **Session tree view** | Browse entries, fork from any message, copy entry text, right-click to reveal in chat |
 | 🔐 **Flexible auth** | Runtime API key overrides via VS Code settings, env vars, or the built-in auth config |
-| 📋 **Custom slash commands** | `/fix-diagnostics`, `/explain-code`, `/refactor` — plus all standard Pi commands |
 | 🔧 **Settings** | Toggle auto-compaction, auto-retry, skills loading, context files, and prompt templates from the UI |
-
-## VS Code Bridge Tools
-
-The agent has native access to your editor through these tools:
-
-`vscode_get_editor_state` · `vscode_get_selection` · `vscode_get_diagnostics` · `vscode_get_open_editors` · `vscode_get_workspace_folders` · `vscode_open_file` · `vscode_check_document_dirty` · `vscode_save_document` · `vscode_get_document_symbols` · `vscode_get_definitions` · `vscode_get_hover` · `vscode_get_references` · `vscode_get_workspace_symbols` · `vscode_get_code_actions` · `vscode_apply_workspace_edit` · `vscode_format_document`
 
 ## Architecture
 
@@ -46,6 +47,8 @@ Pi Code Gui loads the `@mariozechner/pi-coding-agent` SDK at runtime from your g
 - **PiService** manages the agent lifecycle: creates the SDK session, subscribes to events, translates them into chat UI messages, handles model/thinking/settings changes, and tracks usage stats.
 - **PiWebviewPanel** renders a webview chat UI. It subscribes to PiService events and re-renders streaming text, thinking blocks, tool execution, bash output, compaction summaries, and custom messages in real time.
 - **Bridge tools** are registered as SDK `customTools` constructed with `defineTool()` and Typebox schemas, the same way the SDK's own built-in tools are defined.
+
+![Architecture](https://raw.githubusercontent.com/NimbleTronAI/pi-code-gui/main/media/architecture.png)
 
 ## Extension Settings
 
@@ -62,8 +65,8 @@ Pi Code Gui loads the `@mariozechner/pi-coding-agent` SDK at runtime from your g
 ## Requirements
 
 - VS Code 1.118+
-- `@mariozechner/pi-coding-agent` installed globally: `npm install -g @mariozechner/pi-coding-agent`
-- At least one API key (Anthropic, OpenAI, DeepSeek, Gemini, etc.)
+- **No manual Pi install required** — the extension prompts you to install `@mariozechner/pi-coding-agent` automatically on first launch
+- At least one API key (Anthropic, OpenAI, DeepSeek, Gemini, etc.) — run **PiGui: Set Up API Key / Login** or see the [Pi quickstart](https://pi.dev/docs/latest/quickstart)
 
 ## Development
 

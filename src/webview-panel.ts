@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import { PiService } from "./pi-service.js";
 import type { PiServiceEvent, PromptMessage } from "./types.js";
 
+export type PanelDisposeCallback = (piService: PiService) => void;
+
 export class PiWebviewPanel {
   private panel: vscode.WebviewPanel | null = null;
   private piService: PiService;
@@ -14,6 +16,10 @@ export class PiWebviewPanel {
   private _tabStreaming = false;
   private _tabPulseOn = false;
   private _tabPulseInterval: any = null;
+  private _tabSummary: string | null = null;
+
+  /** Callback invoked when the panel is disposed (VS Code tab closed) */
+  private _onDispose: PanelDisposeCallback | null = null;
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -21,6 +27,9 @@ export class PiWebviewPanel {
   ) {
     this.piService = piService;
   }
+
+  /** Register a callback that fires when the panel/webview is closed. */
+  set onDispose(cb: PanelDisposeCallback | null) { this._onDispose = cb; }
 
   async show() {
     if (this.panel) {
@@ -52,6 +61,10 @@ export class PiWebviewPanel {
 
     this.panel.onDidDispose(() => {
       this.stopTabPulse();
+      // Notify the owner (extension.ts) so it can save and remove from open sessions
+      if (this._onDispose) {
+        this._onDispose(this.piService);
+      }
       this.panel = null;
       this.disposables.forEach((d) => d.dispose());
       this.disposables = [];
@@ -97,9 +110,13 @@ export class PiWebviewPanel {
               const msg = message as any;
               await this.piService.sendPrompt(msg.text, msg.images);
             } catch (error: any) {
+              let errMsg = error.message ?? String(error);
+              if (/api.?key|login|authenticate|provider/i.test(errMsg)) {
+                errMsg += "\n\n[Set up an API key →](https://pi.dev/docs/latest/quickstart)";
+              }
               this.postMessage({
                 type: "error",
-                data: { message: error.message ?? String(error) },
+                data: { message: errMsg },
               });
             }
             break;
@@ -182,6 +199,29 @@ export class PiWebviewPanel {
     this.piCleanup = this.piService.onEvent((event: PiServiceEvent) => {
       this.postMessage(event);
 
+      // Capture first user input for tab title summary
+      if (event.type === "chat-message" && event.data?.role === "user" && !this._tabSummary) {
+        const text: string = event.data?.content ?? "";
+        if (text.trim()) {
+          this.piService.generateTabSummary(text).then((summary) => {
+            if (summary) {
+              this._tabSummary = summary;
+              this.updateTabIndicator();
+            }
+          }).catch(() => {});
+        }
+      }
+
+      // When the SDK updates the session name/label, update the tab title
+      if (event.type === "status-update" && event.data) {
+        const sessionName = this.piService.sessionName;
+        if (sessionName && sessionName !== this._tabSummary) {
+          this._tabSummary = sessionName;
+          this._tabInitialized = true;
+          this.updateTabIndicator();
+        }
+      }
+
       // Track streaming state for the tab indicator
       if (event.type === "agent-start") {
         this._tabStreaming = true;
@@ -214,18 +254,17 @@ export class PiWebviewPanel {
         light: media("pi-dot-init-light.svg"),
         dark: media("pi-dot-init-dark.svg"),
       };
-      this.panel.title = `$(circle) Pi Code Gui`;
+      this.panel.title = "Pi Code Gui";
       this.stopTabPulse();
       return;
     }
 
-    const level = this.piService.thinkingLevel;
-    const label = level === "off" ? "Pi" : `Pi: ${level}`;
+    const label = this._tabSummary ?? "Pi";
 
     if (this._tabStreaming) {
       // Start pulsing the dot (slow flash)
       this.startTabPulse();
-      this.panel.title = `${this._tabPulseOn ? "$(circle-filled)" : "$(circle)"} ${label}`;
+      this.panel.title = label;
     } else {
       this.stopTabPulse();
       // Green dot = idle / ready
@@ -233,7 +272,7 @@ export class PiWebviewPanel {
         light: media("pi-dot-idle-light.svg"),
         dark: media("pi-dot-idle-dark.svg"),
       };
-      this.panel.title = `$(circle-filled) ${label}`;
+      this.panel.title = label;
     }
   }
 
@@ -244,9 +283,8 @@ export class PiWebviewPanel {
     this._tabPulseInterval = setInterval(() => {
       if (!this.panel) { return; }
       this._tabPulseOn = !this._tabPulseOn;
-      const level = this.piService.thinkingLevel;
-      const label = level === "off" ? "Pi" : `Pi: ${level}`;
-      this.panel.title = `${this._tabPulseOn ? "$(circle-filled)" : "$(circle)"} ${label}`;
+      const label = this._tabSummary ?? "Pi";
+      this.panel.title = label;
       // Also toggle icon to show colored active dot while streaming
       if (this._tabPulseOn) {
         this.panel.iconPath = {
@@ -276,6 +314,8 @@ export class PiWebviewPanel {
       this.piCleanup = null;
     }
   }
+
+  get summary(): string | null { return this._tabSummary; }
 
   postMessage(message: any) {
     this.panel?.webview.postMessage(message);
@@ -584,6 +624,49 @@ export class PiWebviewPanel {
       word-break: break-word;
       margin-top: 6px;
     }
+
+    /* Inline quickstart guide */
+    .quickstart-content {
+      font-size: 0.9em;
+      line-height: 1.6;
+      color: var(--fg-primary);
+      margin-top: 8px;
+    }
+    .quickstart-content h2 {
+      font-size: 1.1em;
+      margin: 16px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .quickstart-content h3 {
+      font-size: 1em;
+      margin: 12px 0 4px;
+    }
+    .quickstart-content p { margin: 6px 0; }
+    .quickstart-content ul, .quickstart-content ol { padding-left: 1.5em; margin: 4px 0; }
+    .quickstart-content li { margin-bottom: 2px; }
+    .quickstart-content a { color: var(--accent); }
+    .quickstart-content pre {
+      background: var(--tool-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 8px 12px;
+      overflow-x: auto;
+      font-size: 0.85em;
+      margin: 6px 0;
+    }
+    .quickstart-content code {
+      background: var(--tool-bg);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+    .quickstart-content pre code {
+      background: none;
+      padding: 0;
+      font-size: inherit;
+    }
+    .quickstart-content hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-color); }
 
     .tool-block {
       background: var(--tool-bg);

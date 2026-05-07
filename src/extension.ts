@@ -12,6 +12,8 @@ interface SessionWindow {
   webviewPanel: PiWebviewPanel;
   initialized: boolean;
   isStreaming: boolean;
+  /** Cached display label derived from session name or tab summary */
+  label: string;
 }
 
 const sessions: SessionWindow[] = [];
@@ -31,9 +33,42 @@ function createSessionWindow(context: vscode.ExtensionContext): SessionWindow {
   const id = `session-${++sessionCounter}`;
   const piService = new PiService();
   const webviewPanel = new PiWebviewPanel(context, piService);
-  const sw: SessionWindow = { id, piService, webviewPanel, initialized: false, isStreaming: false };
+  const sw: SessionWindow = {
+    id, piService, webviewPanel,
+    initialized: false, isStreaming: false,
+    label: getGenericSessionLabel(id),
+  };
+
+  // When the webview panel is closed (tab closed):
+  // 1. Save the session to disk
+  // 2. Remove it from open sessions
+  // If saved successfully, it will appear in Past Sessions on next refresh.
+  webviewPanel.onDispose = handlePanelDispose(sw);
+
   sessions.push(sw);
   return sw;
+}
+
+/** Generate a generic "Session N" label from the internal id. */
+function getGenericSessionLabel(id: string): string {
+  const num = id.replace("session-", "");
+  return `Session ${num}`;
+}
+
+/** Build a dispose handler that saves and removes a session when its panel closes. */
+function handlePanelDispose(sw: SessionWindow): (piService: PiService) => void {
+  return () => {
+    // The SessionManager auto-persists entries as they are written during
+    // conversation, so the session file already exists on disk.  We just
+    // need to clean up and remove it from the open-sessions list so it
+    // appears under Past Sessions.
+    sw.piService.dispose();
+    removeSession(sw);
+
+    // Refresh past sessions list from disk so the closed session appears
+    // under Past Sessions immediately.
+    refreshPastSessionsList();
+  };
 }
 
 // ── Activate ───────────────────────────────────────────
@@ -228,16 +263,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // ── Resume a past session from the tree view ─────
   context.subscriptions.push(
-    vscode.commands.registerCommand("pi-code-gui.resumePastSession", async (filePath?: string) => {
+    vscode.commands.registerCommand("pi-code-gui.resumePastSession", async (filePath?: SessionTreeItem | string) => {
       let resolved: string | undefined;
       // When triggered from a context menu, VS Code passes the tree item as the first arg.
-      // Only accept the argument if it's actually a string (file path).
-      if (typeof filePath === "string") {
+      if (filePath instanceof SessionTreeItem) {
+        resolved = (filePath as any).command?.arguments?.[0];
+      } else if (typeof filePath === "string") {
         resolved = filePath;
       }
       if (!resolved) {
         const sel = sessionTreeView?.selection?.[0];
-        if ((sel as any)?.contextValue === "pastSessionEntry" && (sel as any)?.command?.arguments) {
+        if (sel && (sel as any).contextValue === "pastSessionEntry" && (sel as any).command?.arguments) {
           const arg = (sel as any).command.arguments[0];
           if (typeof arg === "string") { resolved = arg; }
         }
@@ -246,20 +282,12 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage("Cannot resume: missing session file path.");
         return;
       }
-      const primary = primarySession();
-      if (!primary) {
-        vscode.window.showErrorMessage("No active session to resume into.");
-        return;
-      }
       try {
-        const r = await primary.piService.resumeSession(resolved);
-        if (!r.success) {
-          vscode.window.showErrorMessage(`Resume failed: ${r.error}`);
-          return;
-        }
-        primary.webviewPanel.postMessage({ type: "sessionReset" });
+        // Create a new session tab (like Add Pi Session) and resume into it
+        const sw = createSessionWindow(context);
+        sw.webviewPanel.show();
         sessionTreeProvider?.refresh();
-        await refreshPastSessionsList();
+        initSessionInBackground(context, sw, { openPath: resolved });
       } catch (e: any) {
         vscode.window.showErrorMessage(`Resume failed: ${e.message ?? e}`);
       }
@@ -268,16 +296,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // ── Delete a past session from the tree view ──────
   context.subscriptions.push(
-    vscode.commands.registerCommand("pi-code-gui.deletePastSession", async (filePath?: string) => {
+    vscode.commands.registerCommand("pi-code-gui.deletePastSession", async (filePath?: SessionTreeItem | string) => {
       let resolved: string | undefined;
       // When triggered from a context menu, VS Code passes the tree item as the first arg.
-      // Only accept the argument if it's actually a string (file path).
-      if (typeof filePath === "string") {
+      if (filePath instanceof SessionTreeItem) {
+        resolved = (filePath as any).command?.arguments?.[0];
+      } else if (typeof filePath === "string") {
         resolved = filePath;
       }
       if (!resolved) {
         const sel = sessionTreeView?.selection?.[0];
-        if ((sel as any)?.contextValue === "pastSessionEntry" && (sel as any)?.command?.arguments) {
+        if (sel && (sel as any).contextValue === "pastSessionEntry" && (sel as any).command?.arguments) {
           const arg = (sel as any).command.arguments[0];
           if (typeof arg === "string") { resolved = arg; }
         }
@@ -298,6 +327,49 @@ export async function activate(context: vscode.ExtensionContext) {
         sessionTreeProvider?.refresh();
       } catch (e: any) {
         vscode.window.showErrorMessage(`Delete failed: ${e.message ?? e}`);
+      }
+    }),
+  );
+
+  // ── Delete all past sessions ────────────────────────
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.deleteAllPastSessions", async () => {
+      const past = sessionTreeProvider?.pastSessions ?? [];
+      if (past.length === 0) {
+        vscode.window.showInformationMessage("No past sessions to delete.");
+        return;
+      }
+      const confirm = await vscode.window.showWarningMessage(
+        `Delete all ${past.length} past sessions permanently?`,
+        { modal: true },
+        "Delete All",
+      );
+      if (confirm !== "Delete All") { return; }
+      try {
+        for (const s of past) {
+          await PiService.deleteSessionFile(s.path);
+        }
+        await refreshPastSessionsList();
+        sessionTreeProvider?.refresh();
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Delete all failed: ${e.message ?? e}`);
+      }
+    }),
+  );
+
+  // ── Filter past sessions ────────────────────────────
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.filterPastSessions", async () => {
+      const currentFilter = sessionTreeProvider?.pastFilter ?? "";
+      const filter = await vscode.window.showInputBox({
+        prompt: "Filter past sessions by title or content",
+        placeHolder: "Type to filter...",
+        value: currentFilter,
+      });
+      if (filter === undefined) { return; } // cancelled
+      if (sessionTreeProvider) {
+        sessionTreeProvider.pastFilter = filter;
+        sessionTreeProvider.refresh();
       }
     }),
   );
@@ -402,8 +474,9 @@ async function refreshPastSessionsList() {
   await sessionTreeProvider?.refreshPastSessions(cwd);
 }
 
-async function initSessionInBackground(context: vscode.ExtensionContext, sw: SessionWindow, opts?: { fresh?: boolean }) {
+async function initSessionInBackground(context: vscode.ExtensionContext, sw: SessionWindow, opts?: { fresh?: boolean; openPath?: string }) {
   const fresh = opts?.fresh ?? false;
+  const openPath = opts?.openPath;
   // Ensure tree provider exists ASAP so the tree view shows something
   ensureTreeProvider(context);
 
@@ -441,7 +514,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
     return;
   }
 
-  const result = await sw.piService.initialize({ fresh });
+  const result = await sw.piService.initialize(openPath ? { openPath } : { fresh });
 
   if (!result.success) {
     sw.webviewPanel.postMessage({
@@ -522,6 +595,7 @@ function removeSession(sw: SessionWindow) {
   if (idx !== -1) {
     sessions.splice(idx, 1);
   }
+  // Refresh tree so "Open Sessions (N)" header updates count
   sessionTreeProvider?.refresh();
 }
 
@@ -581,6 +655,8 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   private _pastSessions: any[] = [];
   /** True while we are refreshing past sessions. */
   private _loadingPast = false;
+  /** Current filter string for past sessions (empty = no filter). */
+  public pastFilter = "";
 
   constructor(private sessions: SessionWindow[], private context: vscode.ExtensionContext) {}
 
@@ -624,14 +700,27 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
 
       // Past Sessions
       const pastCount = this._pastSessions.length;
-      children.push(new SessionTreeItem(
-        pastCount > 0 ? `Past Sessions (${pastCount})` : "Past Sessions",
+      const filteredCount = this.pastFilter
+        ? this._pastSessions.filter((s) => this.matchesPastFilter(s)).length
+        : pastCount;
+      let pastLabel = "Past Sessions";
+      if (pastCount > 0) {
+        pastLabel = this.pastFilter
+          ? `Past Sessions (${filteredCount} of ${pastCount})`
+          : `Past Sessions (${pastCount})`;
+      }
+      const pastItem = new SessionTreeItem(
+        pastLabel,
         "past-sessions-header",
         undefined,
         pastCount > 0
           ? vscode.TreeItemCollapsibleState.Collapsed
           : vscode.TreeItemCollapsibleState.None,
-      ));
+      );
+      if (this.pastFilter) {
+        pastItem.iconPath = new vscode.ThemeIcon("filter");
+      }
+      children.push(pastItem);
 
       return children;
     }
@@ -651,7 +740,10 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
 
     // ── Past sessions ────────────────────────────────────
     if (element.contextValue === "past-sessions-header") {
-      return this._pastSessions.map((s) => this.makePastSessionItem(s));
+      const filtered = this.pastFilter
+        ? this._pastSessions.filter((s) => this.matchesPastFilter(s))
+        : this._pastSessions;
+      return filtered.map((s) => this.makePastSessionItem(s));
     }
 
     return [];
@@ -660,9 +752,17 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   // ── Open session items (unchanged logic) ──────────────
 
   private makeSessionItem(sw: SessionWindow): SessionTreeItem {
+    // Derive label from session name (via session_info), tab summary (AI-generated), or fall back to "Session N"
+    const sessionName = sw.piService.sessionName
+      ?? sw.webviewPanel.summary
+      ?? getGenericSessionLabel(sw.id);
+
     const label = sw.initialized
-      ? `Session ${sw.id.replace("session-", "")}`
-      : `Session ${sw.id.replace("session-", "")}: initializing...`;
+      ? sessionName
+      : `${sessionName}: initializing...`;
+
+    // Cache the label for use in panel title updates
+    sw.label = sw.initialized ? sessionName : sw.label;
 
     const entryCount = getEntryCount(sw);
     const item = new SessionTreeItem(
@@ -779,6 +879,17 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   }
 
   // ── Past session items ────────────────────────────────
+
+  /** Check if a past session matches the current filter. */
+  private matchesPastFilter(s: any): boolean {
+    if (!this.pastFilter) { return true; }
+    const q = this.pastFilter.toLowerCase();
+    // Match against name / title
+    if (s.name && s.name.toLowerCase().includes(q)) { return true; }
+    // Match against first message content
+    if (s.firstMessage && s.firstMessage.toLowerCase().includes(q)) { return true; }
+    return false;
+  }
 
   private makePastSessionItem(s: any): SessionTreeItem {
     const label = s.name

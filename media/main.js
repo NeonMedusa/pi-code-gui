@@ -307,26 +307,38 @@
     }
     var contentEl = currentAssistantEl.querySelector(".message-content");
     if (contentEl) {
+      // Preserve the thinking block across innerHTML re-renders.
+      // handleThinkingDelta prepends <details class="thinking-block"> into mc,
+      // but innerHTML = renderMarkdown(raw) would destroy it.
+      // We must save it BEFORE innerHTML and restore it AFTER.
+      // currentThinkingEl is null after thinking finishes (done:true), so
+      // we need to also look for an existing DOM thinking-block.
+      var savedThinkingBlock = currentThinkingEl || contentEl.querySelector(".thinking-block");
+
       var raw = contentEl.getAttribute("data-raw") || "";
       raw += data.delta;
       contentEl.setAttribute("data-raw", raw);
       contentEl.innerHTML = renderMarkdown(raw);
-      contentEl.classList.add("streaming-cursor");
-      // Preserve the thinking block across innerHTML re-renders
-      if (currentThinkingEl) {
-        contentEl.prepend(currentThinkingEl);
+
+      // Restore the thinking block after re-render
+      if (savedThinkingBlock) {
+        contentEl.prepend(savedThinkingBlock);
+        // Keep currentThinkingEl in sync if it was the live one
+        if (!currentThinkingEl) {
+          currentThinkingEl = savedThinkingBlock;
+        }
       }
+
+      contentEl.classList.add("streaming-cursor");
     }
     scrollToBottom();
   }
 
   function handleThinkingDelta(data) {
     if (data.done) {
-      if (currentThinkingEl) {
-        var tc = currentThinkingEl.querySelector(".thinking-content");
-        // No cursor — display-only block
-        currentThinkingEl = null;
-      }
+      // Keep currentThinkingEl alive so handleStreamDelta can save and
+      // re-prepend it. If there's no more stream-delta after this,
+      // handleAssistantEnd / handleAgentEnd will clean up references.
       return;
     }
     if (!currentThinkingEl) {
@@ -508,7 +520,7 @@
   function handleStatusUpdate(data) {
     if (data.reset) return;
     if (data.model) statusModel.textContent = data.model;
-    if (data.thinkingLevel && data.thinkingLevel !== "off") {
+    if (data.thinkingLevel) {
       statusThinking.textContent = "thinking: " + data.thinkingLevel;
     } else {
       statusThinking.textContent = "";
@@ -782,16 +794,89 @@
     scrollToBottom();
   }
 
+  function showQuickstartGuide() {
+    // Remove any previous guide
+    var existing = document.getElementById("quickstart-guide");
+    if (existing) existing.remove();
+
+    var el = document.createElement("div");
+    el.id = "quickstart-guide";
+    el.className = "message assistant";
+    el.innerHTML =
+      '<details class="thinking-block" open>' +
+      '<summary>📖 Getting started with Pi</summary>' +
+      '<div class="quickstart-content">' +
+
+      '<h3>1. Get an API key</h3>' +
+      '<p>Pi works with any LLM provider. You need at least one:</p>' +
+      '<ul>' +
+      '<li><strong>Anthropic (Claude)</strong> — <a href="https://console.anthropic.com/">console.anthropic.com</a> → API Keys</li>' +
+      '<li><strong>OpenAI</strong> — <a href="https://platform.openai.com/api-keys">platform.openai.com/api-keys</a></li>' +
+      '<li><strong>Google Gemini</strong> — <a href="https://aistudio.google.com/apikey">aistudio.google.com</a> (free tier)</li>' +
+      '<li><strong>DeepSeek</strong> — <a href="https://platform.deepseek.com/api_keys">platform.deepseek.com</a> (very cheap)</li>' +
+      '</ul>' +
+
+      '<h3>🆓 Free & local options</h3>' +
+      '<ul>' +
+      '<li><strong>Ollama</strong> — run models locally or use cloud-hosted. <a href="https://ollama.com">ollama.com</a></li>' +
+      '<li><strong>OpenRouter</strong> — unified API with free models. <a href="https://openrouter.ai/models?max_price=0">openrouter.ai/models?max_price=0</a></li>' +
+      '<li><strong>GitHub Copilot</strong> — use <code>/login</code> in Pi and select Copilot (included with GitHub Copilot subscription)</li>' +
+      '</ul>' +
+
+      '<h3>2. Set the key</h3>' +
+      '<p><strong>Option A:</strong> Run <strong>PiGui: Set Up API Key / Login</strong> from the command palette (<code>Ctrl+Shift+P</code>)</p>' +
+      '<p><strong>Option B:</strong> Set an environment variable before opening VS Code:</p>' +
+      '<pre><code>export ANTHROPIC_API_KEY=sk-ant-...\n# or\nexport OPENAI_API_KEY=sk-...</code></pre>' +
+
+      '<h3>3. Start chatting</h3>' +
+      '<p>Once your key is set, type a request and press Enter:</p>' +
+      '<pre><code>Summarize this project and tell me how to run its checks.</code></pre>' +
+
+      '<p style="margin-top:12px;"><a href="https://pi.dev/docs/latest/quickstart">📚 Full quickstart guide →</a>  ·  ' +
+      '<a href="https://pi.dev/docs/latest/providers">🔑 All supported providers →</a></p>' +
+
+      '</div>' +
+      '</details>';
+    chatContainer.appendChild(el);
+  }
+
   function addErrorMessage(message) {
     var el = document.createElement("div");
     el.className = "message assistant";
+
+    // Detect error type to show appropriate heading and help
+    var heading = "";
+    var help = "";
+    var msg = message || "";
+    var isApiKeyError = false;
+
+    if (/api.?key/i.test(msg)) {
+      heading = "<strong>API key required</strong>";
+      help = '<small>Run <strong>PiGui: Set Up API Key / Login</strong> from the command palette ' +
+             '(<code>Ctrl+Shift+P</code>), or set <code>ANTHROPIC_API_KEY</code> / ' +
+             '<code>OPENAI_API_KEY</code> in your environment.</small>';
+      isApiKeyError = true;
+    } else if (/not installed|not found|not available|npm install/i.test(msg)) {
+      heading = "<strong>Pi is not available</strong>";
+      help = '<small>Run <code>npm install -g @mariozechner/pi-coding-agent</code> in a terminal, then reload VS Code.</small>';
+    } else {
+      heading = "<strong>Something went wrong</strong>";
+      help = '<small>Check the error above for details.</small>';
+    }
+
     el.innerHTML =
       '<div class="message-content" style="color: var(--vscode-errorForeground);">' +
-      '⚠ <strong>Pi is not available</strong><br><br>' +
-      escapeHtml(message) +
-      '<br><br><small>Run <code>npm install -g @mariozechner/pi-coding-agent</code> in a terminal, then reload VS Code.</small>' +
+      '⚠ ' + heading + '<br><br>' +
+      renderMarkdown(msg) +
+      '<br><br>' + help +
       '</div>';
     chatContainer.appendChild(el);
+
+    // Show inline quickstart guide for API key errors
+    if (isApiKeyError) {
+      showQuickstartGuide();
+    }
+
     scrollToBottom();
   }
 

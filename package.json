@@ -4,8 +4,11 @@
   "author": "Jack Noppé",
   "displayName": "Pi Code Gui",
   "description": "Native VS Code editor experience for Pi coding agent",
-  "version": "0.0.2",
+  "version": "0.0.7",
   "license": "MIT",
+  "sponsor": {
+    "url": "https://github.com/sponsors/NimbleTronAI"
+  },
   "icon": "pi-icon-light.png",
   "galleryBanner": {
     "color": "#1a1a2e",
@@ -143,6 +146,16 @@
       {
         "command": "pi-code-gui.deletePastSession",
         "title": "PiGui: Delete Past Session"
+      },
+      {
+        "command": "pi-code-gui.deleteAllPastSessions",
+        "title": "PiGui: Delete All Past Sessions",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "pi-code-gui.filterPastSessions",
+        "title": "PiGui: Filter Past Sessions",
+        "icon": "$(filter)"
       }
     ],
     "viewsContainers": {
@@ -273,6 +286,16 @@
       "view/title": [
         {
           "command": "pi-code-gui.addSession",
+          "when": "view == pi-code-gui.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "pi-code-gui.filterPastSessions",
+          "when": "view == pi-code-gui.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "pi-code-gui.deleteAllPastSessions",
           "when": "view == pi-code-gui.sessions",
           "group": "navigation"
         }
