@@ -547,6 +547,11 @@
       }
       if (costStr) parts.push(costStr);
 
+      // Context budget override indicator
+      if (data.contextBudget > 0) {
+        parts.push("budget:" + formatTokens(data.contextBudget));
+      }
+
       // Context %
       if (u.contextWindow > 0 && u.contextPercent !== null) {
         var ctx = u.contextPercent.toFixed(1) + "%/" + formatTokens(u.contextWindow);
@@ -1819,6 +1824,14 @@
   if (statusEffortPicker) {
     statusEffortPicker.addEventListener("click", function () {
       vscode.postMessage({ type: "pickEffort" });
+    });
+  }
+
+  // Context budget picker — click usage area to change
+  var statusUsage = document.getElementById("status-usage");
+  if (statusUsage) {
+    statusUsage.addEventListener("click", function () {
+      vscode.postMessage({ type: "pickContextBudget" });
     });
   }
 

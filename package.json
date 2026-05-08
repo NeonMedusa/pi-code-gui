@@ -4,7 +4,7 @@
   "author": "Jack Noppé",
   "displayName": "Pi Code Gui",
   "description": "Native VS Code editor experience for Pi coding agent",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "license": "MIT",
   "sponsor": {
     "url": "https://github.com/sponsors/NimbleTronAI"
@@ -252,6 +252,27 @@
           "type": "boolean",
           "default": true,
           "description": "Register custom slash commands (e.g. /fix-diagnostics, /explain-code)"
+        },
+        "pi-code-gui.defaultModelProvider": {
+          "type": "string",
+          "default": "",
+          "description": "Default model provider (e.g. 'anthropic'). Empty = auto-detect first available."
+        },
+        "pi-code-gui.defaultModelId": {
+          "type": "string",
+          "default": "",
+          "description": "Default model ID (e.g. 'claude-sonnet-4-5'). Requires defaultModelProvider to be set."
+        },
+        "pi-code-gui.defaultThinkingLevel": {
+          "type": "string",
+          "default": "off",
+          "enum": ["off", "minimal", "low", "medium", "high", "xhigh"],
+          "description": "Default thinking level for new sessions"
+        },
+        "pi-code-gui.contextBudget": {
+          "type": "number",
+          "default": 0,
+          "description": "Per-session token budget. 0 = use model default. Increase for longer conversations before auto-compaction."
         }
       }
     },
