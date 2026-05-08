@@ -559,31 +559,37 @@ export class PiService {
     }
 
     // ── Step 8: Restore model & thinking from session file (if resuming) ──
+    //        Applies to both openPath (resume from Past Sessions) and
+    //        continueRecent (restoring after VS Code restart).
     let resumeModel: any = model;
     let resumeThinkingLevel = cfg.get<string>("defaultThinkingLevel") ?? "off";
-    if (openPath && this.sessionManager) {
+    let foundSessionModel = false;
+    let foundSessionThinking = false;
+    const isResuming = !fresh && this.sessionManager;
+    if (isResuming) {
       const entries = this.sessionManager.getEntries?.();
       if (Array.isArray(entries)) {
         // Walk entries in reverse to find the last model_change and thinking_level_change
         for (let i = entries.length - 1; i >= 0; i--) {
           const e = entries[i];
-          if (e.type === "model_change" && e.provider && e.modelId && !resumeModel._fromSession) {
+          if (!foundSessionModel && e.type === "model_change" && e.provider && e.modelId) {
             // Try to resolve the model from the registry
             const found = this.modelRegistry.find(e.provider, e.modelId);
             if (found) {
               resumeModel = found;
-              (resumeModel as any)._fromSession = true;
+              foundSessionModel = true;
             } else {
               // Fallback: try getModel
               const m = AI.getModel(e.provider, e.modelId);
-              if (m) { resumeModel = m; (resumeModel as any)._fromSession = true; }
+              if (m) { resumeModel = m; foundSessionModel = true; }
             }
           }
-          if (e.type === "thinking_level_change" && e.thinkingLevel && resumeThinkingLevel === "off") {
+          if (!foundSessionThinking && e.type === "thinking_level_change" && e.thinkingLevel) {
             resumeThinkingLevel = e.thinkingLevel;
+            foundSessionThinking = true;
           }
           // Stop early once both are resolved
-          if ((resumeModel as any)._fromSession && resumeThinkingLevel !== "off") { break; }
+          if (foundSessionModel && foundSessionThinking) { break; }
         }
       }
     }

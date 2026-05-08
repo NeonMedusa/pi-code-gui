@@ -1,0 +1,352 @@
+import * as path from "node:path";
+import * as fs from "node:fs";
+import * as vscode from "vscode";
+
+/**
+ * Wraps the Pi SDK's DefaultPackageManager for use in the VS Code extension.
+ * Provides install, uninstall, list, and marketplace search capabilities.
+ */
+
+export interface InstalledPackage {
+  source: string;
+  scope: "user" | "project";
+  filtered: boolean;
+  installedPath?: string;
+}
+
+export interface MarketplacePackage {
+  name: string;
+  version: string;
+  description: string;
+  publisher: string;
+  npmPackage: string;
+  date: string;
+  keywords: string[];
+  downloads?: number;
+  homepage?: string;
+  repository?: string;
+  license?: string;
+  /** URL of the first image found in the package's README (banner / graphic). */
+  bannerUrl?: string;
+}
+
+/**
+ * Resolve the pi SDK root path, reusing the same logic as PiService.
+ */
+function resolvePiPackagePath(): string {
+  const candidates: string[] = [];
+
+  candidates.push(path.resolve(".pi/npm/node_modules/@mariozechner/pi-coding-agent"));
+
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  if (home) {
+    candidates.push(
+      path.join(home, ".npm-global/lib/node_modules/@mariozechner/pi-coding-agent"),
+      path.join(home, ".local/lib/node_modules/@mariozechner/pi-coding-agent"),
+    );
+  }
+
+  if (process.env.NVM_DIR) {
+    try {
+      const versionsDir = path.join(process.env.NVM_DIR, "versions", "node");
+      if (fs.existsSync(versionsDir)) {
+        for (const version of fs.readdirSync(versionsDir)) {
+          candidates.push(
+            path.join(versionsDir, version, "lib", "node_modules", "@mariozechner", "pi-coding-agent"),
+          );
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  const appData = process.env.APPDATA || "";
+  if (appData) {
+    candidates.push(path.join(appData, "npm", "node_modules", "@mariozechner", "pi-coding-agent"));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const pkgPath = path.join(candidate, "package.json");
+      if (fs.existsSync(pkgPath)) { return candidate; }
+    } catch { /* ignore */ }
+  }
+
+  throw new Error("Pi coding agent SDK not found. Please install: npm install -g @mariozechner/pi-coding-agent");
+}
+
+export class PiPackageService {
+  private packageManager: any | null = null;
+  private sdkRoot: string | null = null;
+  private initialized = false;
+
+  /** Initialize the package manager, loading the SDK dynamically. */
+  async initialize(): Promise<{ success: boolean; error?: string }> {
+    if (this.initialized) { return { success: true }; }
+
+    try {
+      this.sdkRoot = resolvePiPackagePath();
+    } catch (e: any) {
+      return { success: false, error: `SDK not found: ${e.message ?? e}` };
+    }
+
+    try {
+      const SDK = (await import(path.join(this.sdkRoot, "dist/index.js"))) as any;
+      const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+      const SettingsManager = SDK.SettingsManager;
+      const DefaultPackageManagerClass = SDK.DefaultPackageManager;
+      const settingsManager = SettingsManager.create(cwd);
+
+      this.packageManager = new DefaultPackageManagerClass({
+        cwd,
+        agentDir: SDK.getAgentDir?.(),
+        settingsManager,
+      });
+      this.initialized = true;
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: `Failed to initialize package manager: ${e.message ?? e}` };
+    }
+  }
+
+  /** List all configured/installed packages. */
+  listInstalled(): InstalledPackage[] {
+    if (!this.packageManager) { return []; }
+    try {
+      const packages = this.packageManager.listConfiguredPackages();
+      return packages.map((pkg: any) => ({
+        source: pkg.source,
+        scope: pkg.scope,
+        filtered: pkg.filtered ?? false,
+        installedPath: pkg.installedPath,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Install a package by source string (e.g. "npm:pi-subagents", "npm:@scope/pkg"). */
+  async install(source: string, scope: "user" | "project" = "user"): Promise<{ success: boolean; error?: string }> {
+    if (!this.packageManager) {
+      return { success: false, error: "Package manager not initialized" };
+    }
+    try {
+      await this.packageManager.installAndPersist(source, { local: scope === "project" });
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message ?? String(e) };
+    }
+  }
+
+  /** Uninstall a package by source string. */
+  async uninstall(source: string, scope: "user" | "project" = "user"): Promise<{ success: boolean; error?: string }> {
+    if (!this.packageManager) {
+      return { success: false, error: "Package manager not initialized" };
+    }
+    try {
+      await this.packageManager.removeAndPersist(source, { local: scope === "project" });
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message ?? String(e) };
+    }
+  }
+
+  /** Update all installed packages or a specific one. */
+  async update(source?: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.packageManager) {
+      return { success: false, error: "Package manager not initialized" };
+    }
+    try {
+      await this.packageManager.update(source);
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message ?? String(e) };
+    }
+  }
+
+  /** Check for available updates across all installed packages. */
+  async checkForUpdates(): Promise<Array<{ source: string; displayName: string; type: string; scope: string }>> {
+    if (!this.packageManager) { return []; }
+    try {
+      return await this.packageManager.checkForAvailableUpdates();
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Search the npm registry for pi packages.
+   * Uses npm's search API with keywords that pi packages commonly use.
+   */
+  async searchMarketplace(query: string): Promise<MarketplacePackage[]> {
+    try {
+      const q = query.trim();
+
+      // When the user typed a query, pass it directly to npm's full-text
+      // search (which covers name, description, keywords, and README).
+      // When empty, use keyword filters to surface popular pi packages.
+      const searchText = q
+        ? q
+        : "keywords:pi-coding-agent";
+
+      const url = `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(searchText)}&size=100`;
+      const response = await fetch(url, {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        throw new Error(`npm search returned ${response.status}`);
+      }
+
+      const data = (await response.json()) as any;
+      const objects = data?.objects ?? [];
+
+      const qLower = q.toLowerCase();
+
+      return objects
+        .filter((obj: any) => {
+          const pkgObj = obj.package;
+          const name = (pkgObj.name ?? "").toLowerCase();
+          const desc = (pkgObj.description ?? "").toLowerCase();
+          const keywords: string[] = pkgObj.keywords ?? [];
+          const publisher = (pkgObj.publisher?.username ?? "").toLowerCase();
+
+          // Pi-package heuristic (always applied)
+          const isPiPkg =
+            name.startsWith("pi-") ||
+            name.includes("-pi-") ||
+            keywords.some((k: string) => k.toLowerCase().includes("pi")) ||
+            desc.includes("pi coding agent") ||
+            desc.includes("pi agent") ||
+            desc.includes("pi extension");
+
+          if (!isPiPkg) { return false; }
+
+          // When the user typed a query, npm already did the heavy lifting.
+          // We still do a secondary check against the fields we care about
+          // to filter out false positives from npm's broader index.
+          if (qLower) {
+            return (
+              name.includes(qLower) ||
+              desc.includes(qLower) ||
+              publisher.includes(qLower) ||
+              keywords.some((k: string) => k.toLowerCase().includes(qLower))
+            );
+          }
+
+          return true;
+        })
+        .map((obj: any) => {
+          const p = obj.package;
+          return {
+            name: p.name,
+            version: p.version,
+            description: p.description ?? "",
+            publisher: p.publisher?.username ?? "",
+            npmPackage: p.name,
+            date: p.date ?? "",
+            keywords: p.keywords ?? [],
+            downloads: obj.downloads?.weekly ?? 0,
+            homepage: p.links?.homepage ?? p.links?.npm ?? "",
+            repository: p.links?.repository ?? "",
+            license: p.license ?? "",
+          };
+        });
+    } catch (e: any) {
+      throw new Error(`Marketplace search failed: ${e.message ?? e}`);
+    }
+  }
+
+  /** Check if the package manager is ready. */
+  get isReady(): boolean {
+    return this.initialized && this.packageManager !== null;
+  }
+
+  /**
+   * Try to find a banner image from a package's README on GitHub.
+   * Returns the full URL of the first `![...](...)` image found, or undefined.
+   */
+  async fetchBannerImage(repositoryUrl: string): Promise<string | undefined> {
+    try {
+      // Only support GitHub repos
+      const ghMatch = repositoryUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+      if (!ghMatch) { return undefined; }
+
+      const [, owner, repo] = ghMatch;
+      const readmeUrl = `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/README.md`;
+
+      const response = await fetch(readmeUrl, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) { return undefined; }
+
+      const text = await response.text();
+
+      // Find the first markdown image: ![alt](url)
+      const imgMatch = text.match(/!\[.*?\]\(([^)]+)\)/);
+      if (!imgMatch?.[1]) { return undefined; }
+
+      let imgUrl = imgMatch[1];
+
+      // Resolve relative URLs
+      if (imgUrl.startsWith("./") || imgUrl.startsWith("../") || (!imgUrl.startsWith("http") && !imgUrl.startsWith("//"))) {
+        const base = `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/`;
+        imgUrl = new URL(imgUrl, base).toString();
+      }
+
+      return imgUrl;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Look up installed npm packages in the marketplace for richer metadata.
+   */
+  async enrichInstalledPackages(packages: InstalledPackage[]): Promise<Map<string, MarketplacePackage>> {
+    const enriched = new Map<string, MarketplacePackage>();
+    const npmPackages = packages.filter((p) => p.source.startsWith("npm:"));
+    if (npmPackages.length === 0) { return enriched; }
+
+    try {
+      // Batch lookup: fetch each npm package's metadata
+      const results = await Promise.allSettled(
+        npmPackages.map(async (pkg) => {
+          const name = pkg.source.slice(4); // remove "npm:"
+          const url = `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(name)}&size=1`;
+          const response = await fetch(url, {
+            headers: { "Accept": "application/json" },
+            signal: AbortSignal.timeout(5000),
+          });
+          if (!response.ok) { return null; }
+          const data = (await response.json()) as any;
+          const obj = data?.objects?.[0];
+          if (!obj) { return null; }
+          const p = obj.package;
+          return {
+            name: p.name,
+            version: p.version,
+            description: p.description ?? "",
+            publisher: p.publisher?.username ?? "",
+            npmPackage: p.name,
+            date: p.date ?? "",
+            keywords: p.keywords ?? [],
+            downloads: obj.downloads?.weekly ?? 0,
+            homepage: p.links?.homepage ?? p.links?.npm ?? "",
+            repository: p.links?.repository ?? "",
+            license: p.license ?? "",
+          } as MarketplacePackage;
+        }),
+      );
+
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result.status === "fulfilled" && result.value) {
+          enriched.set(npmPackages[i].source, result.value);
+        }
+      }
+    } catch { /* ignore */ }
+
+    return enriched;
+  }
+}
