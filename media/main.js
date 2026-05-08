@@ -996,8 +996,21 @@
     }
   }
 
+  /** True when the user has manually scrolled up — pause auto-scroll. */
+  var hasScrolledUp = false;
+
+  // Track manual scrolls on the chat container
+  chatContainer.addEventListener("scroll", function () {
+    var threshold = 50;
+    var atBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < threshold;
+    hasScrolledUp = !atBottom;
+  });
+
+  /** Scroll to bottom unless the user has scrolled up to read history. */
   function scrollToBottom() {
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    if (!hasScrolledUp) {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
   }
 
   // ═══ Markdown Rendering ═════════════════════════════════
@@ -1735,6 +1748,9 @@
   function sendPrompt() {
     var text = promptInput.value.trim();
     if (!text && attachments.length === 0) return;
+
+    // Reset scroll tracking — user clearly wants to follow the new response
+    hasScrolledUp = false;
 
     // Intercept local slash commands before sending to LLM
     if (text && localSlashCommands.indexOf(text) !== -1) {

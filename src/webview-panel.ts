@@ -776,8 +776,10 @@ export class PiWebviewPanel {
     }
 
     .streaming-cursor::after {
-      content: "▊";
-      animation: blink 1s step-end infinite;
+      content: "|";
+      animation: blink 0.8s step-end infinite;
+      font-weight: 100;
+      opacity: 0.5;
     }
 
     @keyframes blink {

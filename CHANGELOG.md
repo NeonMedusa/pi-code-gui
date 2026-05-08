@@ -1,12 +1,18 @@
 # Change Log
 
+## [0.0.9] — UX polish
+
+### Changes
+- Auto-scroll stops when you scroll up; resumes when near bottom
+- Streaming cursor changed from white square to subtle vertical bar
+
 ## [0.0.8] — Login & Logout
 
 ### Changes
-- `/login` slash command — opens full auth flow: pick OAuth or API key, select provider, complete login
+- `/login` slash command — opens auth flow: pick OAuth or API key, choose provider
 - `/logout` slash command — removes stored credentials for a selected provider
-- OAuth providers open the browser; API key providers show a password input saved to auth.json
-- Startup install check now verifies transitive dependency files exist, not just the package directory
+- OAuth providers open browser; API key providers prompt for key, saved to auth.json
+- Startup install check verifies transitive dep files exist, not just the package dir
 - Better error message when pi-ai can't find its bundled dependencies
 
 ## [0.0.7] — Initial Release
