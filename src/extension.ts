@@ -1062,14 +1062,29 @@ async function pickModelForSession(ps: PiService): Promise<{ provider: string; m
   }
 
   const currentId = ps.model?.id;
-  const items = models.map((m) => ({
-    label: `${m.label}${m.modelId === currentId ? " $(check)" : ""}`,
-    description: m.provider,
-    provider: m.provider,
-    modelId: m.modelId,
-  }));
-  const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select model" });
+  const defModel = ps.getDefaultModel();
+  const items = models.map((m) => {
+    const isDefault = defModel && m.provider === defModel.provider && m.modelId === defModel.id;
+    return {
+      label: `${m.label}${m.modelId === currentId ? " $(check)" : ""}${isDefault ? " \u2605" : ""}`,
+      description: m.provider,
+      provider: m.provider,
+      modelId: m.modelId,
+      isDefault,
+    };
+  });
+  const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select model (\u2605 = default)" });
   if (!picked || typeof picked === "string") { return null; }
+
+  // Offer to save as default
+  if (!picked.isDefault) {
+    const save = await vscode.window.showQuickPick(
+      [{ label: "\u2605 Save as default", description: "Use this model for future sessions" }],
+      { placeHolder: `Use as default?` },
+    );
+    if (save) { ps.saveDefaultModel(); }
+  }
+
   return { provider: picked.provider, modelId: picked.modelId };
 }
 

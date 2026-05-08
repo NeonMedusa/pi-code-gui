@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.0.10] — Default model, thinking & context budget
+
+### Changes
+- Default model & thinking level: save from picker, persist across sessions
+- Context budget setting: control when auto-compaction triggers (100K–1M or model default)
+- Budget shown in status bar; click to change
+
 ## [0.0.9] — UX polish
 
 ### Changes

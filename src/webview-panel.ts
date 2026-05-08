@@ -185,6 +185,11 @@ export class PiWebviewPanel {
             this.piService.emitScopedModels();
             break;
 
+          // Context budget picker
+          case "pickContextBudget":
+            this.triggerContextBudgetPicker();
+            break;
+
           // Request settings state (#2, #8)
           case "resendUserMessage":
             if (message.text) {
@@ -1406,7 +1411,7 @@ export class PiWebviewPanel {
     <span class="status-item clickable" id="status-effort-picker" title="Click to change effort (only for certain models)">
       <span id="status-effort"></span>
     </span>
-    <span class="status-item" id="status-usage">
+    <span class="status-item clickable" id="status-usage" title="Click to set context budget">
       <span id="status-usage-text"></span>
     </span>
     <span class="status-item clickable" id="status-settings-btn" title="Settings">
@@ -1459,17 +1464,32 @@ export class PiWebviewPanel {
     }
 
     const currentId = ps.model?.id;
-    const items = modelItems.map((m) => ({
-      label: `${m.label}${m.modelId === currentId ? " $(check)" : ""}`,
-      description: m.description || m.provider,
-      provider: m.provider,
-      modelId: m.modelId,
-    }));
+    const defModel = ps.getDefaultModel();
+    const items = modelItems.map((m) => {
+      const isDefault = defModel && m.provider === defModel.provider && m.modelId === defModel.id;
+      const isCurrent = m.modelId === currentId;
+      return {
+        label: `${m.label}${isDefault ? " \u2605" : ""}${isCurrent ? " $(check)" : ""}`,
+        description: m.description || m.provider,
+        provider: m.provider,
+        modelId: m.modelId,
+        isDefault,
+      };
+    });
 
-    const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select model" });
+    const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select model (\u2605 = default)" });
     if (!picked) { return; }
 
     await ps.setModel(picked.provider, picked.modelId);
+
+    // Offer to save as default if not already
+    if (!picked.isDefault) {
+      const save = await vscode.window.showQuickPick(
+        [{ label: "\u2605 Save as default", description: "Use this model for future sessions" }],
+        { placeHolder: `Use ${picked.label.replace(/ \u2605| \$\(check\)/g, "")} as the default?` },
+      );
+      if (save) { ps.saveDefaultModel(); }
+    }
   }
 
   /** Open VS Code quick pick to pick thinking level */
@@ -1484,14 +1504,56 @@ export class PiWebviewPanel {
       { label: "xhigh", description: "Maximum thinking" },
     ];
     const current = ps.thinkingLevel;
-    const items = levels.map((l) => ({
-      label: `${l.label === current ? "$(check) " : ""}${l.label}`,
-      description: l.description,
-      level: l.label,
-    }));
-    const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select thinking level" });
+    const defLevel = ps.getDefaultThinking();
+    const items = levels.map((l) => {
+      const isDefault = l.label === defLevel;
+      return {
+        label: `${l.label === current ? "$(check) " : ""}${l.label}${isDefault ? " \u2605" : ""}`,
+        description: l.description,
+        level: l.label,
+        isDefault,
+      };
+    });
+    const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select thinking level (\u2605 = default)" });
     if (!picked) { return; }
     await ps.setThinkingLevel(picked.level);
+
+    // Offer to save as default if not already
+    if (!picked.isDefault) {
+      const save = await vscode.window.showQuickPick(
+        [{ label: "\u2605 Save as default", description: "Use this thinking level for future sessions" }],
+        { placeHolder: `Use "${picked.level}" thinking as the default?` },
+      );
+      if (save) { ps.saveDefaultThinking(); }
+    }
+  }
+
+  /** Open VS Code quick pick to pick context budget */
+  private async triggerContextBudgetPicker() {
+    const ps = this.piService;
+    const current = ps.getContextBudget();
+    const budgets = [
+      { label: "Model default", value: 0, description: "Use the model's built-in context window" },
+      { label: "100K tokens", value: 100000, description: "Compact at ~0.1M" },
+      { label: "200K tokens", value: 200000, description: "Compact at ~0.2M" },
+      { label: "500K tokens", value: 500000, description: "Compact at ~0.5M" },
+      { label: "1M tokens", value: 1000000, description: "Compact at ~1M" },
+    ];
+    const items = budgets.map((b) => ({
+      label: `${b.label}${b.value === current ? " $(check)" : ""}`,
+      description: b.description,
+      value: b.value,
+    }));
+    const picked = await vscode.window.showQuickPick(items,
+      { placeHolder: "Select per-session token budget. Takes effect on next session." },
+    );
+    if (!picked) { return; }
+    await ps.setContextBudget(picked.value);
+    vscode.window.showInformationMessage(
+      picked.value === 0
+        ? "Context budget: model default. Restart session to apply."
+        : `Context budget set to ${formatBudget(picked.value)}. Restart session to apply.`,
+    );
   }
 
   /** Open VS Code quick pick to pick effort */
@@ -1519,4 +1581,10 @@ export class PiWebviewPanel {
     this.disposables.forEach((d) => d.dispose());
     this.panel?.dispose();
   }
+}
+
+function formatBudget(tokens: number): string {
+  if (tokens < 1000) { return tokens.toString(); }
+  if (tokens < 1000000) { return (tokens / 1000).toFixed(0) + "K"; }
+  return (tokens / 1000000).toFixed(1) + "M";
 }

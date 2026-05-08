@@ -469,6 +469,21 @@ export class PiService {
       };
     }
 
+    // ── Override with user's default model from VS Code settings ──
+    const cfg = vscode.workspace.getConfiguration("pi-code-gui");
+    const defProvider = cfg.get<string>("defaultModelProvider");
+    const defModelId = cfg.get<string>("defaultModelId");
+    if (defProvider && defModelId) {
+      const defModel = this.modelRegistry.find(defProvider, defModelId) ?? AI.getModel(defProvider, defModelId);
+      if (defModel) { model = defModel; }
+    }
+
+    // ── Override context budget from VS Code settings ──
+    const contextBudget = cfg.get<number>("contextBudget") ?? 0;
+    if (contextBudget > 0) {
+      model = { ...model, contextWindow: contextBudget };
+    }
+
     this._model = { id: model.id, name: model.name, provider: model.provider };
 
     // ── Step 5: ResourceLoader ─────────────────────────
@@ -545,7 +560,7 @@ export class PiService {
 
     // ── Step 8: Restore model & thinking from session file (if resuming) ──
     let resumeModel: any = model;
-    let resumeThinkingLevel = "off";
+    let resumeThinkingLevel = cfg.get<string>("defaultThinkingLevel") ?? "off";
     if (openPath && this.sessionManager) {
       const entries = this.sessionManager.getEntries?.();
       if (Array.isArray(entries)) {
@@ -910,6 +925,8 @@ export class PiService {
 
   private reportStatus() {
     const stats = this.getUsageStats();
+    const cfg = vscode.workspace.getConfiguration("pi-code-gui");
+    const budget = cfg.get<number>("contextBudget") ?? 0;
     this.emit({
       type: "status-update",
       data: {
@@ -919,6 +936,7 @@ export class PiService {
         isStreaming: this._isStreaming,
         sessionId: this.sessionId ?? undefined,
         usage: stats,
+        contextBudget: budget,
       },
     });
   }
@@ -1099,6 +1117,47 @@ export class PiService {
     if (!this.session) { return; }
     this.session.setThinkingLevel(level);
     this._thinkingLevel = level;
+    this.reportStatus();
+  }
+
+  // ── Default model / thinking persistence ──────────────
+
+  /** Save the current model as the default for future sessions. */
+  saveDefaultModel() {
+    if (!this._model?.provider || !this._model?.id) { return; }
+    const cfg = vscode.workspace.getConfiguration("pi-code-gui");
+    cfg.update("defaultModelProvider", this._model.provider, vscode.ConfigurationTarget.Global);
+    cfg.update("defaultModelId", this._model.id, vscode.ConfigurationTarget.Global);
+  }
+
+  /** Save the current thinking level as the default for future sessions. */
+  saveDefaultThinking() {
+    const cfg = vscode.workspace.getConfiguration("pi-code-gui");
+    cfg.update("defaultThinkingLevel", this._thinkingLevel, vscode.ConfigurationTarget.Global);
+  }
+
+  /** Get the configured default model (if any). */
+  getDefaultModel(): { provider: string; id: string } | null {
+    const cfg = vscode.workspace.getConfiguration("pi-code-gui");
+    const provider = cfg.get<string>("defaultModelProvider");
+    const id = cfg.get<string>("defaultModelId");
+    return (provider && id) ? { provider, id } : null;
+  }
+
+  /** Get the configured default thinking level. */
+  getDefaultThinking(): string {
+    return vscode.workspace.getConfiguration("pi-code-gui").get<string>("defaultThinkingLevel") ?? "off";
+  }
+
+  /** Get the current context budget (0 = model default). */
+  getContextBudget(): number {
+    return vscode.workspace.getConfiguration("pi-code-gui").get<number>("contextBudget") ?? 0;
+  }
+
+  /** Save context budget setting (requires restart to take effect). */
+  async setContextBudget(budget: number) {
+    const cfg = vscode.workspace.getConfiguration("pi-code-gui");
+    await cfg.update("contextBudget", budget, vscode.ConfigurationTarget.Global);
     this.reportStatus();
   }
 
