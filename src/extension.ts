@@ -1,8 +1,10 @@
 import * as vscode from "vscode";
+import * as fs from "node:fs";
 import { PiService } from "./pi-service.js";
 import { PiWebviewPanel } from "./webview-panel.js";
 import { PiPackageService } from "./pi-package-service.js";
 import { PiPackagesTreeProvider } from "./pi-packages-tree-provider.js";
+import { initLogger, piLog, piWarn } from "./logger.js";
 import { registerPhase3Commands } from "./phase3-commands.js";
 import { registerPhase4Commands } from "./phase4-commands.js";
 
@@ -98,6 +100,12 @@ function handlePanelDispose(sw: SessionWindow): (piService: PiService) => void {
 export async function activate(context: vscode.ExtensionContext) {
   extContext = context;
   console.log("Pi Code Gui extension activating...");
+
+  // Create output channel for diagnostics (View → Output → Pi Code Gui)
+  const outputChannel = vscode.window.createOutputChannel("Pi Code Gui", { log: true });
+  context.subscriptions.push(outputChannel);
+  initLogger(outputChannel);
+  piLog("Pi Code Gui starting...");
 
   // ── Step 1: Register ALL commands immediately ──────────
 
@@ -921,12 +929,7 @@ async function restoreAdditionalSessions(context: vscode.ExtensionContext) {
     if (p === primaryPath) { continue; }
 
     // Verify the session file still exists on disk
-    try {
-      const fs = await import("node:fs");
-      await fs.promises.access(p);
-    } catch {
-      continue; // File deleted since last session
-    }
+    if (!fs.existsSync(p)) { continue; }
 
     const sw = createSessionWindow(context);
     sw.webviewPanel.show();

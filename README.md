@@ -40,6 +40,10 @@ The Pi coding agent is a powerful AI pair programmer, but the default terminal T
 | 🔐 **Flexible auth** | Runtime API key overrides via VS Code settings, env vars, or the built-in auth config |
 | 🔧 **Settings** | Toggle auto-compaction, auto-retry, skills loading, context files, and prompt templates from the UI |
 
+## Gotchas
+
+- Not all TUI behaviours map well into VSCode's UX. For instance, having new UI widgets spawned by extension packages. I did a best effort implementation, but there is definitely room for improvement.
+
 ## Architecture
 
 Pi Code Gui loads the `@mariozechner/pi-coding-agent` SDK at runtime from your global npm install. This means `pi update --self` picks up new SDK versions without an extension update.

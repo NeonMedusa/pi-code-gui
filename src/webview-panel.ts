@@ -870,10 +870,29 @@ export class PiWebviewPanel {
       border-bottom: 1px solid var(--border-color);
       font-size: 0.85em;
       animation: fadeIn 0.15s ease-in;
+      position: relative;
     }
 
     .live-card:last-child {
       border-bottom: none;
+    }
+
+    .live-card .live-card-close {
+      position: absolute;
+      top: 4px;
+      right: 8px;
+      background: none;
+      border: none;
+      color: var(--fg-secondary);
+      font-size: 1.1em;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+      opacity: 0.5;
+    }
+    .live-card .live-card-close:hover {
+      opacity: 1;
+      color: var(--fg-primary);
     }
 
     .live-card .live-card-label {
@@ -882,7 +901,24 @@ export class PiWebviewPanel {
       text-transform: uppercase;
       font-size: 0.75em;
       letter-spacing: 0.5px;
-      margin-bottom: 4px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .live-card .live-card-label .live-card-expando {
+      display: inline-block;
+      width: 12px;
+      font-size: 0.9em;
+    }
+
+    .live-card.live-card-collapsed {
+      padding: 4px 14px;
+    }
+    .live-card.live-card-collapsed .live-card-label {
+      margin-bottom: 0;
+    }
+    .live-card.live-card-collapsed .live-card-close {
+      top: 2px;
     }
 
     .live-card .live-card-content {

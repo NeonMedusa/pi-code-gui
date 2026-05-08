@@ -3,7 +3,7 @@
 ## [0.0.12] — Widget bridge & live panel
 
 ### Changes
-- Live panel: extension widgets (e.g. pi-tldr) render as updating cards in chat
+- Live panel: extension widgets (e.g. pi-tldr, pi-subagents) render as updating cards in chat
 - Unknown slash commands forwarded to pi session so extensions can respond
 - Open sessions persist across VS Code reloads
 - Package marketplace: one-click install, banner images, rate-limited search

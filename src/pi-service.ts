@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as vscode from "vscode";
 import { createBridgeTools } from "./bridge-tools.js";
 import type { PiServiceEvent } from "./types.js";
+import { piLog, piWarn } from "./logger.js";
 
 // ── Types for the dynamically loaded SDK ──────────────────
 
@@ -518,11 +519,9 @@ export class PiService {
       const { skills: discoveredSkills } = this.resourceLoader.getSkills();
       const { prompts: discoveredPrompts } = this.resourceLoader.getPrompts();
       const { agentsFiles } = this.resourceLoader.getAgentsFiles();
-      console.log(`[pi-gui] Skills: ${discoveredSkills.map((s: any) => s.name).join(", ") || "none"}`);
-      console.log(`[pi-gui] Prompt templates: ${discoveredPrompts.map((p: any) => `/${p.name}`).join(", ") || "none"}`);
-      console.log(`[pi-gui] Context files: ${agentsFiles.length}`);
+      piLog(`Extensions: ${discoveredSkills.map((s: any) => s.name).join(", ") || "none"}`);
     } catch (e: any) {
-      console.warn(`[pi-gui] ResourceLoader setup warning: ${e.message}`);
+      piWarn(`ResourceLoader setup warning: ${e.message}`);
       // Non-fatal: ResourceLoader is optional, session can work without it
     }
 
@@ -672,9 +671,33 @@ export class PiService {
 
     // Active widgets keyed by widget key (rendered text per widget)
     const widgetTexts = new Map<string, string>();
+    const widgetLastUpdate = new Map<string, number>();
+    let widgetActivityTimer: ReturnType<typeof setInterval> | null = null;
 
-    const uiContext = {
+    // Periodically check for stale widgets (not updated in 30s) and clear them.
+    // This prevents orphaned animations from running forever when extensions
+    // forget to call stopWidgetAnimation (e.g. pi-subagents async jobs).
+    const MAX_WIDGET_IDLE_MS = 30_000;
+    widgetActivityTimer = setInterval(() => {
+      const now = Date.now();
+      for (const [key, lastUpdate] of widgetLastUpdate) {
+        if (now - lastUpdate > MAX_WIDGET_IDLE_MS) {
+          widgetTexts.delete(key);
+          widgetLastUpdate.delete(key);
+          emit({ type: "widget-update", data: { key, content: null } });
+        }
+      }
+    }, 10_000);
+    if (widgetActivityTimer.unref) { widgetActivityTimer.unref(); }
+
+    // Base uiContext with the methods we explicitly support.
+    // Wrapped in a Proxy so any unknown method calls (e.g. from TUI-only
+    // extensions) silently no-op instead of throwing "is not a function".
+    const baseUIContext = {
       notify: (message: string, level: "info" | "error") => {
+        if (level === "error") {
+          piWarn(`ui.notify(error): ${message.substring(0, 120)}`);
+        }
         emit({
           type: "custom-message",
           data: {
@@ -688,6 +711,7 @@ export class PiService {
         if (factory === undefined || factory === null) {
           // Clear widget
           widgetTexts.delete(key);
+          widgetLastUpdate.delete(key);
           emit({
             type: "widget-update",
             data: { key, content: null },
@@ -695,7 +719,10 @@ export class PiService {
           return;
         }
 
-        if (typeof factory !== "function") { return; }
+        if (typeof factory !== "function") {
+          piWarn(`setWidget("${key}"): factory is not a function (got ${typeof factory})`);
+          return;
+        }
 
         try {
           // Minimal Theme stub: fg returns text without ANSI codes.
@@ -710,10 +737,16 @@ export class PiService {
           const component = (factory as Function)(tui, theme) as {
             render?: (width: number) => string[];
           };
-          if (!component || typeof component.render !== "function") { return; }
+          if (!component || typeof component.render !== "function") {
+            piWarn(`setWidget("${key}"): component.render is not a function`);
+            return;
+          }
 
           const lines = component.render(80);
-          if (!Array.isArray(lines)) { return; }
+          if (!Array.isArray(lines)) {
+            piWarn(`setWidget("${key}"): render() did not return an array`);
+            return;
+          }
 
           // Strip any remaining ANSI escape codes (just in case)
           const ansiRegex = /\x1b\[[0-9;]*m|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[_][^\x07\x1b]*(?:\x07|\x1b\\)/g;
@@ -723,27 +756,71 @@ export class PiService {
           // Skip if unchanged
           if (widgetTexts.get(key) === content) { return; }
           widgetTexts.set(key, content);
+          widgetLastUpdate.set(key, Date.now());
 
           emit({
             type: "widget-update",
             data: { key, content },
           });
-        } catch {
+        } catch (e: any) {
           // Widget rendering is best-effort; don't crash the session.
+          piWarn(`setWidget("${key}"): render error: ${e?.message ?? e}`);
         }
       },
-      // Interactive methods — return null/undefined so extensions fall back gracefully
+      // Interactive methods — must return undefined to signal "not supported"
+      // so the SDK falls back to text-based prompts.
       select: () => undefined,
       confirm: () => undefined,
       input: () => undefined,
       custom: () => undefined,
+
+      // TUI compatibility stubs discovered via the Proxy at runtime
+      setToolsExpanded: (_expanded: boolean) => { /* stub — TUI widget expand/collapse */ },
+      getToolsExpanded: () => false,
+      requestRender: () => { /* stub — TUI repaint, not needed in webview */ },
+      onTerminalInput: (_handler: unknown) => { /* stub */ },
+      setStatus: (key: string, status: string | null) => {
+        // Show as a widget card so status is visible in VS Code
+        if (status === null || status === undefined) {
+          widgetTexts.delete(`status-${key}`);
+          emit({ type: "widget-update", data: { key: `status-${key}`, content: null } });
+        } else {
+          const content = `**${key}** ${status}`;
+          widgetTexts.set(`status-${key}`, content);
+          emit({ type: "widget-update", data: { key: `status-${key}`, content } });
+        }
+      },
     };
 
+    // Proxy: log unknown method calls so we can see what TUI methods
+    // extensions expect, then no-op gracefully instead of crashing.
+    const uiContext = new Proxy(baseUIContext, {
+      get(target, prop) {
+        if (prop in target) { return (target as any)[prop]; }
+        if (typeof prop === "string" && !prop.startsWith("_")) {
+          return (...args: unknown[]) => {
+            piWarn(`ui.${prop}() called by extension but not implemented — args: ${JSON.stringify(args).substring(0, 200)}`);
+          };
+        }
+        return undefined;
+      },
+    });
+
     try {
-      await this.session.bindExtensions({ uiContext });
-      console.log("[pi-gui] Extension UI context bound");
+      await this.session.bindExtensions({
+        uiContext,
+        onError: (error: Error, extensionPath: string) => {
+          piWarn(`Extension error [${extensionPath}]: ${error?.message ?? error}`);
+        },
+      });
+      piLog("Extension UI context bound");
+      // Log which extensions have handlers registered
+      if (this.session?._extensionRunner) {
+        const paths = this.session._extensionRunner.getExtensionPaths?.() ?? [];
+        piLog(`Loaded extensions: ${paths.length > 0 ? paths.join(", ") : "none"}`);
+      }
     } catch (e: any) {
-      console.warn(`[pi-gui] bindExtensions failed: ${e.message ?? e}`);
+      piWarn(`bindExtensions failed: ${e.message ?? e}`);
     }
   }
 
@@ -1468,7 +1545,7 @@ export class PiService {
   get sessionManagerInstance(): any { return this.sessionManager; }
   /** The file path of the session file on disk (for persistence across reloads). */
   get sessionFilePath(): string | null {
-    return this.sessionManager?.filePath ?? this.sessionManager?.path ?? null;
+    return this.sessionManager?.getSessionFile?.() ?? null;
   }
   get sessionIdValue(): string | null { return this.sessionId; }
   get rawSession(): any { return this.session; }

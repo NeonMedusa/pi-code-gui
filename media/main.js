@@ -143,7 +143,9 @@
   function handleAgentStart() {
     isStreaming = true;
     assistantToolCallIds = {};
-    clearLivePanel();  // clear transient TLDR-style cards, preserve widget cards
+    // Do NOT clear the live panel here — extension cards (like tldr summaries)
+    // should persist across prompts and be replaced only when new output of
+    // the same type arrives, or when the extension explicitly removes them.
     removeWorkingIndicator();
     addWorkingIndicator();
     updateStreamingState();
@@ -2253,23 +2255,72 @@
     }
 
     // Live-updating card: if we already have a slot for this customType,
-    // replace the content in-place so the UI behaves like the TUI overlay.
+    // replace the content in-place. Collapse the card since content changed.
     if (liveCards[customType]) {
       liveCards[customType].querySelector(".live-card-content").innerHTML = renderMarkdown(content);
+      // Re-collapse when content changes
+      liveCards[customType].classList.add("live-card-collapsed");
+      liveCards[customType].querySelector(".live-card-content").style.display = "none";
+      var exp = liveCards[customType].querySelector(".live-card-expando");
+      if (exp) { exp.textContent = "▸"; }
       return;
     }
 
-    // New live card (transient — cleared on next turn)
+    // Build a friendly label: for internal notification types, use the
+    // first line of content (which usually starts with the package name).
+    var label = customType;
+    if (customType === "extension-notify") {
+      label = content.split("\n")[0].split("  ")[0].substring(0, 60);
+    }
+    if (customType === "error") { label = "Error"; }
+
+    // New live card — collapsed to a single line by default
     var card = document.createElement("div");
-    card.className = "live-card";
+    card.className = "live-card live-card-collapsed";
     card.setAttribute("data-type", customType);
-    card.setAttribute("data-transient", "true");
     card.innerHTML =
-      '<div class="live-card-label">' + escapeHtml(customType) + '</div>' +
-      '<div class="live-card-content">' + renderMarkdown(content) + '</div>';
+      '<div class="live-card-label"><span class="live-card-expando">▸</span> ' + escapeHtml(label) + '</div>' +
+      '<button class="live-card-close" title="Dismiss">&times;</button>' +
+      '<div class="live-card-content" style="display:none">' + renderMarkdown(content) + '</div>';
+    // Toggle expand/collapse on label click
+    card.querySelector(".live-card-label").addEventListener("click", function () {
+      var wasCollapsed = card.classList.contains("live-card-collapsed");
+      if (wasCollapsed) {
+        card.classList.remove("live-card-collapsed");
+        card.querySelector(".live-card-expando").textContent = "▾";
+        card.querySelector(".live-card-content").style.display = "";
+      } else {
+        card.classList.add("live-card-collapsed");
+        card.querySelector(".live-card-expando").textContent = "▸";
+        card.querySelector(".live-card-content").style.display = "none";
+      }
+    });
+    // Dismiss button
+    card.querySelector(".live-card-close").addEventListener("click", function (e) {
+      e.stopPropagation();
+      dismissLiveCard(customType);
+    });
     livePanel.appendChild(card);
     liveCards[customType] = card;
     livePanel.classList.add("visible");
+  }
+
+  function dismissLiveCard(key) {
+    var card = liveCards[key];
+    if (card) {
+      card.remove();
+      delete liveCards[key];
+    }
+    var widgetCard = widgetCards[key];
+    if (widgetCard) {
+      widgetCard.remove();
+      delete widgetCards[key];
+    }
+    // Hide panel if empty
+    var remaining = livePanel.querySelectorAll(".live-card");
+    if (remaining.length === 0) {
+      livePanel.classList.remove("visible");
+    }
   }
 
   function clearLivePanel() {
@@ -2333,7 +2384,12 @@
       card.setAttribute("data-widget", "true");
       card.setAttribute("data-type", key);
       card.innerHTML =
+        '<div class="live-card-label">' + escapeHtml(key) + '</div>' +
+        '<button class="live-card-close" title="Dismiss">&times;</button>' +
         '<div class="live-card-content">' + renderMarkdown(content) + '</div>';
+      card.querySelector(".live-card-close").addEventListener("click", function () {
+        dismissLiveCard(key);
+      });
       livePanel.appendChild(card);
       widgetCards[key] = card;
       liveCards[key] = card;
