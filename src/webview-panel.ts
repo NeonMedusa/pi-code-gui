@@ -346,11 +346,15 @@ export class PiWebviewPanel {
         await this.piService.logout();
         break;
       default:
-        // Unknown command — send as regular prompt so LLM can respond
-        this.postMessage({
-          type: "custom-message",
-          data: { customType: "info", content: `Unknown command: /${command}`, timestamp: Date.now() },
-        });
+        // Forward to pi session so extension command handlers (e.g. /tldr) can respond
+        try {
+          await this.piService.sendPrompt(`/${command}`);
+        } catch (e: any) {
+          this.postMessage({
+            type: "error",
+            data: { message: e.message ?? String(e) },
+          });
+        }
         break;
     }
   }
@@ -843,6 +847,59 @@ export class PiWebviewPanel {
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.4; }
+    }
+
+    /* ── Live panel (extension TUI components, e.g. tldr) ── */
+
+    #live-panel {
+      display: none;
+      flex-shrink: 0;
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      padding: 0;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+
+    #live-panel.visible {
+      display: block;
+    }
+
+    .live-card {
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.85em;
+      animation: fadeIn 0.15s ease-in;
+    }
+
+    .live-card:last-child {
+      border-bottom: none;
+    }
+
+    .live-card .live-card-label {
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      font-size: 0.75em;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .live-card .live-card-content {
+      color: var(--fg-primary);
+      line-height: 1.4;
+    }
+
+    .live-card .live-card-content p {
+      margin: 2px 0;
+    }
+
+    .live-card .live-card-content code {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.9em;
+      background: var(--vscode-textCodeBlock-background);
+      padding: 1px 4px;
+      border-radius: 3px;
     }
 
     /* ── Attachment bar ──────────────────────────── */
@@ -1389,6 +1446,8 @@ export class PiWebviewPanel {
       <h2>Pi coding agent</h2>
     </div>
   </div>
+
+  <div id="live-panel"></div>
 
   <div id="attachment-bar"></div>
 

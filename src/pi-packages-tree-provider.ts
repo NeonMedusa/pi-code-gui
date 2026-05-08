@@ -70,11 +70,14 @@ export class PiPackagesTreeProvider implements vscode.TreeDataProvider<PkgTreeIt
   // ── Refresh ──────────────────────────────────────────
 
   async refreshAll(searchQuery?: string) {
-    if (searchQuery !== undefined) { this.searchQuery = searchQuery; }
+    const explicitSearch = searchQuery !== undefined;
+    if (explicitSearch) { this.searchQuery = searchQuery; }
     this.loadInstalled();
     await this.loadUpdates();
     await this.loadInstalledEnrichment();
-    if (this.searchQuery || this.market.length === 0) {
+    // Re-search when an explicit query was given (including clearing to ""),
+    // or when we have no results yet.
+    if (explicitSearch || this.market.length === 0) {
       await this.searchMarketplace();
     }
     this._onDidChangeTreeData.fire();
@@ -435,5 +438,20 @@ export class PiPackagesTreeProvider implements vscode.TreeDataProvider<PkgTreeIt
     }
 
     return new vscode.MarkdownString(lines.join("\n"));
+  }
+
+  /** Show a persistent error banner at the root of the tree. */
+  showError(message: string) {
+    this.marketError = message;
+    this._onDidChangeTreeData.fire();
+  }
+
+  private fmtSrc(source: string): string {
+    if (source.startsWith("npm:")) { return source.slice(4); }
+    if (source.startsWith("git:")) {
+      const parts = source.slice(4).split("@")[0];
+      return parts.split("/").pop() ?? source;
+    }
+    return source;
   }
 }

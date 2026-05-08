@@ -640,13 +640,144 @@ export class PiService {
       this.handleAgentEvent(event);
     });
 
-    // ── Step 11: Send initial message history (like TUI renderInitialMessages) ──
+    // ── Step 11: Bind extensions with webview-bridged UIContext ─
+    await this.bindExtensionUI();
+
+    // ── Step 12: Send initial message history (like TUI renderInitialMessages) ──
     this.sendInitialMessages();
 
     this.reportStatus();
     this.emitScopedModels();
     this.emitSettings();
+
+    // Emit available slash commands for webview autocomplete
+    this.emitSlashCommands();
+
     return { success: true };
+  }
+
+  // ── Extension UI Bridge ────────────────────────────
+
+  /**
+   * Bind extensions with a UIContext that bridges to the VS Code webview.
+   * Without this, extensions like pi-tldr have hasUI=false and their
+   * notify/setWidget calls silently do nothing.
+   */
+  private async bindExtensionUI(): Promise<void> {
+    if (!this.session || typeof this.session.bindExtensions !== "function") {
+      return;
+    }
+
+    const emit = (event: PiServiceEvent) => this.emit(event);
+
+    // Active widgets keyed by widget key (rendered text per widget)
+    const widgetTexts = new Map<string, string>();
+
+    const uiContext = {
+      notify: (message: string, level: "info" | "error") => {
+        emit({
+          type: "custom-message",
+          data: {
+            customType: level === "error" ? "error" : "extension-notify",
+            content: message,
+            timestamp: Date.now(),
+          },
+        });
+      },
+      setWidget: (key: string, factory: unknown) => {
+        if (factory === undefined || factory === null) {
+          // Clear widget
+          widgetTexts.delete(key);
+          emit({
+            type: "widget-update",
+            data: { key, content: null },
+          });
+          return;
+        }
+
+        if (typeof factory !== "function") { return; }
+
+        try {
+          // Minimal Theme stub: fg returns text without ANSI codes.
+          // Widgets render in an HTML webview so ANSI colors are unnecessary.
+          const theme = {
+            fg: (_role: string, text: string) => text,
+          };
+          // Minimal TUI stub — extensions that need tui methods won't work,
+          // but pi-tldr and similar widgets only use theme.
+          const tui = {};
+
+          const component = (factory as Function)(tui, theme) as {
+            render?: (width: number) => string[];
+          };
+          if (!component || typeof component.render !== "function") { return; }
+
+          const lines = component.render(80);
+          if (!Array.isArray(lines)) { return; }
+
+          // Strip any remaining ANSI escape codes (just in case)
+          const ansiRegex = /\x1b\[[0-9;]*m|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[_][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+          const cleanLines = lines.map((l: string) => l.replace(ansiRegex, ""));
+          const content = cleanLines.join("\n");
+
+          // Skip if unchanged
+          if (widgetTexts.get(key) === content) { return; }
+          widgetTexts.set(key, content);
+
+          emit({
+            type: "widget-update",
+            data: { key, content },
+          });
+        } catch {
+          // Widget rendering is best-effort; don't crash the session.
+        }
+      },
+      // Interactive methods — return null/undefined so extensions fall back gracefully
+      select: () => undefined,
+      confirm: () => undefined,
+      input: () => undefined,
+      custom: () => undefined,
+    };
+
+    try {
+      await this.session.bindExtensions({ uiContext });
+      console.log("[pi-gui] Extension UI context bound");
+    } catch (e: any) {
+      console.warn(`[pi-gui] bindExtensions failed: ${e.message ?? e}`);
+    }
+  }
+
+  /** Emit all registered slash commands to the webview for autocomplete. */
+  private emitSlashCommands(): void {
+    if (!this.session || typeof this.session.bindExtensions !== "function") {
+      return;
+    }
+
+    try {
+      // Get the extension runner (private but accessible on rawSession)
+      const rawSession = (this.session as any);
+      const runner = rawSession?._extensionRunner;
+      if (!runner || typeof runner.getRegisteredCommands !== "function") {
+        return;
+      }
+
+      const commands = runner.getRegisteredCommands();
+      if (!commands || commands.length === 0) {
+        return;
+      }
+
+      const slashCommands = commands.map((c: any) => ({
+        cmd: `/${c.invocationName}`,
+        desc: c.description ?? "",
+      }));
+
+      this.emit({
+        type: "slash-commands-update",
+        data: { commands: slashCommands },
+      });
+    } catch {
+      // Non-critical: slash commands autocomplete is a convenience.
+    }
   }
 
   /** Send existing session messages to the webview on initial load */
@@ -1335,6 +1466,10 @@ export class PiService {
   get effort() { return this._effort; }
   get sdkRoot(): string | null { return this._piRoot; }
   get sessionManagerInstance(): any { return this.sessionManager; }
+  /** The file path of the session file on disk (for persistence across reloads). */
+  get sessionFilePath(): string | null {
+    return this.sessionManager?.filePath ?? this.sessionManager?.path ?? null;
+  }
   get sessionIdValue(): string | null { return this.sessionId; }
   get rawSession(): any { return this.session; }
   /** Expose the model registry for dynamic model pickers in the webview */

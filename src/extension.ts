@@ -20,6 +20,20 @@ interface SessionWindow {
 
 const sessions: SessionWindow[] = [];
 let sessionCounter = 0;
+/** Cached extension context — set once in activate(), used throughout. */
+let extContext: vscode.ExtensionContext | null = null;
+
+/** Persist the set of open session file paths so they can be restored on reload. */
+async function saveOpenSessionPaths() {
+  if (!extContext) { return; }
+  const paths: string[] = [];
+  for (const sw of sessions) {
+    const fp = sw.piService.sessionFilePath;
+    if (fp) { paths.push(fp); }
+  }
+  await extContext.workspaceState.update("pi-code-gui.openSessionPaths", paths);
+  await extContext.workspaceState.update("pi-code-gui.sessionCounter", sessionCounter);
+}
 
 let statusBarItem: vscode.StatusBarItem | null = null;
 let sessionTreeProvider: MultiSessionTreeProvider | null = null;
@@ -74,12 +88,15 @@ function handlePanelDispose(sw: SessionWindow): (piService: PiService) => void {
     // Refresh past sessions list from disk so the closed session appears
     // under Past Sessions immediately.
     refreshPastSessionsList();
+    // Persist remaining open sessions for next reload
+    saveOpenSessionPaths();
   };
 }
 
 // ── Activate ───────────────────────────────────────────
 
 export async function activate(context: vscode.ExtensionContext) {
+  extContext = context;
   console.log("Pi Code Gui extension activating...");
 
   // ── Step 1: Register ALL commands immediately ──────────
@@ -421,7 +438,11 @@ export async function activate(context: vscode.ExtensionContext) {
   primary.webviewPanel.show();
 
   // ── Step 4: Initialize pi SDK asynchronously ───────────
-  initSessionInBackground(context, primary);
+  initSessionInBackground(context, primary).then(() => {
+    if (primary.initialized) {
+      restoreAdditionalSessions(context);
+    }
+  });
 
   // ── Step 5: Initialize packages view ────────────────
   initPackagesViewDelayed(context);
@@ -457,16 +478,20 @@ async function initPackagesView(context: vscode.ExtensionContext) {
   packageService = new PiPackageService();
   const result = await packageService.initialize();
 
-  if (!result.success) {
-    console.log(`[pi-gui] Packages view: package service init failed: ${result.error}`);
-    return;
-  }
-
+  // Create the tree view even if init failed — it will show a helpful
+  // placeholder so the user knows the view exists.
   packagesTreeProvider = new PiPackagesTreeProvider(packageService);
   packagesTreeView = vscode.window.createTreeView("pi-code-gui.packages", {
     treeDataProvider: packagesTreeProvider,
   });
   context.subscriptions.push(packagesTreeView);
+
+  if (!result.success) {
+    console.log(`[pi-gui] Packages view: package service init failed: ${result.error}`);
+    // Show the error in the tree view itself
+    packagesTreeProvider.showError(`Pi SDK not ready: ${result.error}`);
+    return;
+  }
 
   // Initial load
   await packagesTreeProvider.refreshAll();
@@ -584,7 +609,16 @@ async function initPackagesView(context: vscode.ExtensionContext) {
   // Open a URL in the default browser (used by link items in tree view)
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.openUrl", (url: string) => {
-      if (url) { vscode.env.openExternal(vscode.Uri.parse(url)); }
+      if (url) {
+        // Normalize git URLs (git+https://, git://, git@...) to plain https://
+        let normalized = url;
+        if (normalized.startsWith("git+")) { normalized = normalized.slice(4); }
+        if (normalized.startsWith("git://")) { normalized = "https://" + normalized.slice(6); }
+        const scpMatch = normalized.match(/^git@([^:]+):(.+)$/);
+        if (scpMatch) { normalized = "https://" + scpMatch[1] + "/" + scpMatch[2]; }
+        normalized = normalized.replace(/\.git$/, "");
+        vscode.env.openExternal(vscode.Uri.parse(normalized));
+      }
     }),
   );
 
@@ -847,6 +881,9 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   sessionTreeProvider?.refresh();
   updateStatusBar();
 
+  // Persist open sessions for next VS Code reload
+  saveOpenSessionPaths();
+
   // Refresh the past-sessions list once the primary session initialises,
   // so the tree view shows saved sessions from disk.
   if (sw === primarySession()) { refreshPastSessionsList(); }
@@ -861,6 +898,41 @@ function removeSession(sw: SessionWindow) {
   }
   // Refresh tree so "Open Sessions (N)" header updates count
   sessionTreeProvider?.refresh();
+}
+
+/**
+ * Restore additional sessions that were open when VS Code was last closed.
+ * Called after the primary session finishes initializing on activate().
+ */
+async function restoreAdditionalSessions(context: vscode.ExtensionContext) {
+  const savedPaths: string[] = context.workspaceState.get("pi-code-gui.openSessionPaths") ?? [];
+  if (savedPaths.length <= 1) { return; } // Only the primary was open
+
+  const primaryPath = primarySession()?.piService.sessionFilePath;
+
+  // Restore saved session counter to avoid ID collisions
+  const savedCounter: number | undefined = context.workspaceState.get("pi-code-gui.sessionCounter");
+  if (savedCounter !== undefined && savedCounter > sessionCounter) {
+    sessionCounter = savedCounter;
+  }
+
+  for (const p of savedPaths) {
+    // Skip the session that the primary already opened via continueRecent
+    if (p === primaryPath) { continue; }
+
+    // Verify the session file still exists on disk
+    try {
+      const fs = await import("node:fs");
+      await fs.promises.access(p);
+    } catch {
+      continue; // File deleted since last session
+    }
+
+    const sw = createSessionWindow(context);
+    sw.webviewPanel.show();
+    sessionTreeProvider?.refresh();
+    initSessionInBackground(context, sw, { openPath: p });
+  }
 }
 
 // ── Install helper ──────────────────────────────────────
@@ -1406,7 +1478,9 @@ class SessionTreeItem extends vscode.TreeItem {
   }
 }
 
-export function deactivate() {
+export async function deactivate() {
+  // Persist open sessions before disposing so we can restore on next activate
+  await saveOpenSessionPaths();
   for (const sw of sessions) {
     sw.webviewPanel.dispose();
     sw.piService.dispose();
