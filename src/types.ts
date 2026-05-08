@@ -55,6 +55,10 @@ export interface PiServiceEvent {
     | "auto-retry-start"
     | "auto-retry-end"
     | "thinking-level-changed"
+    // Slash command autocomplete
+    | "slash-commands-update"
+    // Extension widget bridge
+    | "widget-update"
     // Errors
     | "error";
   data?: any;

@@ -36,6 +36,8 @@
   var userMsgOverlay = document.getElementById("user-msg-overlay");
   var settingsOverlay = document.getElementById("settings-overlay");
   var slashAutocomplete = document.getElementById("slash-autocomplete");
+  var livePanel = document.getElementById("live-panel");
+  var liveCards = {};  // customType -> DOM element, updated in-place
 
   // Bash execution blocks (#10)
   var bashBlocks = {};             // toolCallId -> bash block element
@@ -126,6 +128,12 @@
       case "sessionReset":        resetChat(); break;
       case "insertCommand":       handleInsertCommand(msg.command); break;
 
+      // Slash commands from installed extensions
+      case "slash-commands-update": handleSlashCommandsUpdate(msg.data); break;
+
+      // Widget bridge from extensions (setWidget calls)
+      case "widget-update":      handleWidgetUpdate(msg.data); break;
+
 
     }
   });
@@ -135,6 +143,9 @@
   function handleAgentStart() {
     isStreaming = true;
     assistantToolCallIds = {};
+    // Do NOT clear the live panel here — extension cards (like tldr summaries)
+    // should persist across prompts and be replaced only when new output of
+    // the same type arrives, or when the extension explicitly removes them.
     removeWorkingIndicator();
     addWorkingIndicator();
     updateStreamingState();
@@ -986,6 +997,8 @@
     removeCompactionIndicator();
     removeRetryIndicator();
     clearAttachments();
+    clearWidgetCards();
+    clearLivePanel();
     updateStreamingState();
   }
 
@@ -2230,9 +2243,6 @@
 
   function handleCustomMessage(data) {
     hideWelcome();
-    var el = document.createElement("div");
-    el.className = "custom-message";
-    if (data.entryId) el.id = "entry-" + data.entryId;
     var customType = data.customType || "custom";
     var content = "";
     if (typeof data.content === "string") {
@@ -2243,16 +2253,163 @@
         .map(function (c) { return c.text; })
         .join("\n");
     }
-    el.innerHTML =
-      '<div class="custom-label">[' + escapeHtml(customType) + ']</div>' +
-      '<div class="custom-content">' + renderMarkdown(content) + '</div>';
-    chatContainer.appendChild(el);
-    scrollToBottom();
+
+    // Live-updating card: if we already have a slot for this customType,
+    // replace the content in-place. Collapse the card since content changed.
+    if (liveCards[customType]) {
+      liveCards[customType].querySelector(".live-card-content").innerHTML = renderMarkdown(content);
+      // Re-collapse when content changes
+      liveCards[customType].classList.add("live-card-collapsed");
+      liveCards[customType].querySelector(".live-card-content").style.display = "none";
+      var exp = liveCards[customType].querySelector(".live-card-expando");
+      if (exp) { exp.textContent = "▸"; }
+      return;
+    }
+
+    // Build a friendly label: for internal notification types, use the
+    // first line of content (which usually starts with the package name).
+    var label = customType;
+    if (customType === "extension-notify") {
+      label = content.split("\n")[0].split("  ")[0].substring(0, 60);
+    }
+    if (customType === "error") { label = "Error"; }
+
+    // New live card — collapsed to a single line by default
+    var card = document.createElement("div");
+    card.className = "live-card live-card-collapsed";
+    card.setAttribute("data-type", customType);
+    card.innerHTML =
+      '<div class="live-card-label"><span class="live-card-expando">▸</span> ' + escapeHtml(label) + '</div>' +
+      '<button class="live-card-close" title="Dismiss">&times;</button>' +
+      '<div class="live-card-content" style="display:none">' + renderMarkdown(content) + '</div>';
+    // Toggle expand/collapse on label click
+    card.querySelector(".live-card-label").addEventListener("click", function () {
+      var wasCollapsed = card.classList.contains("live-card-collapsed");
+      if (wasCollapsed) {
+        card.classList.remove("live-card-collapsed");
+        card.querySelector(".live-card-expando").textContent = "▾";
+        card.querySelector(".live-card-content").style.display = "";
+      } else {
+        card.classList.add("live-card-collapsed");
+        card.querySelector(".live-card-expando").textContent = "▸";
+        card.querySelector(".live-card-content").style.display = "none";
+      }
+    });
+    // Dismiss button
+    card.querySelector(".live-card-close").addEventListener("click", function (e) {
+      e.stopPropagation();
+      dismissLiveCard(customType);
+    });
+    livePanel.appendChild(card);
+    liveCards[customType] = card;
+    livePanel.classList.add("visible");
+  }
+
+  function dismissLiveCard(key) {
+    var card = liveCards[key];
+    if (card) {
+      card.remove();
+      delete liveCards[key];
+    }
+    var widgetCard = widgetCards[key];
+    if (widgetCard) {
+      widgetCard.remove();
+      delete widgetCards[key];
+    }
+    // Hide panel if empty
+    var remaining = livePanel.querySelectorAll(".live-card");
+    if (remaining.length === 0) {
+      livePanel.classList.remove("visible");
+    }
+  }
+
+  function clearLivePanel() {
+    // Only clear transient cards (non-widget cards).
+    // Widget cards persist until the extension explicitly clears them.
+    var toRemove = [];
+    for (var key in liveCards) {
+      if (liveCards.hasOwnProperty(key)) {
+        var card = liveCards[key];
+        if (card && card.getAttribute("data-widget") !== "true") {
+          toRemove.push(key);
+        }
+      }
+    }
+    for (var i = 0; i < toRemove.length; i++) {
+      var c = liveCards[toRemove[i]];
+      if (c) c.remove();
+      delete liveCards[toRemove[i]];
+    }
+    // Hide the panel if nothing remains
+    var remaining = livePanel.querySelectorAll(".live-card");
+    if (remaining.length === 0) {
+      livePanel.classList.remove("visible");
+    }
+  }
+
+  // ── Widget Bridge ─────────────────────────────────────
+
+  var widgetCards = {};  // widget key -> DOM element
+
+  function handleWidgetUpdate(data) {
+    if (!data || !data.key) return;
+
+    var key = data.key;
+    var content = data.content;
+
+    if (content === null || content === undefined) {
+      // Remove widget card
+      var existing = widgetCards[key];
+      if (existing) {
+        existing.remove();
+        delete widgetCards[key];
+      }
+      // Also remove from liveCards
+      delete liveCards[key];
+      // Hide panel if empty
+      var remaining = livePanel.querySelectorAll(".live-card");
+      if (remaining.length === 0) {
+        livePanel.classList.remove("visible");
+      }
+      return;
+    }
+
+    // Create or update widget card
+    var card = widgetCards[key];
+    if (card) {
+      card.querySelector(".live-card-content").innerHTML = renderMarkdown(content);
+    } else {
+      card = document.createElement("div");
+      card.className = "live-card";
+      card.setAttribute("data-widget", "true");
+      card.setAttribute("data-type", key);
+      card.innerHTML =
+        '<div class="live-card-label">' + escapeHtml(key) + '</div>' +
+        '<button class="live-card-close" title="Dismiss">&times;</button>' +
+        '<div class="live-card-content">' + renderMarkdown(content) + '</div>';
+      card.querySelector(".live-card-close").addEventListener("click", function () {
+        dismissLiveCard(key);
+      });
+      livePanel.appendChild(card);
+      widgetCards[key] = card;
+      liveCards[key] = card;
+    }
+    livePanel.classList.add("visible");
+  }
+
+  function clearWidgetCards() {
+    for (var key in widgetCards) {
+      if (widgetCards.hasOwnProperty(key)) {
+        widgetCards[key].remove();
+      }
+    }
+    widgetCards = {};
   }
 
   // ═══ #8: Slash Command Autocomplete ═══════════════════════
 
-  var slashCommands = [
+  // Built-in slash commands (always available)
+  var builtinSlashCommands = [
     { cmd: "/compact", desc: "Compact context" },
     { cmd: "/resume", desc: "Resume a previous session" },
     { cmd: "/export", desc: "Export session to HTML" },
@@ -2266,8 +2423,38 @@
     { cmd: "/logout", desc: "Remove provider authentication" },
   ];
 
+  // Dynamic slash commands populated from installed extensions (e.g. /tldr)
+  var extensionSlashCommands = [];
+
+  // Full slash command list (builtins + extensions, with extensions first for dedup)
+  function getSlashCommands() {
+    var all = [];
+    var seen = {};
+    // Extensions come first so they take precedence
+    extensionSlashCommands.forEach(function (sc) {
+      seen[sc.cmd] = true;
+      all.push(sc);
+    });
+    builtinSlashCommands.forEach(function (sc) {
+      if (!seen[sc.cmd]) {
+        all.push(sc);
+      }
+    });
+    return all;
+  }
+
   // Slash commands that should be handled locally (not sent to LLM)
   var localSlashCommands = ["/login", "/logout"];
+
+  function handleSlashCommandsUpdate(data) {
+    if (data && data.commands && Array.isArray(data.commands)) {
+      extensionSlashCommands = data.commands;
+      // Re-filter autocomplete if it's currently open
+      if (slashAutocompleteOpen) {
+        updateSlashAutocomplete(slashFilter);
+      }
+    }
+  }
 
   function updateSlashAutocomplete(filter) {
     if (!filter || filter.length === 0) {
@@ -2276,7 +2463,7 @@
       return;
     }
     var f = filter.toLowerCase();
-    var matches = slashCommands.filter(function (sc) { return sc.cmd.toLowerCase().indexOf(f) === 0; });
+    var matches = getSlashCommands().filter(function (sc) { return sc.cmd.toLowerCase().indexOf(f) === 0; });
     if (matches.length === 0) {
       slashAutocomplete.classList.remove("visible");
       slashAutocompleteOpen = false;

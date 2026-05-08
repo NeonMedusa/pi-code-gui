@@ -33,6 +33,46 @@ export interface MarketplacePackage {
 /**
  * Resolve the pi SDK root path, reusing the same logic as PiService.
  */
+/**
+ * Normalize repository URLs from npm (which can be git://, git+https://, etc.)
+ * to clean https:// URLs that browsers can open.
+ */
+function normalizeRepoUrl(url: string): string {
+  let u = url.trim();
+
+  // Strip git+ prefix (git+https://... or git+ssh://...)
+  if (u.startsWith("git+")) {
+    u = u.slice(4);
+  }
+
+  // Convert git:// to https://
+  if (u.startsWith("git://")) {
+    u = "https://" + u.slice(6);
+  }
+
+  // Convert ssh://git@host/repo to https://host/repo
+  const sshMatch = u.match(/^ssh:\/\/git@([^/]+)\/(.+)$/);
+  if (sshMatch) {
+    u = "https://" + sshMatch[1] + "/" + sshMatch[2];
+  }
+
+  // Convert git@ scp-like URLs (git@github.com:owner/repo.git)
+  const scpMatch = u.match(/^git@([^:]+):(.+)$/);
+  if (scpMatch) {
+    u = "https://" + scpMatch[1] + "/" + scpMatch[2];
+  }
+
+  // Handle github: shorthand
+  if (u.startsWith("github:")) {
+    u = "https://github.com/" + u.slice(7);
+  }
+
+  // Strip trailing .git
+  u = u.replace(/\.git$/, "");
+
+  return u;
+}
+
 function resolvePiPackagePath(): string {
   const candidates: string[] = [];
 
@@ -78,6 +118,11 @@ export class PiPackageService {
   private packageManager: any | null = null;
   private sdkRoot: string | null = null;
   private initialized = false;
+
+  // Marketplace search debounce + cache
+  private lastSearchTime = 0;
+  private lastSearchPromise: Promise<MarketplacePackage[]> | null = null;
+  private defaultResults: MarketplacePackage[] | null = null;
 
   /** Initialize the package manager, loading the SDK dynamically. */
   async initialize(): Promise<{ success: boolean; error?: string }> {
@@ -177,13 +222,38 @@ export class PiPackageService {
    * Search the npm registry for pi packages.
    * Uses npm's search API with keywords that pi packages commonly use.
    */
+  /**
+   * Search the npm registry for pi packages.
+   * Results are cached for empty queries.  Rapid calls are debounced to
+   * avoid npm 429 rate-limit responses.
+   */
   async searchMarketplace(query: string): Promise<MarketplacePackage[]> {
-    try {
-      const q = query.trim();
+    const q = query.trim();
 
-      // When the user typed a query, pass it directly to npm's full-text
-      // search (which covers name, description, keywords, and README).
-      // When empty, use keyword filters to surface popular pi packages.
+    // Serve empty-query results from cache
+    if (!q && this.defaultResults) {
+      return this.defaultResults;
+    }
+
+    // Debounce: minimum 2 s between outgoing requests
+    const now = Date.now();
+    if (now - this.lastSearchTime < 2000 && this.lastSearchPromise) {
+      return this.lastSearchPromise;
+    }
+    this.lastSearchTime = now;
+
+    this.lastSearchPromise = this.doSearchMarketplace(q);
+    try {
+      const results = await this.lastSearchPromise;
+      if (!q) { this.defaultResults = results; }
+      return results;
+    } finally {
+      this.lastSearchPromise = null;
+    }
+  }
+
+  private async doSearchMarketplace(q: string): Promise<MarketplacePackage[]> {
+    try {
       const searchText = q
         ? q
         : "keywords:pi-coding-agent";
@@ -194,6 +264,9 @@ export class PiPackageService {
         signal: AbortSignal.timeout(10000),
       });
 
+      if (response.status === 429) {
+        throw new Error("Npm rate limit — please wait a few seconds and try again.");
+      }
       if (!response.ok) {
         throw new Error(`npm search returned ${response.status}`);
       }
@@ -204,6 +277,18 @@ export class PiPackageService {
       const qLower = q.toLowerCase();
 
       return objects
+        .map((obj: any) => ({
+          ...obj,
+          package: {
+            ...obj.package,
+            links: {
+              ...obj.package?.links,
+              repository: obj.package?.links?.repository
+                ? normalizeRepoUrl(obj.package.links.repository)
+                : undefined,
+            },
+          },
+        }))
         .filter((obj: any) => {
           const pkgObj = obj.package;
           const name = (pkgObj.name ?? "").toLowerCase();
@@ -211,7 +296,6 @@ export class PiPackageService {
           const keywords: string[] = pkgObj.keywords ?? [];
           const publisher = (pkgObj.publisher?.username ?? "").toLowerCase();
 
-          // Pi-package heuristic (always applied)
           const isPiPkg =
             name.startsWith("pi-") ||
             name.includes("-pi-") ||
@@ -222,9 +306,6 @@ export class PiPackageService {
 
           if (!isPiPkg) { return false; }
 
-          // When the user typed a query, npm already did the heavy lifting.
-          // We still do a secondary check against the fields we care about
-          // to filter out false positives from npm's broader index.
           if (qLower) {
             return (
               name.includes(qLower) ||
@@ -333,7 +414,7 @@ export class PiPackageService {
             keywords: p.keywords ?? [],
             downloads: obj.downloads?.weekly ?? 0,
             homepage: p.links?.homepage ?? p.links?.npm ?? "",
-            repository: p.links?.repository ?? "",
+            repository: p.links?.repository ? normalizeRepoUrl(p.links.repository) : "",
             license: p.license ?? "",
           } as MarketplacePackage;
         }),
