@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.0.11] — Package manager & session fixes
+
+### Changes
+- New Packages view: install, uninstall, search, update pi packages from npm
+- Scroll catches up on tab return after background streaming
+- Session resume restores model/thinking on VS Code restart, not just manual open
+
 ## [0.0.10] — Default model, thinking & context budget
 
 ### Changes

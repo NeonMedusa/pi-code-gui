@@ -1011,10 +1011,25 @@
     hasScrolledUp = !atBottom;
   });
 
-  /** Scroll to bottom unless the user has scrolled up to read history. */
+  // When the webview regains visibility (e.g. user alt-tabs back),
+  // force-scroll to the bottom if auto-scroll was active before.
+  // The browser defers scroll/layout while hidden, so new content
+  // that arrived during absence may not have been scrolled into view.
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") {
+      if (!hasScrolledUp) {
+        scrollToBottom();
+      }
+    }
+  });
+
+  /** Scroll to bottom unless the user has scrolled up to read history.
+   *  Uses rAF so scrollHeight is fresh — especially after visibility restore. */
   function scrollToBottom() {
     if (!hasScrolledUp) {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
+      requestAnimationFrame(function () {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      });
     }
   }
 

@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { PiService } from "./pi-service.js";
 import { PiWebviewPanel } from "./webview-panel.js";
+import { PiPackageService } from "./pi-package-service.js";
+import { PiPackagesTreeProvider } from "./pi-packages-tree-provider.js";
 import { registerPhase3Commands } from "./phase3-commands.js";
 import { registerPhase4Commands } from "./phase4-commands.js";
 
@@ -22,6 +24,10 @@ let sessionCounter = 0;
 let statusBarItem: vscode.StatusBarItem | null = null;
 let sessionTreeProvider: MultiSessionTreeProvider | null = null;
 let sessionTreeView: vscode.TreeView<SessionTreeItem> | null = null;
+
+let packagesTreeProvider: PiPackagesTreeProvider | null = null;
+let packagesTreeView: vscode.TreeView<any> | null = null;
+let packageService: PiPackageService | null = null;
 
 /** The primary (first) session — used for status bar and tree provider */
 function primarySession(): SessionWindow | undefined {
@@ -416,6 +422,264 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // ── Step 4: Initialize pi SDK asynchronously ───────────
   initSessionInBackground(context, primary);
+
+  // ── Step 5: Initialize packages view ────────────────
+  initPackagesViewDelayed(context);
+}
+
+// ── Packages view ───────────────────────────────────
+
+/**
+ * Initialize the Packages view with a short delay so the SDK has time
+ * to become available (it's installed with the extension).
+ */
+function initPackagesViewDelayed(context: vscode.ExtensionContext) {
+  // Delay by 3s to let SDK resolution settle
+  setTimeout(() => initPackagesView(context), 3000);
+
+  // Also listen for session init — once a session is ready the package
+  // manager should work too.
+  const checkInterval = setInterval(() => {
+    const primary = primarySession();
+    if (primary?.initialized && !packageService?.isReady) {
+      clearInterval(checkInterval);
+      initPackagesView(context);
+    }
+  }, 1000);
+
+  // Stop checking after 30s
+  setTimeout(() => clearInterval(checkInterval), 30000);
+}
+
+async function initPackagesView(context: vscode.ExtensionContext) {
+  if (packagesTreeProvider) { return; } // already initialized
+
+  packageService = new PiPackageService();
+  const result = await packageService.initialize();
+
+  if (!result.success) {
+    console.log(`[pi-gui] Packages view: package service init failed: ${result.error}`);
+    return;
+  }
+
+  packagesTreeProvider = new PiPackagesTreeProvider(packageService);
+  packagesTreeView = vscode.window.createTreeView("pi-code-gui.packages", {
+    treeDataProvider: packagesTreeProvider,
+  });
+  context.subscriptions.push(packagesTreeView);
+
+  // Initial load
+  await packagesTreeProvider.refreshAll();
+
+  // ── Register package commands ────────────────
+
+  // Install a package from the marketplace
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.installPackage", async (item?: any) => {
+      const treeItem = resolvePackageTreeItem(item, "package-marketplace");
+      let marketPkg = treeItem?.marketData;
+
+      if (!marketPkg) {
+        // May be called without args from command palette
+        const name = await vscode.window.showInputBox({
+          prompt: "Enter npm package name to install",
+          placeHolder: "pi-subagents",
+        });
+        if (!name) { return; }
+        await doInstallPackage(name);
+        return;
+      }
+
+      const source = `npm:${marketPkg.npmPackage}`;
+
+      // Ask user vs project scope
+      const scope = await pickScope();
+      if (!scope) { return; }
+
+      await doInstallPackage(source, scope);
+    }),
+  );
+
+  // Uninstall a package
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.uninstallPackage", async (item?: any) => {
+      const treeItem = resolvePackageTreeItem(item, "package-installed");
+      const pkg = treeItem?.installedData;
+      if (!pkg) {
+        vscode.window.showErrorMessage("Cannot uninstall: no package selected.");
+        return;
+      }
+
+      const label = pkg.source.startsWith("npm:") ? pkg.source.slice(4) : pkg.source;
+
+      const confirm = await vscode.window.showWarningMessage(
+        `Uninstall "${label}"?`,
+        { modal: true },
+        "Uninstall",
+      );
+      if (confirm !== "Uninstall") { return; }
+
+      await doUninstallPackage(pkg.source, pkg.scope);
+    }),
+  );
+
+  // Search packages
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.searchPackages", async () => {
+      const query = await vscode.window.showInputBox({
+        prompt: "Search Pi packages on the marketplace",
+        placeHolder: "e.g. web, subagent, mcp — or leave empty for popular",
+        value: (packagesTreeProvider as any)?.searchQuery ?? "",
+      });
+      if (query === undefined) { return; } // cancelled
+      await packagesTreeProvider?.refreshAll(query ?? "");
+    }),
+  );
+
+  // Refresh packages view
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.refreshPackages", async () => {
+      await packagesTreeProvider?.refreshAll();
+    }),
+  );
+
+  // Update a single package
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.updatePackage", async (item?: any) => {
+      const treeItem = resolvePackageTreeItem(item, "package-installed");
+      const pkg = treeItem?.installedData;
+      if (!pkg) {
+        vscode.window.showErrorMessage("Cannot update: no package selected.");
+        return;
+      }
+      await doUpdatePackage(pkg.source);
+    }),
+  );
+
+  // Update all packages
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.updateAllPackages", async () => {
+      const updates = await packageService?.checkForUpdates();
+      if (!updates || updates.length === 0) {
+        vscode.window.showInformationMessage("All packages are up to date.");
+        return;
+      }
+
+      const confirm = await vscode.window.showInformationMessage(
+        `${updates.length} package(s) have updates available. Update all?`,
+        "Update All",
+      );
+      if (confirm !== "Update All") { return; }
+
+      try {
+        await packageService!.update();
+        vscode.window.showInformationMessage("All packages updated.");
+        await packagesTreeProvider?.refreshAll();
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Update failed: ${e.message ?? e}`);
+      }
+    }),
+  );
+
+  // Open a URL in the default browser (used by link items in tree view)
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.openUrl", (url: string) => {
+      if (url) { vscode.env.openExternal(vscode.Uri.parse(url)); }
+    }),
+  );
+
+  // Open pi.dev marketplace in browser
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.openPiDevMarketplace", () => {
+      vscode.env.openExternal(vscode.Uri.parse("https://pi.dev/packages"));
+    }),
+  );
+
+  console.log("[pi-gui] Packages view ready");
+}
+
+/** Resolve a tree item from either a direct argument or the tree view selection. */
+function resolvePackageTreeItem(item: any, expectedContext: string): any {
+  // Direct argument from TreeItem.command click
+  if (item && (item.marketData || item.installedData)) {
+    return item;
+  }
+
+  // From tree selection — walk up to parent if we're on an action child
+  const selection = packagesTreeView?.selection;
+  if (selection && selection.length > 0) {
+    let sel = selection[0] as any;
+    // If clicked on an action or overview child, walk up to the parent package item
+    if (sel.installedData || sel.marketData) {
+      return sel;
+    }
+  }
+  return null;
+}
+
+async function pickScope(): Promise<"user" | "project" | undefined> {
+  const pick = await vscode.window.showQuickPick(
+    [
+      { label: "User (global)", description: "Available in all projects", scope: "user" as const },
+      { label: "Project (local)", description: "Only in this workspace", scope: "project" as const },
+    ],
+    { placeHolder: "Install scope" },
+  );
+  return pick?.scope;
+}
+
+async function doInstallPackage(source: string, scope: "user" | "project" = "user") {
+  if (!packageService) { return; }
+
+  const label = source.startsWith("npm:") ? source.slice(4) : source;
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Installing ${label}...` },
+    async () => {
+      const result = await packageService!.install(source, scope);
+      if (result.success) {
+        vscode.window.showInformationMessage(`Installed ${label} (${scope})`);
+        await packagesTreeProvider?.refreshAll();
+      } else {
+        vscode.window.showErrorMessage(`Install failed: ${result.error}`);
+      }
+    },
+  );
+}
+
+async function doUninstallPackage(source: string, scope: "user" | "project") {
+  if (!packageService) { return; }
+
+  const label = source.startsWith("npm:") ? source.slice(4) : source;
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Removing ${label}...` },
+    async () => {
+      const result = await packageService!.uninstall(source, scope);
+      if (result.success) {
+        vscode.window.showInformationMessage(`Removed ${label}`);
+        await packagesTreeProvider?.refreshAll();
+      } else {
+        vscode.window.showErrorMessage(`Remove failed: ${result.error}`);
+      }
+    },
+  );
+}
+
+async function doUpdatePackage(source: string) {
+  if (!packageService) { return; }
+
+  const label = source.startsWith("npm:") ? source.slice(4) : source;
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Updating ${label}...` },
+    async () => {
+      try {
+        await packageService!.update(source);
+        vscode.window.showInformationMessage(`Updated ${label}`);
+        await packagesTreeProvider?.refreshAll();
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Update failed: ${e.message ?? e}`);
+      }
+    },
+  );
 }
 
 // ── Add a new session window ──────────────────────────

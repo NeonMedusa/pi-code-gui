@@ -4,7 +4,7 @@
   "author": "Jack Noppé",
   "displayName": "Pi Code Gui",
   "description": "Native VS Code editor experience for Pi coding agent",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "license": "MIT",
   "sponsor": {
     "url": "https://github.com/sponsors/NimbleTronAI"
@@ -163,6 +163,37 @@
         "command": "pi-code-gui.filterPastSessions",
         "title": "PiGui: Filter Past Sessions",
         "icon": "$(filter)"
+      },
+      {
+        "command": "pi-code-gui.installPackage",
+        "title": "PiGui: Install Package"
+      },
+      {
+        "command": "pi-code-gui.uninstallPackage",
+        "title": "PiGui: Uninstall Package"
+      },
+      {
+        "command": "pi-code-gui.searchPackages",
+        "title": "PiGui: Search Packages",
+        "icon": "$(search)"
+      },
+      {
+        "command": "pi-code-gui.refreshPackages",
+        "title": "PiGui: Refresh Packages",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pi-code-gui.updatePackage",
+        "title": "PiGui: Update Package"
+      },
+      {
+        "command": "pi-code-gui.updateAllPackages",
+        "title": "PiGui: Update All Packages",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "pi-code-gui.openPiDevMarketplace",
+        "title": "PiGui: Open Pi.dev Marketplace"
       }
     ],
     "viewsContainers": {
@@ -180,6 +211,11 @@
           "type": "tree",
           "id": "pi-code-gui.sessions",
           "name": "Sessions"
+        },
+        {
+          "type": "tree",
+          "id": "pi-code-gui.packages",
+          "name": "Packages"
         }
       ]
     },
@@ -309,6 +345,21 @@
           "command": "pi-code-gui.deletePastSession",
           "when": "view == pi-code-gui.sessions && viewItem == pastSessionEntry",
           "group": "2_actions"
+        },
+        {
+          "command": "pi-code-gui.installPackage",
+          "when": "view == pi-code-gui.packages && viewItem == package-marketplace",
+          "group": "navigation"
+        },
+        {
+          "command": "pi-code-gui.uninstallPackage",
+          "when": "view == pi-code-gui.packages && viewItem == package-installed",
+          "group": "navigation"
+        },
+        {
+          "command": "pi-code-gui.updatePackage",
+          "when": "view == pi-code-gui.packages && viewItem == package-installed",
+          "group": "1_update"
         }
       ],
       "view/title": [
@@ -325,6 +376,21 @@
         {
           "command": "pi-code-gui.deleteAllPastSessions",
           "when": "view == pi-code-gui.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "pi-code-gui.searchPackages",
+          "when": "view == pi-code-gui.packages",
+          "group": "navigation"
+        },
+        {
+          "command": "pi-code-gui.refreshPackages",
+          "when": "view == pi-code-gui.packages",
+          "group": "navigation"
+        },
+        {
+          "command": "pi-code-gui.updateAllPackages",
+          "when": "view == pi-code-gui.packages",
           "group": "navigation"
         }
       ]
