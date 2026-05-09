@@ -51,7 +51,7 @@
   <!-- pi SDK -->
   <rect x="450" y="260" width="240" height="52" rx="6" fill="#313244" stroke="#fab387" stroke-width="1.5" filter="url(#shadow)"/>
   <text x="570" y="280" text-anchor="middle" fill="#fab387" font-family="DejaVu Sans Mono" font-size="11" font-weight="700">pi SDK (in-process)</text>
-  <text x="570" y="298" text-anchor="middle" fill="#a6adc8" font-family="DejaVu Sans Mono" font-size="9">@mariozechner/pi-coding-agent</text>
+  <text x="570" y="298" text-anchor="middle" fill="#a6adc8" font-family="DejaVu Sans Mono" font-size="9">@earendil-works/pi-coding-agent</text>
 
   <!-- VS Code API -->
   <rect x="30" y="338" width="660" height="26" rx="5" fill="#1e1e2e" stroke="#45475a" stroke-width="1"/>

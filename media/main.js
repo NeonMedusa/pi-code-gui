@@ -75,6 +75,224 @@
     return Math.round(count / 1000000) + "M";
   }
 
+  // ═══ Tool Renderer Registry ════════════════════════════════
+  //
+  // Each tool renderer handles its own create → update → finalize
+  // lifecycle.  The event router delegates to the registry instead
+  // of switching on toolName inline.  Pi extensions can register
+  // custom tool renderers via window.__piRegisterToolRenderer.
+
+  /**
+   * A tool renderer knows how to create, update, and finalize a tool block.
+   *
+   *   create(data)          → HTMLElement  (called on tool-start)
+   *   update(el, partial)   → void         (called on tool-update, streaming output)
+   *   finalize(el, result)  → void         (called on tool-end)
+   *
+   * `data` shape: { toolName, toolCallId, args, entryId, fromMessage }
+   * `result` shape: { content, details, isError }
+   */
+
+  var toolRenderers = {};
+
+  function registerToolRenderer(toolName, renderer) {
+    toolRenderers[toolName] = renderer;
+  }
+
+  function getToolRenderer(toolName) {
+    return toolRenderers[toolName] || defaultToolRenderer;
+  }
+
+  // Expose for pi extensions to register custom tool renderers
+  window.__piRegisterToolRenderer = registerToolRenderer;
+
+  // ── Default (generic) tool renderer ──────────────────────
+
+  var defaultToolRenderer = {
+    create: function (data) {
+      return createToolBlock(data.toolName, data.toolCallId, "pending", data.args);
+    },
+    update: function (el, partialResult) {
+      var tr = el.querySelector(".tool-result");
+      if (!tr || !partialResult || !partialResult.content) return;
+      var text = partialResult.content
+        .filter(function (c) { return c.type === "text"; })
+        .map(function (c) { return c.text; })
+        .join("\n");
+      if (!text) return;
+      var lines = text.split("\n");
+      var displayText = lines.length > 60 ? "...\n" + lines.slice(-60).join("\n") : text;
+      tr.innerHTML = renderToolResult(displayText);
+    },
+    finalize: function (el, result, isError, entryId) {
+      var statusEl = el.querySelector(".tool-status");
+      if (statusEl) {
+        statusEl.textContent = isError ? "error" : "done";
+        statusEl.className = "tool-status " + (isError ? "error" : "success");
+      }
+      el.setAttribute("data-status", isError ? "error" : "done");
+      if (entryId && !el.id.startsWith("entry-")) {
+        el.id = "entry-" + entryId;
+      }
+      var text = "";
+      if (result && result.content) {
+        text = result.content
+          .filter(function (c) { return c.type === "text"; })
+          .map(function (c) { return c.text; })
+          .join("\n");
+      }
+      var tr = el.querySelector(".tool-result");
+      if (tr) {
+        var lines = text.split("\n");
+        tr.innerHTML = lines.length > 50 ? renderToolResultTruncated(text) : renderToolResult(text);
+      }
+    },
+  };
+
+  // ── Bash tool renderer ───────────────────────────────────
+
+  var bashToolRenderer = {
+    create: function (data) {
+      hideWelcome();
+      var block = document.createElement("div");
+      block.className = "bash-execution";
+      block.id = data.entryId ? "entry-" + data.entryId : "bash-" + data.toolCallId;
+      block.setAttribute("data-status", "running");
+      var cmd = data.args && data.args.command ? data.args.command : "";
+      if (cmd.length > 120) cmd = cmd.slice(0, 120) + "\u2026";
+      block.innerHTML =
+        '<div class="bash-header">$ ' + escapeHtml(cmd) + '</div>' +
+        '<div class="bash-output"></div>' +
+        '<div class="bash-footer"><span class="cancel-hint">running\u2026</span></div>';
+      bashBlocks[data.toolCallId] = block;
+      bashOutputs[data.toolCallId] = "";
+      return block;
+    },
+    update: function (el, partialResult) {
+      var toolCallId = el.id.replace(/^(entry-|bash-)/, "");
+      var text = "";
+      if (partialResult && partialResult.content) {
+        text = partialResult.content
+          .filter(function (c) { return c.type === "text"; })
+          .map(function (c) { return c.text; })
+          .join("\n");
+      }
+      if (!text) return;
+      bashOutputs[toolCallId] = (bashOutputs[toolCallId] || "") + text;
+      var outEl = el.querySelector(".bash-output");
+      if (outEl) outEl.innerHTML = escapeHtml(bashOutputs[toolCallId]);
+    },
+    finalize: function (el, result, isError, entryId) {
+      var toolCallId = el.id.replace(/^(entry-|bash-)/, "");
+      var text = "";
+      if (result && result.content) {
+        text = result.content
+          .filter(function (c) { return c.type === "text"; })
+          .map(function (c) { return c.text; })
+          .join("\n");
+      }
+      var outEl = el.querySelector(".bash-output");
+      if (outEl && text) outEl.innerHTML = escapeHtml(text);
+      var footer = el.querySelector(".bash-footer");
+      var details = result && result.details ? result.details : {};
+      var exitCode = details.exitCode != null ? details.exitCode : 0;
+      if (footer) {
+        footer.innerHTML =
+          '<span class="exit-code' + (isError ? " error" : "") + '">exit: ' + exitCode + '</span>' +
+          (details.cancelled ? ' <span>(cancelled)</span>' : "");
+      }
+      if (entryId && !el.id.startsWith("entry-")) {
+        el.id = "entry-" + entryId;
+      }
+      el.setAttribute("data-status", isError ? "error" : "complete");
+      delete bashBlocks[toolCallId];
+      delete bashOutputs[toolCallId];
+    },
+  };
+
+  registerToolRenderer("bash", bashToolRenderer);
+
+  // ═══ Message Renderer Registry ════════════════════════════
+  //
+  // Custom message types (from pi extensions) can register
+  // renderers that produce DOM for the live panel.
+
+  var messageRenderers = {};
+
+  function registerMessageRenderer(customType, rendererFn) {
+    messageRenderers[customType] = rendererFn;
+  }
+
+  function getMessageRenderer(customType) {
+    return messageRenderers[customType];
+  }
+
+  // Expose for pi extensions to register custom message renderers
+  window.__piRegisterMessageRenderer = registerMessageRenderer;
+
+  // Default message renderer: creates a collapsible live-panel card
+  function defaultMessageRenderer(data) {
+    var customType = data.customType || "custom";
+    var content = "";
+    if (typeof data.content === "string") {
+      content = data.content;
+    } else if (Array.isArray(data.content)) {
+      content = data.content
+        .filter(function (c) { return c.type === "text"; })
+        .map(function (c) { return c.text; })
+        .join("\n");
+    }
+
+    // Live-updating card: replace content in-place
+    if (liveCards[customType]) {
+      liveCards[customType].querySelector(".live-card-content").innerHTML = renderMarkdown(content);
+      liveCards[customType].classList.add("live-card-collapsed");
+      liveCards[customType].querySelector(".live-card-content").style.display = "none";
+      var exp = liveCards[customType].querySelector(".live-card-expando");
+      if (exp) { exp.textContent = "\u25B8"; }
+      return;
+    }
+
+    var label = customType;
+    if (customType === "extension-notify") {
+      label = content.split("\n")[0].split("  ")[0].substring(0, 60);
+    }
+    if (customType === "error") { label = "Error"; }
+
+    return createLiveCard(customType, label, content);
+  }
+
+  /** Create a collapsible live-panel card. Returns the card element. */
+  function createLiveCard(customType, label, content) {
+    var card = document.createElement("div");
+    card.className = "live-card live-card-collapsed";
+    card.setAttribute("data-type", customType);
+    card.innerHTML =
+      '<div class="live-card-label"><span class="live-card-expando">\u25B8</span> ' + escapeHtml(label) + '</div>' +
+      '<button class="live-card-close" title="Dismiss">&times;</button>' +
+      '<div class="live-card-content" style="display:none">' + renderMarkdown(content) + '</div>';
+    card.querySelector(".live-card-label").addEventListener("click", function () {
+      var wasCollapsed = card.classList.contains("live-card-collapsed");
+      if (wasCollapsed) {
+        card.classList.remove("live-card-collapsed");
+        card.querySelector(".live-card-expando").textContent = "\u25BE";
+        card.querySelector(".live-card-content").style.display = "";
+      } else {
+        card.classList.add("live-card-collapsed");
+        card.querySelector(".live-card-expando").textContent = "\u25B8";
+        card.querySelector(".live-card-content").style.display = "none";
+      }
+    });
+    card.querySelector(".live-card-close").addEventListener("click", function (e) {
+      e.stopPropagation();
+      dismissLiveCard(customType);
+    });
+    livePanel.appendChild(card);
+    liveCards[customType] = card;
+    livePanel.classList.add("visible");
+    return card;
+  }
+
   // ═══ Event Router ═══════════════════════════════════════
 
   window.addEventListener("message", function (event) {
@@ -179,7 +397,8 @@
 
     // Finalize any pending tool blocks
     Object.keys(currentToolBlocks).forEach(function (id) {
-      var block = currentToolBlocks[id];
+      var entry = currentToolBlocks[id];
+      var block = entry.el || entry;
       if (block && block.getAttribute("data-status") === "running") {
         var statusEl = block.querySelector(".tool-status");
         if (statusEl) {
@@ -286,7 +505,8 @@
           // Mark any pending tool blocks as errored
           if (data.toolCalls) {
             data.toolCalls.forEach(function (tcId) {
-              var block = currentToolBlocks[tcId];
+              var entry = currentToolBlocks[tcId];
+              var block = entry ? (entry.el || entry) : null;
               if (block) {
                 var statusEl = block.querySelector(".tool-status");
                 if (statusEl) {
@@ -371,10 +591,11 @@
 
   function handleToolStart(data) {
     hideWelcome();
+
     // Guard against duplicates
     if (currentToolBlocks[data.toolCallId]) {
-      // Already created from message_update; transition from "pending" to "running"
-      var block = currentToolBlocks[data.toolCallId];
+      var existing = currentToolBlocks[data.toolCallId];
+      var block = existing.el || existing;
       if (block && block.getAttribute("data-status") === "pending") {
         var statusEl = block.querySelector(".tool-status");
         if (statusEl) {
@@ -383,20 +604,26 @@
         }
         block.setAttribute("data-status", "running");
       }
-      // Update the ID if we now have an entryId and the block doesn't have one
       if (data.entryId && block && !block.id.startsWith("entry-")) {
         block.id = "entry-" + data.entryId;
       }
       return;
     }
 
-    var block = createToolBlock(data.toolName, data.toolCallId, "pending", data.args);
-    if (data.entryId) block.id = "entry-" + data.entryId;
+    // Look up the renderer for this tool name
+    var renderer = getToolRenderer(data.toolName);
+    var block = renderer.create(data);
+
+    if (data.entryId && !block.id.startsWith("entry-")) {
+      block.id = "entry-" + data.entryId;
+    }
     chatContainer.appendChild(block);
-    currentToolBlocks[data.toolCallId] = block;
+
+    // Store both the element and its renderer for update/finalize
+    currentToolBlocks[data.toolCallId] = { el: block, renderer: renderer };
 
     // If fromMessage=false (actual execution), mark as running
-    if (!data.fromMessage) {
+    if (!data.fromMessage && renderer === defaultToolRenderer) {
       var statusEl = block.querySelector(".tool-status");
       if (statusEl) {
         statusEl.textContent = "running";
@@ -467,62 +694,21 @@
   }
 
   function handleToolUpdate(data) {
-    var block = currentToolBlocks[data.toolCallId];
-    if (block) {
-      var tr = block.querySelector(".tool-result");
-      if (tr && data.partialResult && data.partialResult.content) {
-        var text = data.partialResult.content
-          .filter(function (c) { return c.type === "text"; })
-          .map(function (c) { return c.text; })
-          .join("\n");
-        if (text) {
-          // #6: During streaming, limit to last 60 lines to avoid layout thrash
-          var lines = text.split("\n");
-          var displayText = lines.length > 60 ? "...\n" + lines.slice(-60).join("\n") : text;
-          tr.innerHTML = renderToolResult(displayText);
-          // No cursor — tool blocks are display-only
-        }
-      }
-    }
+    var entry = currentToolBlocks[data.toolCallId];
+    if (!entry) return;
+    var block = entry.el || entry;
+    var renderer = entry.renderer || defaultToolRenderer;
+    renderer.update(block, data.partialResult);
     scrollToBottom();
   }
 
   function handleToolEnd(data) {
-    var block = currentToolBlocks[data.toolCallId];
-    if (block) {
-      // Update the ID if we now have an entryId and the block doesn't have one
-      if (data.entryId && block && !block.id.startsWith("entry-")) {
-        block.id = "entry-" + data.entryId;
-      }
-      var statusEl = block.querySelector(".tool-status");
-      if (statusEl) {
-        statusEl.textContent = data.isError ? "error" : "done";
-        statusEl.className = "tool-status " + (data.isError ? "error" : "success");
-      }
-      block.setAttribute("data-status", data.isError ? "error" : "done");
-
-      // Show final result text with rich formatting (#5 + #6)
-      var text = "";
-      if (data.result && data.result.content) {
-        text = data.result.content
-          .filter(function (c) { return c.type === "text"; })
-          .map(function (c) { return c.text; })
-          .join("\n");
-      }
-      var tr = block.querySelector(".tool-result");
-      if (tr) {
-        // #6: Truncate long results with show-more
-        var lines = text.split("\n");
-        if (lines.length > 50) {
-          tr.innerHTML = renderToolResultTruncated(text);
-        } else {
-          tr.innerHTML = renderToolResult(text);
-        }
-        // No cursor — tool blocks are display-only
-      }
-
-      delete currentToolBlocks[data.toolCallId];
-    }
+    var entry = currentToolBlocks[data.toolCallId];
+    if (!entry) return;
+    var block = entry.el || entry;
+    var renderer = entry.renderer || defaultToolRenderer;
+    renderer.finalize(block, data.result, data.isError, data.entryId);
+    delete currentToolBlocks[data.toolCallId];
     scrollToBottom();
   }
 
@@ -874,7 +1060,7 @@
       isApiKeyError = true;
     } else if (/not installed|not found|not available|npm install/i.test(msg)) {
       heading = "<strong>Pi is not available</strong>";
-      help = '<small>Run <code>npm install -g @mariozechner/pi-coding-agent</code> in a terminal, then reload VS Code.</small>';
+      help = '<small>Run <code>npm install -g @earendil-works/pi-coding-agent</code> in a terminal, then reload VS Code.</small>';
     } else {
       heading = "<strong>Something went wrong</strong>";
       help = '<small>Check the error above for details.</small>';
@@ -2244,65 +2430,16 @@
   function handleCustomMessage(data) {
     hideWelcome();
     var customType = data.customType || "custom";
-    var content = "";
-    if (typeof data.content === "string") {
-      content = data.content;
-    } else if (Array.isArray(data.content)) {
-      content = data.content
-        .filter(function (c) { return c.type === "text"; })
-        .map(function (c) { return c.text; })
-        .join("\n");
-    }
 
-    // Live-updating card: if we already have a slot for this customType,
-    // replace the content in-place. Collapse the card since content changed.
-    if (liveCards[customType]) {
-      liveCards[customType].querySelector(".live-card-content").innerHTML = renderMarkdown(content);
-      // Re-collapse when content changes
-      liveCards[customType].classList.add("live-card-collapsed");
-      liveCards[customType].querySelector(".live-card-content").style.display = "none";
-      var exp = liveCards[customType].querySelector(".live-card-expando");
-      if (exp) { exp.textContent = "▸"; }
+    // Try the registry first — extensions can register custom renderers
+    var renderer = getMessageRenderer(customType);
+    if (renderer) {
+      renderer(data, livePanel, liveCards, createLiveCard, dismissLiveCard);
       return;
     }
 
-    // Build a friendly label: for internal notification types, use the
-    // first line of content (which usually starts with the package name).
-    var label = customType;
-    if (customType === "extension-notify") {
-      label = content.split("\n")[0].split("  ")[0].substring(0, 60);
-    }
-    if (customType === "error") { label = "Error"; }
-
-    // New live card — collapsed to a single line by default
-    var card = document.createElement("div");
-    card.className = "live-card live-card-collapsed";
-    card.setAttribute("data-type", customType);
-    card.innerHTML =
-      '<div class="live-card-label"><span class="live-card-expando">▸</span> ' + escapeHtml(label) + '</div>' +
-      '<button class="live-card-close" title="Dismiss">&times;</button>' +
-      '<div class="live-card-content" style="display:none">' + renderMarkdown(content) + '</div>';
-    // Toggle expand/collapse on label click
-    card.querySelector(".live-card-label").addEventListener("click", function () {
-      var wasCollapsed = card.classList.contains("live-card-collapsed");
-      if (wasCollapsed) {
-        card.classList.remove("live-card-collapsed");
-        card.querySelector(".live-card-expando").textContent = "▾";
-        card.querySelector(".live-card-content").style.display = "";
-      } else {
-        card.classList.add("live-card-collapsed");
-        card.querySelector(".live-card-expando").textContent = "▸";
-        card.querySelector(".live-card-content").style.display = "none";
-      }
-    });
-    // Dismiss button
-    card.querySelector(".live-card-close").addEventListener("click", function (e) {
-      e.stopPropagation();
-      dismissLiveCard(customType);
-    });
-    livePanel.appendChild(card);
-    liveCards[customType] = card;
-    livePanel.classList.add("visible");
+    // Fall back to the default live-card renderer
+    defaultMessageRenderer(data);
   }
 
   function dismissLiveCard(key) {
@@ -2559,19 +2696,21 @@
   }
 
   // ═══ #10: Bash Execution Blocks ════════════════════════════
+  //
+  // These dedicated bash handlers exist for backward compatibility
+  // with the extension host's bash-* event stream.  They delegate
+  // to the bash tool renderer registered in the tool renderer registry.
 
   function handleBashStart(data) {
-    hideWelcome();
-    var block = document.createElement("div");
-    block.className = "bash-execution";
-    block.id = data.entryId ? "entry-" + data.entryId : "bash-" + data.toolCallId;
-    block.setAttribute("data-status", "running");
-    var cmd = data.command || "";
-    if (cmd.length > 120) cmd = cmd.slice(0, 120) + "\u2026";
-    block.innerHTML =
-      '<div class="bash-header">$ ' + escapeHtml(cmd) + '</div>' +
-      '<div class="bash-output"></div>' +
-      '<div class="bash-footer"><span class="cancel-hint">running\u2026</span></div>';
+    // Build a tool-start-compatible data shape for the renderer
+    var toolData = {
+      toolName: "bash",
+      toolCallId: data.toolCallId,
+      args: { command: data.command || "" },
+      entryId: data.entryId,
+      fromMessage: false,
+    };
+    var block = bashToolRenderer.create(toolData);
     chatContainer.appendChild(block);
     bashBlocks[data.toolCallId] = block;
     bashOutputs[data.toolCallId] = "";
@@ -2592,25 +2731,11 @@
   function handleBashEnd(data) {
     var block = bashBlocks[data.toolCallId];
     if (!block) return;
-    var outEl = block.querySelector(".bash-output");
-    if (outEl && data.output) {
-      outEl.innerHTML = escapeHtml(data.output);
-    }
-    var footer = block.querySelector(".bash-footer");
-    var status = data.isError ? "error" : "complete";
-    if (footer) {
-      var exitCode = data.exitCode != null ? data.exitCode : 0;
-      footer.innerHTML =
-        '<span class="exit-code' + (data.isError ? " error" : "") + '">exit: ' + exitCode + '</span>' +
-        (data.cancelled ? ' <span>(cancelled)</span>' : "");
-    }
-    // Update the ID if we now have an entryId and the block doesn't have one
-    if (data.entryId && block && !block.id.startsWith("entry-")) {
-      block.id = "entry-" + data.entryId;
-    }
-    block.setAttribute("data-status", status);
-    delete bashBlocks[data.toolCallId];
-    delete bashOutputs[data.toolCallId];
+    var result = {
+      content: data.output ? [{ type: "text", text: data.output }] : [],
+      details: { exitCode: data.exitCode, cancelled: data.cancelled },
+    };
+    bashToolRenderer.finalize(block, result, data.isError, data.entryId);
     scrollToBottom();
   }
 
