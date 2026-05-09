@@ -15,7 +15,7 @@
 
 ## Quick Start
 
-1. **Install Pi**: `npm install -g @mariozechner/pi-coding-agent`
+1. **Install Pi**: `npm install -g @earendil-works/pi-coding-agent`
 2. **Set an API key**: Run **PiGui: Set Up API Key / Login** from the command palette (`Ctrl+Shift+P`), or set `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in your environment.
 3. **Open the chat**: Click the Pi icon in the activity bar, or run **PiGui: Code Agent** from the command palette.
 4. **Start prompting**: The agent can see your editor, check diagnostics, read files, and make edits.
@@ -46,7 +46,7 @@ The Pi coding agent is a powerful AI pair programmer, but the default terminal T
 
 ## Architecture
 
-Pi Code Gui loads the `@mariozechner/pi-coding-agent` SDK at runtime from your global npm install. This means `pi update --self` picks up new SDK versions without an extension update.
+Pi Code Gui loads the `@earendil-works/pi-coding-agent` SDK at runtime from your global npm install. This means `pi update --self` picks up new SDK versions without an extension update.
 
 - **PiService** manages the agent lifecycle: creates the SDK session, subscribes to events, translates them into chat UI messages, handles model/thinking/settings changes, and tracks usage stats.
 - **PiWebviewPanel** renders a webview chat UI. It subscribes to PiService events and re-renders streaming text, thinking blocks, tool execution, bash output, compaction summaries, and custom messages in real time.
@@ -69,7 +69,7 @@ Pi Code Gui loads the `@mariozechner/pi-coding-agent` SDK at runtime from your g
 ## Requirements
 
 - VS Code 1.118+
-- **No manual Pi install required** — the extension prompts you to install `@mariozechner/pi-coding-agent` automatically on first launch
+- **No manual Pi install required** — the extension prompts you to install `@earendil-works/pi-coding-agent` automatically on first launch
 - At least one API key (Anthropic, OpenAI, DeepSeek, Gemini, etc.) — run **PiGui: Set Up API Key / Login** or see the [Pi quickstart](https://pi.dev/docs/latest/quickstart)
 
 ## Development
