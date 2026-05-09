@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.0.13] — Namespace migration & widget UI
+
+### Changes
+- Switched SDK dependency from `@mariozechner/pi-coding-agent` to `@earendil-works/pi-coding-agent`
+- Extension widget live panel: cards persist until dismissed, notifications collapse to single line
+- Widget bridge: uiContext Proxy catches missing TUI methods gracefully, logs unknown calls
+- Output Channel: quiet by default — only errors and unimplemented calls surface
+- Devcontainer: installs `@earendil-works/pi-coding-agent`
+
 ## [0.0.12] — Widget bridge & live panel
 
 ### Changes

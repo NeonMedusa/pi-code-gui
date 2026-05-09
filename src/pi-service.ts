@@ -42,14 +42,14 @@ function resolvePiPackagePath(): string {
   const candidates: string[] = [];
 
   // Project-local from pi packages (workspace install)
-  candidates.push(path.resolve(".pi/npm/node_modules/@mariozechner/pi-coding-agent"));
+  candidates.push(path.resolve(".pi/npm/node_modules/@earendil-works/pi-coding-agent"));
 
   // Global npm / yarn / pnpm locations
   const home = process.env.HOME || process.env.USERPROFILE || "";
   if (home) {
     candidates.push(
-      path.join(home, ".npm-global/lib/node_modules/@mariozechner/pi-coding-agent"),
-      path.join(home, ".local/lib/node_modules/@mariozechner/pi-coding-agent"),
+      path.join(home, ".npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
+      path.join(home, ".local/lib/node_modules/@earendil-works/pi-coding-agent"),
     );
   }
 
@@ -60,29 +60,29 @@ function resolvePiPackagePath(): string {
       if (fs.existsSync(versionsDir)) {
         for (const version of fs.readdirSync(versionsDir)) {
           candidates.push(
-            path.join(versionsDir, version, "lib", "node_modules", "@mariozechner", "pi-coding-agent"),
+            path.join(versionsDir, version, "lib", "node_modules", "@earendil-works", "pi-coding-agent"),
           );
         }
       }
-    } catch {}
+    } catch { /* ignore */ }
   }
 
   // Windows %APPDATA%\npm
   const appData = process.env.APPDATA || "";
   if (appData) {
-    candidates.push(path.join(appData, "npm", "node_modules", "@mariozechner", "pi-coding-agent"));
+    candidates.push(path.join(appData, "npm", "node_modules", "@earendil-works", "pi-coding-agent"));
   }
 
   for (const candidate of candidates) {
     try {
       const pkgPath = path.join(candidate, "package.json");
       if (fs.existsSync(pkgPath)) { return candidate; }
-    } catch {}
+    } catch { /* ignore */ }
   }
 
   throw new Error(
     "Pi coding agent SDK not found. Please install it:\n" +
-      "  npm install -g @mariozechner/pi-coding-agent",
+      "  npm install -g @earendil-works/pi-coding-agent",
   );
 }
 
@@ -327,7 +327,7 @@ export class PiService {
           hasApiKey: false,
           error:
             `Pi SDK found but dependencies are missing: ${missing.join(", ")}. ` +
-            `Reinstall with: npm uninstall -g @mariozechner/pi-coding-agent && npm install -g @mariozechner/pi-coding-agent`,
+            `Reinstall with: npm uninstall -g @earendil-works/pi-coding-agent && npm install -g @earendil-works/pi-coding-agent`,
         };
       }
 
@@ -370,9 +370,10 @@ export class PiService {
     } catch (e: any) {
       return { success: false, error: `Failed to load pi-coding-agent: ${e.message ?? e}` };
     }
+
     try {
       this.AI = (await import(
-        path.join(this._piRoot, "node_modules/@mariozechner/pi-ai/dist/index.js")
+        path.join(this._piRoot, "node_modules/@earendil-works/pi-ai/dist/index.js")
       )) as PiAi;
     } catch (e: any) {
       const msg = e.message ?? String(e);
@@ -386,7 +387,7 @@ export class PiService {
           error:
             `Missing dependency (${openaiMatch ? "openai" : "@anthropic-ai/sdk"}). ` +
             `This is usually caused by a broken npm global install. ` +
-            `Fix: npm uninstall -g @mariozechner/pi-coding-agent && npm install -g @mariozechner/pi-coding-agent`,
+            `Fix: npm uninstall -g @earendil-works/pi-coding-agent && npm install -g @earendil-works/pi-coding-agent`,
         };
       }
       return { success: false, error: `Failed to load pi-ai: ${msg}` };

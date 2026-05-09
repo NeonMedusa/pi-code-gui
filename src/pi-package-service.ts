@@ -76,13 +76,13 @@ function normalizeRepoUrl(url: string): string {
 function resolvePiPackagePath(): string {
   const candidates: string[] = [];
 
-  candidates.push(path.resolve(".pi/npm/node_modules/@mariozechner/pi-coding-agent"));
+  candidates.push(path.resolve(".pi/npm/node_modules/@earendil-works/pi-coding-agent"));
 
   const home = process.env.HOME || process.env.USERPROFILE || "";
   if (home) {
     candidates.push(
-      path.join(home, ".npm-global/lib/node_modules/@mariozechner/pi-coding-agent"),
-      path.join(home, ".local/lib/node_modules/@mariozechner/pi-coding-agent"),
+      path.join(home, ".npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
+      path.join(home, ".local/lib/node_modules/@earendil-works/pi-coding-agent"),
     );
   }
 
@@ -92,7 +92,7 @@ function resolvePiPackagePath(): string {
       if (fs.existsSync(versionsDir)) {
         for (const version of fs.readdirSync(versionsDir)) {
           candidates.push(
-            path.join(versionsDir, version, "lib", "node_modules", "@mariozechner", "pi-coding-agent"),
+            path.join(versionsDir, version, "lib", "node_modules", "@earendil-works", "pi-coding-agent"),
           );
         }
       }
@@ -101,7 +101,7 @@ function resolvePiPackagePath(): string {
 
   const appData = process.env.APPDATA || "";
   if (appData) {
-    candidates.push(path.join(appData, "npm", "node_modules", "@mariozechner", "pi-coding-agent"));
+    candidates.push(path.join(appData, "npm", "node_modules", "@earendil-works", "pi-coding-agent"));
   }
 
   for (const candidate of candidates) {
@@ -111,7 +111,7 @@ function resolvePiPackagePath(): string {
     } catch { /* ignore */ }
   }
 
-  throw new Error("Pi coding agent SDK not found. Please install: npm install -g @mariozechner/pi-coding-agent");
+  throw new Error("Pi coding agent SDK not found. Please install: npm install -g @earendil-works/pi-coding-agent");
 }
 
 export class PiPackageService {

@@ -22,7 +22,7 @@ RUN mkdir -p /home/${USERNAME}/.npm-global/bin
 # tries to symlink into /usr/local/bin and fails with EACCES under the node user.
 # Also seed pi-coding-agent so the VS Code extension finds it immediately.
 RUN corepack enable --install-directory /home/${USERNAME}/.npm-global/bin && \
-    npm install -g @mariozechner/pi-coding-agent@latest
+    npm install -g @earendil-works/pi-coding-agent@latest
 
 WORKDIR /workspaces
 CMD ["sleep", "infinity"]

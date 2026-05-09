@@ -31,7 +31,7 @@ fi
 
 # ── pi-coding-agent ──────────────────────────────────
 echo "==> pi-coding-agent (latest)"
-if npm install -g @mariozechner/pi-coding-agent@latest >/dev/null 2>&1; then
+if npm install -g @earendil-works/pi-coding-agent@latest >/dev/null 2>&1; then
     echo "    pi $(pi --version 2>/dev/null || echo '(version unknown)') → $(command -v pi)"
 else
     echo "    warn: pi install/update failed (network?) — existing pi (if any) still works"

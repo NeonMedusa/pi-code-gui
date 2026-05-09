@@ -800,7 +800,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
       data: {
         message:
           "Pi coding agent SDK is not installed. " +
-          'Click "Install Pi" below or run: npm install -g @mariozechner/pi-coding-agent',
+          'Click "Install Pi" below or run: npm install -g @earendil-works/pi-coding-agent',
       },
     });
 
@@ -944,7 +944,7 @@ async function installPi(): Promise<void> {
   return new Promise((resolve) => {
     const term = vscode.window.createTerminal("Pi Install");
     term.show();
-    term.sendText("npm install -g @mariozechner/pi-coding-agent");
+    term.sendText("npm install -g @earendil-works/pi-coding-agent");
     term.sendText(
       'echo "✅ Pi SDK installed! Reload VS Code to use Pi Code Gui."',
     );
