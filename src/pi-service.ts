@@ -38,68 +38,52 @@ type EventListener = (event: PiServiceEvent) => void;
 
 // ── SDK Resolution ───────────────────────────────────────
 
-/** Namespaces tried in order — @earendil-works is the current home, @mariozechner is the legacy fallback. */
-const SDK_NAMESPACES = ["@earendil-works", "@mariozechner"];
-
 function resolvePiPackagePath(): string {
   const candidates: string[] = [];
 
+  // Project-local from pi packages (workspace install)
+  candidates.push(path.resolve(".pi/npm/node_modules/@earendil-works/pi-coding-agent"));
+
+  // Global npm / yarn / pnpm locations
   const home = process.env.HOME || process.env.USERPROFILE || "";
+  if (home) {
+    candidates.push(
+      path.join(home, ".npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
+      path.join(home, ".local/lib/node_modules/@earendil-works/pi-coding-agent"),
+    );
+  }
 
-  for (const ns of SDK_NAMESPACES) {
-    // Project-local from pi packages (workspace install)
-    candidates.push(path.resolve(`.pi/npm/node_modules/${ns}/pi-coding-agent`));
-
-    // Global npm / yarn / pnpm locations
-    if (home) {
-      candidates.push(
-        path.join(home, ".npm-global/lib/node_modules", ns, "pi-coding-agent"),
-        path.join(home, ".local/lib/node_modules", ns, "pi-coding-agent"),
-      );
-    }
-
-    // nvm
-    if (process.env.NVM_DIR) {
-      try {
-        const versionsDir = path.join(process.env.NVM_DIR, "versions", "node");
-        if (fs.existsSync(versionsDir)) {
-          for (const version of fs.readdirSync(versionsDir)) {
-            candidates.push(
-              path.join(versionsDir, version, "lib", "node_modules", ns, "pi-coding-agent"),
-            );
-          }
+  // nvm
+  if (process.env.NVM_DIR) {
+    try {
+      const versionsDir = path.join(process.env.NVM_DIR, "versions", "node");
+      if (fs.existsSync(versionsDir)) {
+        for (const version of fs.readdirSync(versionsDir)) {
+          candidates.push(
+            path.join(versionsDir, version, "lib", "node_modules", "@earendil-works", "pi-coding-agent"),
+          );
         }
-      } catch { /* ignore */ }
-    }
+      }
+    } catch { /* ignore */ }
+  }
 
-    // Windows %APPDATA%\npm
-    const appData = process.env.APPDATA || "";
-    if (appData) {
-      candidates.push(path.join(appData, "npm", "node_modules", ns, "pi-coding-agent"));
-    }
+  // Windows %APPDATA%\npm
+  const appData = process.env.APPDATA || "";
+  if (appData) {
+    candidates.push(path.join(appData, "npm", "node_modules", "@earendil-works", "pi-coding-agent"));
+  }
 
-    // Check candidates for this namespace
-    for (const candidate of candidates) {
-      try {
-        const pkgPath = path.join(candidate, "package.json");
-        if (fs.existsSync(pkgPath)) { return candidate; }
-      } catch { /* ignore */ }
-    }
-    candidates.length = 0;
+  for (const candidate of candidates) {
+    try {
+      const pkgPath = path.join(candidate, "package.json");
+      if (fs.existsSync(pkgPath)) { return candidate; }
+    } catch { /* ignore */ }
   }
 
   throw new Error(
     "Pi coding agent SDK not found. Please install it:\n" +
       "  npm install -g @earendil-works/pi-coding-agent",
   );
-}
-
-/** Derive the companion-package namespace from the resolved SDK root path. */
-function sdkNamespaceFromPath(sdkRoot: string): string {
-  for (const ns of SDK_NAMESPACES) {
-    if (sdkRoot.includes(`/${ns}/`)) { return ns; }
-  }
-  return SDK_NAMESPACES[0];
 }
 
 // ── System Prompt ────────────────────────────────────────
@@ -387,11 +371,9 @@ export class PiService {
       return { success: false, error: `Failed to load pi-coding-agent: ${e.message ?? e}` };
     }
 
-    const piAiNs = sdkNamespaceFromPath(this._piRoot);
-
     try {
       this.AI = (await import(
-        path.join(this._piRoot, "node_modules", piAiNs, "pi-ai", "dist", "index.js")
+        path.join(this._piRoot, "node_modules/@earendil-works/pi-ai/dist/index.js")
       )) as PiAi;
     } catch (e: any) {
       const msg = e.message ?? String(e);
