@@ -1,5 +1,15 @@
 # Change Log
 
+## [0.0.14] — Renderer registry & spacer fix
+
+### Changes
+- **Tool renderer registry**: `registerToolRenderer` / `getToolRenderer` pattern extracts DOM logic from event router; each tool (bash, generic) gets its own `{ create, update, finalize }` renderer
+- **Message renderer registry**: `registerMessageRenderer` lets pi extensions register custom UI for `custom-message` event types
+- Both registries exposed as `window.__piRegisterToolRenderer` and `window.__piRegisterMessageRenderer` for extensions
+- Tool lifecycle handlers (`handleToolStart`, `handleToolUpdate`, `handleToolEnd`) now delegate through the renderer registry instead of inline DOM manipulation
+- Custom message handler delegates through message renderer registry with `createLiveCard` fallback
+- **Fix**: working indicator spacers now have an `id` so `removeWorkingIndicator` can find and remove them, preventing accumulated grey gaps in chat
+
 ## [0.0.13] — Namespace migration & widget UI
 
 ### Changes

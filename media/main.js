@@ -1124,6 +1124,7 @@
 
   function createSpacer() {
     var el = document.createElement("div");
+    el.id = "working-spacer";
     el.style.height = "4px";
     return el;
   }
