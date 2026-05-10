@@ -5,6 +5,14 @@ import { createBridgeTools } from "./bridge-tools.js";
 import type { PiServiceEvent } from "./types.js";
 import { piLog, piWarn } from "./logger.js";
 
+/** Find the last element matching predicate (ES2023 findLast polyfill). */
+function reverseFind<T>(arr: T[], pred: (el: T) => boolean): T | undefined {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (pred(arr[i])) { return arr[i]; }
+  }
+  return undefined;
+}
+
 // ── Types for the dynamically loaded SDK ──────────────────
 
 interface PiSdk {
@@ -38,7 +46,7 @@ type EventListener = (event: PiServiceEvent) => void;
 
 // ── SDK Resolution ───────────────────────────────────────
 
-function resolvePiPackagePath(): string {
+export function resolvePiPackagePath(): string {
   const candidates: string[] = [];
 
   // Project-local from pi packages (workspace install)
@@ -269,6 +277,9 @@ export class PiService {
 
   // Track current assistant message content (for toolCall stubs during message_update)
   private currentAssistantToolCalls: Map<string, { toolName: string; toolCallId: string; args: any }> = new Map();
+
+  // Widget activity timer (cleared on dispose to prevent leaks)
+  private _widgetTimer: ReturnType<typeof setInterval> | null = null;
 
   // Turn tracking (like AgentSession._turnIndex in the SDK)
   private turnIndex = 0;
@@ -673,13 +684,11 @@ export class PiService {
     // Active widgets keyed by widget key (rendered text per widget)
     const widgetTexts = new Map<string, string>();
     const widgetLastUpdate = new Map<string, number>();
-    let widgetActivityTimer: ReturnType<typeof setInterval> | null = null;
-
     // Periodically check for stale widgets (not updated in 30s) and clear them.
     // This prevents orphaned animations from running forever when extensions
     // forget to call stopWidgetAnimation (e.g. pi-subagents async jobs).
     const MAX_WIDGET_IDLE_MS = 30_000;
-    widgetActivityTimer = setInterval(() => {
+    this._widgetTimer = setInterval(() => {
       const now = Date.now();
       for (const [key, lastUpdate] of widgetLastUpdate) {
         if (now - lastUpdate > MAX_WIDGET_IDLE_MS) {
@@ -689,7 +698,7 @@ export class PiService {
         }
       }
     }, 10_000);
-    if (widgetActivityTimer.unref) { widgetActivityTimer.unref(); }
+    if (this._widgetTimer.unref) { this._widgetTimer.unref(); }
 
     // Base uiContext with the methods we explicitly support.
     // Wrapped in a Proxy so any unknown method calls (e.g. from TUI-only
@@ -861,8 +870,22 @@ export class PiService {
   /** Send existing session messages to the webview on initial load */
   private sendInitialMessages() {
     // Build session context from the session manager
-    const entries = this.sessionManager.getEntries();
+    let entries: any[];
+    try {
+      entries = this.sessionManager.getEntries();
+    } catch (e: any) {
+      piWarn(`sendInitialMessages: getEntries failed: ${e.message}`);
+      return;
+    }
     if (!entries || entries.length === 0) { return; }
+
+    // Pre-index tool results by call ID (O(n) instead of O(n²) .find() per entry)
+    const toolResultsById = new Map<string, any>();
+    for (const e of entries) {
+      if (e.type === "message" && e.message?.role === "toolResult") {
+        toolResultsById.set(e.message.toolCallId, e);
+      }
+    }
 
     // Emit existing messages to populate the webview chat
     for (const entry of entries) {
@@ -899,9 +922,7 @@ export class PiService {
 
             const toolCalls = this.extractToolCallsFromContent(msg.content);
             for (const tc of toolCalls) {
-              const toolResultEntry = entries.find(
-                (e: any) => e.type === "message" && e.message?.role === "toolResult" && e.message?.toolCallId === tc.id,
-              );
+              const toolResultEntry = toolResultsById.get(tc.id);
               if (tc.name === "bash" || tc.name === "exec") {
                 this.emit({ type: "bash-start", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", entryId: toolResultEntry?.id } });
                 const outputText = toolResultEntry?.message
@@ -972,6 +993,22 @@ export class PiService {
       .map((c: any) => ({ name: c.name, id: c.id, arguments: c.arguments }));
   }
 
+  /** Get entries once per event, plus pre-built lookups to avoid O(n²) scans. */
+  private getEntriesWithLookups(): { entries: any[]; byMessageId: Map<string, any>; byToolCallId: Map<string, any> } {
+    const entries: any[] = this.sessionManager?.getEntries?.() ?? [];
+    const byMessageId = new Map<string, any>();
+    const byToolCallId = new Map<string, any>();
+    for (const e of entries) {
+      if (e.type === "message") {
+        if (e.message?.id) { byMessageId.set(e.message.id, e); }
+        if (e.message?.role === "toolResult" && e.message?.toolCallId) {
+          byToolCallId.set(e.message.toolCallId, e);
+        }
+      }
+    }
+    return { entries, byMessageId, byToolCallId };
+  }
+
   private handleAgentEvent(event: any) {
     switch (event.type) {
       case "agent_start":
@@ -990,29 +1027,31 @@ export class PiService {
         break;
 
       case "turn_start":
-        this.emit({ type: "turn-start", data: { turnIndex: this.turnIndex } });
+        this.emit({ type: "turn-start" });
         break;
 
       case "turn_end":
-        this.emit({ type: "turn-end", data: { turnIndex: this.turnIndex, message: event.message, toolResults: event.toolResults } });
+        this.emit({ type: "turn-end", data: { message: event.message, toolResults: event.toolResults } });
         this.turnIndex++;
         break;
 
-      case "message_start":
+      case "message_start": {
+        const { byMessageId } = this.getEntriesWithLookups();
         if (event.message?.role === "user") {
           const text = this.extractTextFromContent(event.message.content);
           if (text) {
             this._userMessages.push({ id: event.message.id ?? `user-${Date.now()}`, text, timestamp: event.message.timestamp ?? Date.now() });
             if (this._userMessages.length > 50) { this._userMessages.shift(); }
-            const entry = this.sessionManager?.getEntries?.()?.find((e: any) => e.message?.id === event.message.id);
+            const entry = byMessageId.get(event.message.id);
             this.emit({ type: "chat-message", data: { role: "user", content: text, entryId: entry?.id ?? event.message.id } });
           }
         } else if (event.message?.role === "assistant") {
           this.currentAssistantToolCalls.clear();
-          const entry = this.sessionManager?.getEntries?.()?.find((e: any) => e.message?.id === event.message.id);
+          const entry = byMessageId.get(event.message.id);
           this.emit({ type: "assistant-start", data: { messageId: event.message.id, entryId: entry?.id ?? event.message.id } });
         }
         break;
+      }
 
       case "message_update": {
         const d = event.assistantMessageEvent;
@@ -1034,6 +1073,11 @@ export class PiService {
         if (event.message?.role === "assistant" && event.message?.content) {
           const toolCalls = this.extractToolCallsFromContent(event.message.content);
           for (const tc of toolCalls) {
+            // Skip bash/exec tools — they have their own rendering path
+            // (bash-start/bash-output/bash-end) and don't need generic
+            // tool-start/tool-update events that would leak JSON args into
+            // the bash output div as {}{}{}{} artifacts.
+            if (tc.name === "bash" || tc.name === "exec") { continue; }
             if (!this.currentAssistantToolCalls.has(tc.id)) {
               this.currentAssistantToolCalls.set(tc.id, { toolName: tc.name, toolCallId: tc.id, args: tc.arguments });
               this.emit({ type: "tool-start", data: { toolCallId: tc.id, toolName: tc.name, args: tc.arguments, fromMessage: true } });
@@ -1056,17 +1100,15 @@ export class PiService {
           this.emit({ type: "assistant-end", data: { stopReason: event.message.stopReason, errorMessage: event.message.errorMessage, toolCalls: toolCalls.map((tc) => tc.id) } });
           this.reportStatus();
         } else if (event.message?.role === "custom") {
-          const custEntry = this.sessionManager?.getEntries?.()?.findLast?.(
-            (e: any) => e.type === "message" && e.message?.role === "custom",
-          );
+          const { entries } = this.getEntriesWithLookups();
+          const custEntry = reverseFind(entries, (e: any) => e.type === "message" && e.message?.role === "custom");
           this.emit({ type: "custom-message", data: { customType: event.message.customType, content: event.message.content, timestamp: event.message.timestamp, entryId: custEntry?.id ?? event.message.id } });
         }
         break;
 
       case "tool_execution_start": {
-        const tcEntry = this.sessionManager?.getEntries?.()?.find(
-          (e: any) => e.type === "message" && e.message?.role === "toolResult" && e.message?.toolCallId === event.toolCallId,
-        );
+        const { byToolCallId } = this.getEntriesWithLookups();
+        const tcEntry = byToolCallId.get(event.toolCallId);
         const tcEntryId = tcEntry?.id ?? event.toolCallId;
 
         if (event.toolName === "bash" || event.toolName === "exec") {
@@ -1087,9 +1129,8 @@ export class PiService {
         break;
 
       case "tool_execution_end": {
-        const tcEntry = this.sessionManager?.getEntries?.()?.find(
-          (e: any) => e.type === "message" && e.message?.role === "toolResult" && e.message?.toolCallId === event.toolCallId,
-        );
+        const { byToolCallId } = this.getEntriesWithLookups();
+        const tcEntry = byToolCallId.get(event.toolCallId);
         const tcEntryId = tcEntry?.id ?? event.toolCallId;
 
         if (event.toolName === "bash" || event.toolName === "exec") {
@@ -1122,8 +1163,8 @@ export class PiService {
       case "compaction_end":
         this.emit({ type: "compaction-end", data: { reason: event.reason, aborted: event.aborted, willRetry: event.willRetry, result: event.result, errorMessage: event.errorMessage } });
         if (event.result) {
-          const compactEntries = this.sessionManager?.getEntries?.();
-          const compactEntry = compactEntries?.findLast?.((e: any) => e.type === "compaction");
+          const { entries } = this.getEntriesWithLookups();
+          const compactEntry = reverseFind(entries, (e: any) => e.type === "compaction");
           this.emit({ type: "compaction-summary-message", data: { summary: event.result.summary, tokensBefore: event.result.tokensBefore, timestamp: Date.now(), entryId: compactEntry?.id } });
         }
         break;
@@ -1238,6 +1279,14 @@ export class PiService {
   replayBranchEntries(path: any[]) {
     this._userMessages = [];
 
+    // Pre-index tool results by call ID
+    const toolResultsById = new Map<string, any>();
+    for (const e of path) {
+      if (e.type === "message" && e.message?.role === "toolResult") {
+        toolResultsById.set(e.message.toolCallId, e);
+      }
+    }
+
     for (const entry of path) {
       if (entry.type === "message" && entry.message) {
         const msg = entry.message;
@@ -1265,9 +1314,7 @@ export class PiService {
 
             const toolCalls = this.extractToolCallsFromContent(msg.content);
             for (const tc of toolCalls) {
-              const toolResultEntry = path.find(
-                (e: any) => e.type === "message" && e.message?.role === "toolResult" && e.message?.toolCallId === tc.id,
-              );
+              const toolResultEntry = toolResultsById.get(tc.id);
               if (tc.name === "bash" || tc.name === "exec") {
                 this.emit({ type: "bash-start", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", entryId: toolResultEntry?.id } });
                 const outputText = toolResultEntry?.message ? this.extractTextFromContent(toolResultEntry.message.content) : "";
@@ -1866,6 +1913,7 @@ export class PiService {
   // ── Cleanup ────────────────────────────────────────────
 
   dispose() {
+    if (this._widgetTimer) { clearInterval(this._widgetTimer); this._widgetTimer = null; }
     this.unsubscribe?.();
     this.session?.dispose();
     this.session = null;

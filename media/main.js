@@ -307,18 +307,10 @@
       return block;
     },
     update: function (el, partialResult) {
-      var toolCallId = el.id.replace(/^(entry-|bash-)/, "");
-      var text = "";
-      if (partialResult && partialResult.content) {
-        text = partialResult.content
-          .filter(function (c) { return c.type === "text"; })
-          .map(function (c) { return c.text; })
-          .join("\n");
-      }
-      if (!text) return;
-      bashOutputs[toolCallId] = (bashOutputs[toolCallId] || "") + text;
-      var outEl = el.querySelector(".bash-output");
-      if (outEl) outEl.innerHTML = escapeHtml(bashOutputs[toolCallId]);
+      // Only accumulate from bash-output events, not from tool-update.
+      // tool-update events contain JSON-serialized args that would
+      // leak noise ({}{}{}{}) into the output div.
+      // Output is handled exclusively by handleBashOutput.
     },
     finalize: function (el, result, isError, entryId) {
       var toolCallId = el.id.replace(/^(entry-|bash-)/, "");

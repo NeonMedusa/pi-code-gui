@@ -4,29 +4,19 @@
 
 ### Fixed
 - **Bash blocks collapsed to 1px**: `#chat-container` flex layout with `flex-shrink: 1` caused `.bash-execution` and `.tool-block` elements to shrink to ~1px tall after many messages. Added `flex-shrink: 0` to block-level children.
-- **Dual-path bash dedup race**: `handleBashStart` and `handleToolStart` used separate trackers (`bashBlocks{}` vs `currentToolBlocks{}`), causing duplicate DOM nodes for the same `toolCallId`. All six handlers now cross-check both trackers and promote instead of duplicating.
-- `handleToolEnd` and `handleBashEnd` have fallback paths across both trackers.
-- `handleAgentEnd` sweeps orphaned bash blocks left dangling in the DOM.
+- **Dual-path bash dedup race**: `handleBashStart` and `handleToolStart` used separate trackers (`bashBlocks{}` vs `currentToolBlocks{}`), causing duplicate DOM nodes. All handlers now cross-check both trackers; `handleAgentEnd` sweeps orphans.
+- **`{}{}{}{}` artifacts in bash output during streaming**: Assistant content-delta events emitted `tool-update` for bash tools with `JSON.stringify(tc.arguments)`, which leaked into the output div. Fixed by skipping bash/exec in content-delta tool emissions, and making `bashToolRenderer.update()` a no-op.
 
 ### Added
-- **`/debug` slash command**: Dumps structured webview state inline (chat DOM structure with element types/IDs/statuses, tracker state, event log, DOM mutation log, duplicate/orphan analysis). No copy-paste needed.
-- **`window.__piDebug` API** in webview: `.summary()`, `.dumpState()`, `.eventLog(n)`, `.domLog(n)`, `.bashBlocks()`, `.toolBlocks()`, `.enabled(bool)` — callable from DevTools.
-- **MutationObserver** on `#chat-container` logs child additions/removals with tag, id, class, and status.
-- **Circular event log** (500 entries) captures every inbound message with timestamps, callIds, and cross-tracker state.
-- `debugDumpChatStructure()` includes `bashDetail` (headerText, outputText, outputLen, footerText, offsetHeight, computedDisplay) for diagnosing rendering issues.
-
-### Changed
-- Previous v0.0.15 entry (webview force-refresh) merged into this release.
+- **`/debug` slash command**: Dumps structured webview state inline (chat DOM structure, tracker state, event log, DOM mutation log, duplicate/orphan analysis).
+- **`window.__piDebug` API**: `.summary()`, `.dumpState()`, `.eventLog(n)`, `.domLog(n)`, `.bashBlocks()`, `.toolBlocks()`, `.enabled(bool)`.
+- **MutationObserver** on `#chat-container` + circular event log (500 entries).
+- `debugDumpChatStructure()` now includes `bashDetail` (headerText, outputText, offsetHeight, computedDisplay).
 
 ## [0.0.14] — Renderer registry & spacer fix
 
 ### Changes
-- **Tool renderer registry**: `registerToolRenderer` / `getToolRenderer` pattern extracts DOM logic from event router; each tool (bash, generic) gets its own `{ create, update, finalize }` renderer
-- **Message renderer registry**: `registerMessageRenderer` lets pi extensions register custom UI for `custom-message` event types
-- Both registries exposed as `window.__piRegisterToolRenderer` and `window.__piRegisterMessageRenderer` for extensions
-- Tool lifecycle handlers (`handleToolStart`, `handleToolUpdate`, `handleToolEnd`) now delegate through the renderer registry instead of inline DOM manipulation
-- Custom message handler delegates through message renderer registry with `createLiveCard` fallback
-- **Fix**: working indicator spacers now have an `id` so `removeWorkingIndicator` can find and remove them, preventing accumulated grey gaps in chat
+- Improved internal rendering event handlers.
 
 ## [0.0.13] — Namespace migration & widget UI
 
