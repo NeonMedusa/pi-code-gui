@@ -15,7 +15,6 @@
   var lastUserMessageContent = null;
   var assistantToolCallIds = {};       // toolCallId -> true, for dual-source dedup (message + execution)
   var userMessagesSeen = 0;
-  var currentTurnBlock = null;          // current turn separator element
   var attachments = [];                // { id, type, name, mediaType, data, blobUrl }
 
   // DOM refs
@@ -42,6 +41,145 @@
   // Bash execution blocks (#10)
   var bashBlocks = {};             // toolCallId -> bash block element
   var bashOutputs = {};            // toolCallId -> accumulated output string
+
+  // ═══ Debug Infrastructure ══════════════════════════════
+  //
+  // Tracks every inbound message, DOM mutations, and internal state
+  // so we can answer "why did a block disappear?" without copy-pasting
+  // massive DOM trees.  See also: window.__piDebug, /debug slash command.
+
+  var debugEventLog = [];          // [{ ts, type, dataKeys, callId, stackDepth }]
+  var debugMaxEvents = 500;        // circular buffer cap
+  var debugDomLog = [];            // [{ ts, action, elInfo }]
+  var debugMaxDomLog = 200;
+  var debugEnabled = true;         // toggle via /debug on|off
+
+  function debugLogEvent(type, data) {
+    if (!debugEnabled) return;
+    var entry = {
+      ts: Date.now(),
+      type: type,
+      dataKeys: data ? Object.keys(data).slice(0, 10) : [],
+      callId: data ? (data.toolCallId || data.entryId || "") : "",
+      // Capture key identifiers for bash/tool dedup analysis
+      id: data ? (data.entryId || data.toolCallId || "") : "",
+      fromMessage: data ? !!data.fromMessage : false,
+      toolName: data ? (data.toolName || "") : "",
+      stackDepth: new Error().stack ? new Error().stack.split("\n").length : 0,
+    };
+    debugEventLog.push(entry);
+    if (debugEventLog.length > debugMaxEvents) debugEventLog.shift();
+  }
+
+  function debugLogDom(action, el) {
+    if (!debugEnabled || !el || !el.tagName) return;
+    var entry = {
+      ts: Date.now(),
+      action: action,
+      tag: el.tagName.toLowerCase(),
+      id: el.id || "",
+      classes: el.className || "",
+      status: el.getAttribute ? el.getAttribute("data-status") : "",
+      text: (el.textContent || "").slice(0, 80),
+      parentId: el.parentElement ? (el.parentElement.id || el.parentElement.className) : "",
+    };
+    debugDomLog.push(entry);
+    if (debugDomLog.length > debugMaxDomLog) debugDomLog.shift();
+  }
+
+  // Snapshot all children of chatContainer (just tag/id/status — no text content)
+  function debugDumpChatStructure() {
+    var children = [];
+    for (var i = 0; i < chatContainer.children.length; i++) {
+      var c = chatContainer.children[i];
+      // For bash-execution blocks, capture the inner structure too
+      var bashDetail = null;
+      if (c.className && c.className.indexOf("bash-execution") !== -1) {
+        var header = c.querySelector(".bash-header");
+        var output = c.querySelector(".bash-output");
+        var footer = c.querySelector(".bash-footer");
+        bashDetail = {
+          headerText: header ? header.textContent.slice(0, 120) : "MISSING",
+          outputLen: output ? output.innerHTML.length : -1,
+          outputText: output ? output.textContent.slice(0, 200) : "MISSING",
+          footerText: footer ? footer.textContent : "MISSING",
+          offsetHeight: c.offsetHeight,
+          computedDisplay: c.style.display || (typeof getComputedStyle !== "undefined" ? getComputedStyle(c).display : "?"),
+          computedVisibility: typeof getComputedStyle !== "undefined" ? getComputedStyle(c).visibility : "?",
+        };
+      }
+      children.push({
+        idx: i,
+        tag: c.tagName.toLowerCase(),
+        id: c.id || "",
+        classes: c.className || "",
+        status: c.getAttribute ? c.getAttribute("data-status") : "",
+        childCount: c.children.length,
+        bashDetail: bashDetail,
+      });
+    }
+    return {
+      totalChildren: chatContainer.children.length,
+      children: children,
+      bashBlocksKeys: Object.keys(bashBlocks),
+      currentToolBlocksKeys: Object.keys(currentToolBlocks),
+      trackers: {
+        bashBlocksCount: Object.keys(bashBlocks).length,
+        currentToolBlocksCount: Object.keys(currentToolBlocks).length,
+        bashOutputsCount: Object.keys(bashOutputs).length,
+      },
+    };
+  }
+
+  // Expose structured debug API (no DOM copy-paste needed)
+  window.__piDebug = {
+    enabled: function (on) { debugEnabled = on; return debugEnabled; },
+    dumpState: debugDumpChatStructure,
+    eventLog: function (n) { return debugEventLog.slice(-(n || 50)); },
+    domLog: function (n) { return debugDomLog.slice(-(n || 50)); },
+    bashBlocks: function () { return Object.keys(bashBlocks).map(function (k) { return { id: k, status: bashBlocks[k].getAttribute ? bashBlocks[k].getAttribute("data-status") : "?", tag: bashBlocks[k].tagName }; }); },
+    toolBlocks: function () { return Object.keys(currentToolBlocks).map(function (k) { var e = currentToolBlocks[k]; var el = e.el || e; return { id: k, status: el.getAttribute ? el.getAttribute("data-status") : "?", tag: el.tagName, hasRenderer: !!e.renderer }; }); },
+    summary: function () {
+      var s = debugDumpChatStructure();
+      var el = debugEventLog.slice(-30);
+      var dl = debugDomLog.slice(-30);
+      // Correlate: find ids that appear in both bashBlocks and currentToolBlocks (duplicates)
+      var bKeys = new Set(Object.keys(bashBlocks));
+      var tKeys = new Set(Object.keys(currentToolBlocks));
+      var dupes = [];
+      bKeys.forEach(function (k) { if (tKeys.has(k)) dupes.push(k); });
+      var orphanBash = [];
+      bKeys.forEach(function (k) { if (!tKeys.has(k)) orphanBash.push(k); });
+      var orphanTool = [];
+      tKeys.forEach(function (k) { if (!bKeys.has(k)) orphanTool.push(k); });
+      return {
+        chat: s,
+        dupes: dupes,
+        orphanBash: orphanBash,
+        orphanTool: orphanTool,
+        lastEvents: el,
+        lastDomChanges: dl,
+      };
+    },
+  };
+
+  // MutationObserver: track additions/removals from chatContainer in real time
+  if (typeof MutationObserver !== "undefined") {
+    var debugObserver = new MutationObserver(function (mutations) {
+      if (!debugEnabled) return;
+      mutations.forEach(function (m) {
+        for (var i = 0; i < m.addedNodes.length; i++) {
+          debugLogDom("added", m.addedNodes[i]);
+        }
+        for (var j = 0; j < m.removedNodes.length; j++) {
+          debugLogDom("removed", m.removedNodes[j]);
+        }
+      });
+    });
+    debugObserver.observe(chatContainer, { childList: true });
+  }
+
+  // ═══ End Debug Infrastructure ═══════════════════════════
 
   // Truncation text store (#6)
   var truncationTexts = {};        // id -> { preview: string, full: string }
@@ -169,18 +307,10 @@
       return block;
     },
     update: function (el, partialResult) {
-      var toolCallId = el.id.replace(/^(entry-|bash-)/, "");
-      var text = "";
-      if (partialResult && partialResult.content) {
-        text = partialResult.content
-          .filter(function (c) { return c.type === "text"; })
-          .map(function (c) { return c.text; })
-          .join("\n");
-      }
-      if (!text) return;
-      bashOutputs[toolCallId] = (bashOutputs[toolCallId] || "") + text;
-      var outEl = el.querySelector(".bash-output");
-      if (outEl) outEl.innerHTML = escapeHtml(bashOutputs[toolCallId]);
+      // Only accumulate from bash-output events, not from tool-update.
+      // tool-update events contain JSON-serialized args that would
+      // leak noise ({}{}{}{}) into the output div.
+      // Output is handled exclusively by handleBashOutput.
     },
     finalize: function (el, result, isError, entryId) {
       var toolCallId = el.id.replace(/^(entry-|bash-)/, "");
@@ -297,6 +427,10 @@
 
   window.addEventListener("message", function (event) {
     var msg = event.data;
+    // Debug: log every incoming extension message (skip high-frequency stream deltas)
+    if (msg.type !== "stream-delta" && msg.type !== "thinking-delta" && msg.type !== "tool-update" && msg.type !== "bash-output") {
+      debugLogEvent("recv:" + msg.type, msg.data || msg);
+    }
     switch (msg.type) {
       // Agent lifecycle
       case "agent-start":         handleAgentStart(); break;
@@ -359,6 +493,7 @@
   // ═══ Agent Lifecycle ═══════════════════════════════════
 
   function handleAgentStart() {
+    debugLogEvent("agent-start", { bashBlocksN: Object.keys(bashBlocks).length, toolBlocksN: Object.keys(currentToolBlocks).length });
     isStreaming = true;
     assistantToolCallIds = {};
     // Do NOT clear the live panel here — extension cards (like tldr summaries)
@@ -370,6 +505,12 @@
   }
 
   function handleAgentEnd() {
+    debugLogEvent("agent-end:BEFORE", {
+      bashBlocksN: Object.keys(bashBlocks).length,
+      toolBlocksN: Object.keys(currentToolBlocks).length,
+      bashKeys: Object.keys(bashBlocks),
+      toolKeys: Object.keys(currentToolBlocks),
+    });
     isStreaming = false;
     isRetrying = false;
     assistantToolCallIds = {};
@@ -410,35 +551,34 @@
     });
     currentToolBlocks = {};
 
+    // Also finalize any dangling bash blocks that were never closed
+    Object.keys(bashBlocks).forEach(function (id) {
+      var block = bashBlocks[id];
+      if (block && block.getAttribute && block.getAttribute("data-status") === "running") {
+        debugLogEvent("agent-end:ORPHAN-BASH", { toolCallId: id, inDOM: !!block.parentElement });
+        block.setAttribute("data-status", "done");
+        var footer = block.querySelector(".bash-footer");
+        if (footer) { footer.innerHTML = '<span class="exit-code">exit: -</span> <span>(ended)</span>'; }
+        delete bashBlocks[id];
+        delete bashOutputs[id];
+      }
+    });
+
     updateStreamingState();
   }
 
-  // ═══ Turn Lifecycle ═══════════════════════════════════=
+  // ═══ Turn Lifecycle ════════════════════════════════════
 
   function handleTurnStart(data) {
     hideWelcome();
-
-    // Build turn separator: ──── Turn N ────
-    var turnNum = (data && data.turnIndex != null) ? data.turnIndex + 1 : 1;
-    var sep = document.createElement("div");
-    sep.className = "turn-separator";
-    sep.innerHTML =
-      '<div class="turn-label">Turn ' + turnNum + '</div>' +
-      '<div class="turn-bar"></div>';
-    chatContainer.appendChild(sep);
-    currentTurnBlock = sep;
   }
 
   function handleTurnEnd(data) {
-    // Track error state from the turn_end message (like Agent class does internally)
     if (data && data.message && data.message.role === "assistant" && data.message.errorMessage) {
-      // If the current assistant container exists, show the error
       if (currentAssistantEl) {
         addErrorToElement(currentAssistantEl, data.message.errorMessage);
       }
     }
-    // Keep the turn separator; clean up the reference for next turn
-    currentTurnBlock = null;
   }
 
   // ═══ Message Lifecycle ═════════════════════════════════
@@ -592,19 +732,45 @@
   function handleToolStart(data) {
     hideWelcome();
 
-    // Guard against duplicates
-    if (currentToolBlocks[data.toolCallId]) {
-      var existing = currentToolBlocks[data.toolCallId];
-      var block = existing.el || existing;
-      if (block && block.getAttribute("data-status") === "pending") {
+    var callId = data.toolCallId;
+    debugLogEvent("tool-start", {
+      callId: callId,
+      toolName: data.toolName,
+      entryId: data.entryId,
+      fromMessage: data.fromMessage,
+      inToolBlocks: !!currentToolBlocks[callId],
+      inBashBlocks: !!bashBlocks[callId],
+    });
+
+    // Guard against duplicates — check BOTH trackers (#fix: bash blocks
+    // created by handleBashStart were invisible to this dedup, causing
+    // orphaned duplicate DOM nodes that never finalize).
+    var existingTool = currentToolBlocks[callId];
+    var existingBash = bashBlocks[callId];
+
+    if (existingTool || existingBash) {
+      debugLogEvent("tool-start:DEDUP", {
+        callId: callId,
+        inTool: !!existingTool,
+        inBash: !!existingBash,
+        bashStatus: existingBash ? (existingBash.getAttribute ? existingBash.getAttribute("data-status") : "?") : "N/A",
+      });
+      // If we have a bash block, promote it into currentToolBlocks so the
+      // tool-end handler can finalize it through the normal path.
+      if (existingBash && !existingTool) {
+        currentToolBlocks[callId] = { el: existingBash, renderer: bashToolRenderer };
+      }
+      // Update status on whichever block we have
+      var block = existingTool ? (existingTool.el || existingTool) : existingBash;
+      if (block && block.getAttribute && block.getAttribute("data-status") === "pending") {
+        block.setAttribute("data-status", "running");
         var statusEl = block.querySelector(".tool-status");
         if (statusEl) {
           statusEl.textContent = "running";
           statusEl.className = "tool-status running";
         }
-        block.setAttribute("data-status", "running");
       }
-      if (data.entryId && block && !block.id.startsWith("entry-")) {
+      if (data.entryId && block && block.id && !block.id.startsWith("entry-")) {
         block.id = "entry-" + data.entryId;
       }
       return;
@@ -613,6 +779,7 @@
     // Look up the renderer for this tool name
     var renderer = getToolRenderer(data.toolName);
     var block = renderer.create(data);
+    if (!block) { console.warn("[pi-gui] tool renderer returned null for", data.toolName); return; }
 
     if (data.entryId && !block.id.startsWith("entry-")) {
       block.id = "entry-" + data.entryId;
@@ -620,14 +787,14 @@
     chatContainer.appendChild(block);
 
     // Store both the element and its renderer for update/finalize
-    currentToolBlocks[data.toolCallId] = { el: block, renderer: renderer };
+    currentToolBlocks[callId] = { el: block, renderer: renderer };
 
     // If fromMessage=false (actual execution), mark as running
     if (!data.fromMessage && renderer === defaultToolRenderer) {
-      var statusEl = block.querySelector(".tool-status");
-      if (statusEl) {
-        statusEl.textContent = "running";
-        statusEl.className = "tool-status running";
+      var statusEl2 = block.querySelector(".tool-status");
+      if (statusEl2) {
+        statusEl2.textContent = "running";
+        statusEl2.className = "tool-status running";
       }
       block.setAttribute("data-status", "running");
     }
@@ -703,12 +870,30 @@
   }
 
   function handleToolEnd(data) {
-    var entry = currentToolBlocks[data.toolCallId];
-    if (!entry) return;
+    var callId = data.toolCallId;
+    var entry = currentToolBlocks[callId];
+    debugLogEvent("tool-end", {
+      callId: callId,
+      found: !!entry,
+      isError: !!data.isError,
+      inBashBlocks: !!bashBlocks[callId],
+      entryId: data.entryId,
+    });
+    if (!entry) {
+      // Fallback: check bashBlocks for blocks created via the legacy path
+      var bashBlock = bashBlocks[callId];
+      if (bashBlock) {
+        debugLogEvent("tool-end:FALLBACK-BASH", { callId: callId });
+        bashToolRenderer.finalize(bashBlock, data.result, data.isError, data.entryId);
+        delete bashBlocks[callId];
+        delete bashOutputs[callId];
+      }
+      return;
+    }
     var block = entry.el || entry;
     var renderer = entry.renderer || defaultToolRenderer;
     renderer.finalize(block, data.result, data.isError, data.entryId);
-    delete currentToolBlocks[data.toolCallId];
+    delete currentToolBlocks[callId];
     scrollToBottom();
   }
 
@@ -891,7 +1076,6 @@
     el.innerHTML =
       '<div class="message-content"><span class="working-spinner">○</span> Working...</div>';
     chatContainer.appendChild(el);
-    chatContainer.appendChild(createSpacer());
     scrollToBottom();
 
     // Animate spinner
@@ -910,9 +1094,6 @@
       if (el._spinnerInterval) clearInterval(el._spinnerInterval);
       el.remove();
     }
-    // Also remove trailing spacer
-    var spacer = document.getElementById("working-spacer");
-    if (spacer) spacer.remove();
   }
 
   function addCompactionIndicator(message) {
@@ -1122,11 +1303,7 @@
 
   // ═══ UI Helpers — General ══════════════════════════════
 
-  function createSpacer() {
-    var el = document.createElement("div");
-    el.style.height = "4px";
-    return el;
-  }
+
 
   function createMessageEl(role) {
     var el = document.createElement("div");
@@ -1162,13 +1339,13 @@
   }
 
   function resetChat() {
+    debugLogEvent("resetChat", { bashBlocksN: Object.keys(bashBlocks).length, toolBlocksN: Object.keys(currentToolBlocks).length });
     chatContainer.innerHTML =
       '<div id="welcome" class="welcome-message"><h2>Pi coding agent</h2></div>';
     welcome = document.getElementById("welcome");
     currentAssistantEl = null;
     currentThinkingEl = null;
     currentToolBlocks = {};
-    currentTurnBlock = null;
     assistantToolCallIds = {};
     lastUserMessageContent = null;
     isStreaming = false;
@@ -1974,6 +2151,18 @@
     // Intercept local slash commands before sending to LLM
     if (text && localSlashCommands.indexOf(text) !== -1) {
       var cmd = text.slice(1); // strip leading "/"
+
+      // /debug: dump webview state as a structured message in chat, plus
+      // log to console so it can be inspected from DevTools without copy-paste.
+      if (cmd === "debug") {
+        handleDebugCommand();
+        promptInput.value = "";
+        promptInput.style.height = "auto";
+        promptInput.style.overflowY = "hidden";
+        clearAttachments();
+        return;
+      }
+
       vscode.postMessage({
         type: "slashCommand",
         command: cmd,
@@ -2558,6 +2747,7 @@
     { cmd: "/settings", desc: "Open settings" },
     { cmd: "/login", desc: "Configure provider authentication" },
     { cmd: "/logout", desc: "Remove provider authentication" },
+    { cmd: "/debug", desc: "Dump webview state for troubleshooting" },
   ];
 
   // Dynamic slash commands populated from installed extensions (e.g. /tldr)
@@ -2581,7 +2771,7 @@
   }
 
   // Slash commands that should be handled locally (not sent to LLM)
-  var localSlashCommands = ["/login", "/logout"];
+  var localSlashCommands = ["/login", "/logout", "/debug"];
 
   function handleSlashCommandsUpdate(data) {
     if (data && data.commands && Array.isArray(data.commands)) {
@@ -2702,40 +2892,163 @@
   // to the bash tool renderer registered in the tool renderer registry.
 
   function handleBashStart(data) {
+    var callId = data.toolCallId;
+    debugLogEvent("bash-start", {
+      callId: callId,
+      command: (data.command || "").slice(0, 60),
+      entryId: data.entryId,
+      inToolBlocks: !!currentToolBlocks[callId],
+      inBashBlocks: !!bashBlocks[callId],
+    });
+
+    // DEDUP: If tool-start already created a block for this callId (promoted
+    // from bashBlocks or created fresh), don't create a second DOM element.
+    if (currentToolBlocks[callId]) {
+      debugLogEvent("bash-start:DEDUP-TOOL", { callId: callId });
+      // But still track it in bashBlocks so bash-output/end can reach it
+      var entry = currentToolBlocks[callId];
+      bashBlocks[callId] = entry.el || entry;
+      bashOutputs[callId] = bashOutputs[callId] || "";
+      return;
+    }
+    if (bashBlocks[callId]) {
+      debugLogEvent("bash-start:DEDUP-BASH", { callId: callId });
+      return;
+    }
+
     // Build a tool-start-compatible data shape for the renderer
     var toolData = {
       toolName: "bash",
-      toolCallId: data.toolCallId,
+      toolCallId: callId,
       args: { command: data.command || "" },
       entryId: data.entryId,
       fromMessage: false,
     };
     var block = bashToolRenderer.create(toolData);
     chatContainer.appendChild(block);
-    bashBlocks[data.toolCallId] = block;
-    bashOutputs[data.toolCallId] = "";
+    bashBlocks[callId] = block;
+    bashOutputs[callId] = "";
     scrollToBottom();
   }
 
   function handleBashOutput(data) {
-    var block = bashBlocks[data.toolCallId];
-    if (!block) return;
-    bashOutputs[data.toolCallId] = (bashOutputs[data.toolCallId] || "") + (data.output || "");
+    var callId = data.toolCallId;
+    var block = bashBlocks[callId];
+    if (!block) {
+      // Fallback: try currentToolBlocks (bash block may have been promoted)
+      var entry = currentToolBlocks[callId];
+      block = entry ? (entry.el || entry) : null;
+      if (!block) return;
+    }
+    bashOutputs[callId] = (bashOutputs[callId] || "") + (data.output || "");
     var outEl = block.querySelector(".bash-output");
     if (outEl) {
-      outEl.innerHTML = escapeHtml(bashOutputs[data.toolCallId]);
+      outEl.innerHTML = escapeHtml(bashOutputs[callId]);
     }
     scrollToBottom();
   }
 
   function handleBashEnd(data) {
-    var block = bashBlocks[data.toolCallId];
+    var callId = data.toolCallId;
+    var block = bashBlocks[callId];
+    var fromToolBlocks = false;
+    if (!block) {
+      // Fallback: check currentToolBlocks (promoted during dedup)
+      var entry = currentToolBlocks[callId];
+      block = entry ? (entry.el || entry) : null;
+      fromToolBlocks = !!block;
+    }
+    debugLogEvent("bash-end", {
+      callId: callId,
+      found: !!block,
+      fromToolBlocks: fromToolBlocks,
+      isError: !!data.isError,
+      exitCode: data.exitCode,
+      cancelled: !!data.cancelled,
+      inToolBlocks: !!currentToolBlocks[callId],
+      inBashBlocks: !!bashBlocks[callId],
+    });
     if (!block) return;
     var result = {
       content: data.output ? [{ type: "text", text: data.output }] : [],
       details: { exitCode: data.exitCode, cancelled: data.cancelled },
     };
     bashToolRenderer.finalize(block, result, data.isError, data.entryId);
+    // Clean up both trackers to prevent stale references
+    delete currentToolBlocks[callId];
+    delete bashBlocks[callId];
+    delete bashOutputs[callId];
+    scrollToBottom();
+  }
+
+  // ═══ /debug command ═════════════════════════════════════
+  //
+  // Renders the current webview state as a collapsible message in chat.
+  // No copy-paste needed — it appears inline with:
+  //   • Chat DOM structure summary (tags, IDs, statuses — no text content)
+  //   • Bash block tracker state
+  //   • Tool block tracker state
+  //   • Last 20 events received
+  //   • Last 20 DOM mutations
+  //   • Duplicate / orphan analysis
+  //
+  // Also dumps the same data to console.log for DevTools inspection.
+
+  function handleDebugCommand() {
+    hideWelcome();
+    var summary = window.__piDebug.summary();
+
+    // Also log to console so DevTools users can inspect without copy-paste
+    console.log("[pi-debug] === Webview State Dump ===");
+    console.log("[pi-debug] Chat structure:", JSON.stringify(summary.chat, null, 2));
+    console.log("[pi-debug] Dupes (in both trackers):", summary.dupes);
+    console.log("[pi-debug] Orphan bashBlocks:", summary.orphanBash);
+    console.log("[pi-debug] Orphan toolBlocks:", summary.orphanTool);
+    console.log("[pi-debug] Last events:", JSON.stringify(summary.lastEvents, null, 2));
+    console.log("[pi-debug] Last DOM changes:", JSON.stringify(summary.lastDomChanges, null, 2));
+    console.log("[pi-debug] Full event log (-100):", JSON.stringify(debugEventLog.slice(-100), null, 2));
+
+    var el = document.createElement("div");
+    el.className = "message assistant";
+    el.innerHTML =
+      '<div class="message-content">' +
+      '<details class="thinking-block" open>' +
+      '<summary>🔍 Debug: Webview State</summary>' +
+      '<div style="font-family:var(--vscode-editor-font-family);font-size:0.85em;line-height:1.5;max-height:500px;overflow-y:auto;">' +
+
+      '<h4 style="margin:8px 0 4px">Chat Container</h4>' +
+      '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;">' +
+      escapeHtml(JSON.stringify(summary.chat, null, 2)) +
+      '</pre>' +
+
+      '<h4 style="margin:12px 0 4px">Tracker State</h4>' +
+      '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;">' +
+      'bashBlocks: ' + JSON.stringify(Object.keys(bashBlocks)) + '\n' +
+      'currentToolBlocks: ' + JSON.stringify(Object.keys(currentToolBlocks)) + '\n' +
+      'bashOutputs: ' + JSON.stringify(Object.keys(bashOutputs)) + '\n' +
+      'Duplicates: ' + JSON.stringify(summary.dupes) + '\n' +
+      'Orphan bash: ' + JSON.stringify(summary.orphanBash) + '\n' +
+      'Orphan tool: ' + JSON.stringify(summary.orphanTool) +
+      '</pre>' +
+
+      '<h4 style="margin:12px 0 4px">Last 20 Events</h4>' +
+      '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;max-height:200px;overflow-y:auto;">' +
+      escapeHtml(JSON.stringify(summary.lastEvents, null, 2)) +
+      '</pre>' +
+
+      '<h4 style="margin:12px 0 4px">Last 20 DOM Mutations</h4>' +
+      '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;max-height:200px;overflow-y:auto;">' +
+      escapeHtml(JSON.stringify(summary.lastDomChanges, null, 2)) +
+      '</pre>' +
+
+      '<p style="margin-top:8px;color:var(--vscode-descriptionForeground);font-size:0.8em;">' +
+      'Tip: <code>window.__piDebug.summary()</code> in DevTools, or <code>/debug</code> again.' +
+      '</p>' +
+
+      '</div>' +
+      '</details>' +
+      '</div>';
+    chatContainer.appendChild(el);
     scrollToBottom();
   }
 

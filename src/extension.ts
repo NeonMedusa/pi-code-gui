@@ -459,25 +459,21 @@ export async function activate(context: vscode.ExtensionContext) {
 // ── Packages view ───────────────────────────────────
 
 /**
- * Initialize the Packages view with a short delay so the SDK has time
- * to become available (it's installed with the extension).
+ * Try to init packages view immediately.  If the SDK isn't available yet,
+ * poll every 2 s until a session initialises (max 30 s).
  */
 function initPackagesViewDelayed(context: vscode.ExtensionContext) {
-  // Delay by 3s to let SDK resolution settle
-  setTimeout(() => initPackagesView(context), 3000);
-
-  // Also listen for session init — once a session is ready the package
-  // manager should work too.
-  const checkInterval = setInterval(() => {
-    const primary = primarySession();
-    if (primary?.initialized && !packageService?.isReady) {
-      clearInterval(checkInterval);
-      initPackagesView(context);
-    }
-  }, 1000);
-
-  // Stop checking after 30s
-  setTimeout(() => clearInterval(checkInterval), 30000);
+  initPackagesView(context).catch(() => {
+    // SDK not ready yet — poll until a session comes up
+    const interval = setInterval(() => {
+      const primary = primarySession();
+      if (primary?.initialized) {
+        clearInterval(interval);
+        initPackagesView(context);
+      }
+    }, 2000);
+    setTimeout(() => clearInterval(interval), 30_000);
+  });
 }
 
 async function initPackagesView(context: vscode.ExtensionContext) {
@@ -1386,7 +1382,7 @@ async function pickModelForSession(ps: PiService): Promise<{ provider: string; m
         modelId: m.id,
       }));
     }
-  } catch { /* fallback below */ }
+  } catch (e: any) { console.warn(`[pi-gui] pickModelForSession: getAvailableModels failed (${e.message}), using static fallback`); }
 
   // Fallback: static list of common models
   if (models.length === 0) {

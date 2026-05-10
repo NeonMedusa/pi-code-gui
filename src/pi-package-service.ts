@@ -1,6 +1,6 @@
 import * as path from "node:path";
-import * as fs from "node:fs";
 import * as vscode from "vscode";
+import { resolvePiPackagePath } from "./pi-service.js";
 
 /**
  * Wraps the Pi SDK's DefaultPackageManager for use in the VS Code extension.
@@ -30,13 +30,7 @@ export interface MarketplacePackage {
   bannerUrl?: string;
 }
 
-/**
- * Resolve the pi SDK root path, reusing the same logic as PiService.
- */
-/**
- * Normalize repository URLs from npm (which can be git://, git+https://, etc.)
- * to clean https:// URLs that browsers can open.
- */
+/** Normalize repository URLs from npm to clean https:// URLs. */
 function normalizeRepoUrl(url: string): string {
   let u = url.trim();
 
@@ -71,47 +65,6 @@ function normalizeRepoUrl(url: string): string {
   u = u.replace(/\.git$/, "");
 
   return u;
-}
-
-function resolvePiPackagePath(): string {
-  const candidates: string[] = [];
-
-  candidates.push(path.resolve(".pi/npm/node_modules/@earendil-works/pi-coding-agent"));
-
-  const home = process.env.HOME || process.env.USERPROFILE || "";
-  if (home) {
-    candidates.push(
-      path.join(home, ".npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
-      path.join(home, ".local/lib/node_modules/@earendil-works/pi-coding-agent"),
-    );
-  }
-
-  if (process.env.NVM_DIR) {
-    try {
-      const versionsDir = path.join(process.env.NVM_DIR, "versions", "node");
-      if (fs.existsSync(versionsDir)) {
-        for (const version of fs.readdirSync(versionsDir)) {
-          candidates.push(
-            path.join(versionsDir, version, "lib", "node_modules", "@earendil-works", "pi-coding-agent"),
-          );
-        }
-      }
-    } catch { /* ignore */ }
-  }
-
-  const appData = process.env.APPDATA || "";
-  if (appData) {
-    candidates.push(path.join(appData, "npm", "node_modules", "@earendil-works", "pi-coding-agent"));
-  }
-
-  for (const candidate of candidates) {
-    try {
-      const pkgPath = path.join(candidate, "package.json");
-      if (fs.existsSync(pkgPath)) { return candidate; }
-    } catch { /* ignore */ }
-  }
-
-  throw new Error("Pi coding agent SDK not found. Please install: npm install -g @earendil-works/pi-coding-agent");
 }
 
 export class PiPackageService {

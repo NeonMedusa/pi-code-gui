@@ -1,5 +1,23 @@
 # Change Log
 
+## [0.0.15] — Webview debug infrastructure & bash block fixes
+
+### Fixed
+- **Bash blocks collapsed to 1px**: `#chat-container` flex layout with `flex-shrink: 1` caused `.bash-execution` and `.tool-block` elements to shrink to ~1px tall after many messages. Added `flex-shrink: 0` to block-level children.
+- **Dual-path bash dedup race**: `handleBashStart` and `handleToolStart` used separate trackers (`bashBlocks{}` vs `currentToolBlocks{}`), causing duplicate DOM nodes. All handlers now cross-check both trackers; `handleAgentEnd` sweeps orphans.
+- **`{}{}{}{}` artifacts in bash output during streaming**: Assistant content-delta events emitted `tool-update` for bash tools with `JSON.stringify(tc.arguments)`, which leaked into the output div. Fixed by skipping bash/exec in content-delta tool emissions, and making `bashToolRenderer.update()` a no-op.
+
+### Added
+- **`/debug` slash command**: Dumps structured webview state inline (chat DOM structure, tracker state, event log, DOM mutation log, duplicate/orphan analysis).
+- **`window.__piDebug` API**: `.summary()`, `.dumpState()`, `.eventLog(n)`, `.domLog(n)`, `.bashBlocks()`, `.toolBlocks()`, `.enabled(bool)`.
+- **MutationObserver** on `#chat-container` + circular event log (500 entries).
+- `debugDumpChatStructure()` now includes `bashDetail` (headerText, outputText, offsetHeight, computedDisplay).
+
+## [0.0.14] — Renderer registry & spacer fix
+
+### Changes
+- Improved internal rendering event handlers.
+
 ## [0.0.13] — Namespace migration & widget UI
 
 ### Changes
