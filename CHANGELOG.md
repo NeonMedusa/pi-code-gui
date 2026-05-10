@@ -1,5 +1,23 @@
 # Change Log
 
+## [0.0.15] — Webview debug infrastructure & bash block fixes
+
+### Fixed
+- **Bash blocks collapsed to 1px**: `#chat-container` flex layout with `flex-shrink: 1` caused `.bash-execution` and `.tool-block` elements to shrink to ~1px tall after many messages. Added `flex-shrink: 0` to block-level children.
+- **Dual-path bash dedup race**: `handleBashStart` and `handleToolStart` used separate trackers (`bashBlocks{}` vs `currentToolBlocks{}`), causing duplicate DOM nodes for the same `toolCallId`. All six handlers now cross-check both trackers and promote instead of duplicating.
+- `handleToolEnd` and `handleBashEnd` have fallback paths across both trackers.
+- `handleAgentEnd` sweeps orphaned bash blocks left dangling in the DOM.
+
+### Added
+- **`/debug` slash command**: Dumps structured webview state inline (chat DOM structure with element types/IDs/statuses, tracker state, event log, DOM mutation log, duplicate/orphan analysis). No copy-paste needed.
+- **`window.__piDebug` API** in webview: `.summary()`, `.dumpState()`, `.eventLog(n)`, `.domLog(n)`, `.bashBlocks()`, `.toolBlocks()`, `.enabled(bool)` — callable from DevTools.
+- **MutationObserver** on `#chat-container` logs child additions/removals with tag, id, class, and status.
+- **Circular event log** (500 entries) captures every inbound message with timestamps, callIds, and cross-tracker state.
+- `debugDumpChatStructure()` includes `bashDetail` (headerText, outputText, outputLen, footerText, offsetHeight, computedDisplay) for diagnosing rendering issues.
+
+### Changed
+- Previous v0.0.15 entry (webview force-refresh) merged into this release.
+
 ## [0.0.14] — Renderer registry & spacer fix
 
 ### Changes

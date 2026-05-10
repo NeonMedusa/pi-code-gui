@@ -37,8 +37,12 @@ export class PiWebviewPanel {
       return;
     }
 
+    // Use a unique viewType per webview to prevent VS Code from restoring
+    // stale webviews that reference old extension versions. The randomId is
+    // regenerated on every createWebviewPanel call.
+    var randomId = Math.random().toString(36).slice(2, 8);
     this.panel = vscode.window.createWebviewPanel(
-      "pi-chat",
+      "pi-chat-" + randomId,
       "Pi Code Gui",
       vscode.ViewColumn.Two,
       {
@@ -702,6 +706,7 @@ export class PiWebviewPanel {
     .quickstart-content hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-color); }
 
     .tool-block {
+      flex-shrink: 0;
       background: var(--tool-bg);
       border: 1px solid var(--border-color);
       border-radius: 6px;
@@ -1109,6 +1114,7 @@ export class PiWebviewPanel {
     /* ── Compaction summary message (#1) ─────────── */
 
     .compaction-summary {
+      flex-shrink: 0;
       background: var(--vscode-textBlockQuote-background);
       border: 1px solid var(--border-color);
       border-radius: 6px;
@@ -1316,6 +1322,7 @@ export class PiWebviewPanel {
     /* ── Bash execution block (#10) ──────────────── */
 
     .bash-execution {
+      flex-shrink: 0;
       border: 1px solid var(--border-color);
       border-radius: 8px;
       overflow: hidden;
@@ -1377,6 +1384,7 @@ export class PiWebviewPanel {
     /* ── Custom message (#7) ──────────────────────── */
 
     .custom-message {
+      flex-shrink: 0;
       background: var(--vscode-textBlockQuote-background);
       border-radius: 6px;
       padding: 10px 14px;
@@ -1398,30 +1406,7 @@ export class PiWebviewPanel {
       margin: 4px 0;
     }
 
-    /* ── Turn separator ───────────────────────── */
-
-    .turn-separator {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin: 8px 0;
-      padding: 6px 0;
-    }
-
-    .turn-separator .turn-bar {
-      flex: 1;
-      height: 0;
-      border-top: 2px solid var(--accent);
-      opacity: 0.35;
-    }
-
-    .turn-separator .turn-label {
-      font-size: 0.75em;
-      font-weight: 600;
-      color: var(--accent);
-      white-space: nowrap;
-      letter-spacing: 0.5px;
-    }
+    /* ── Turn separator (removed) ─────────────────── */
 
     /* ── Slash command autocomplete (#8) ──────────── */
 
@@ -1543,7 +1528,7 @@ export class PiWebviewPanel {
           modelId: m.id,
         }));
       }
-    } catch { /* fall through */ }
+    } catch (e: any) { console.warn(`[pi-gui] getAvailableModels failed, using static fallback: ${e.message}`); }
 
     // Fallback: static list of common models
     if (modelItems.length === 0) {
