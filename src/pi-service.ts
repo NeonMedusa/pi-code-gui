@@ -353,8 +353,13 @@ export class PiService {
     try {
       const piRoot = resolvePiPackagePath();
       const SDK = await import(path.join(piRoot, "dist/index.js"));
-      return SDK.SessionManager.list(cwd);
-    } catch { return []; }
+      const sessions = await SDK.SessionManager.list(cwd);
+      piLog(`listSessions: found ${sessions.length} past sessions in ${cwd}`);
+      return sessions;
+    } catch (e: any) {
+      piWarn(`listSessions failed: ${e.message ?? e}`);
+      return [];
+    }
   }
 
   /** Delete a session file from disk. */

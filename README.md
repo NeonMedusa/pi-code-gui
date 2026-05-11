@@ -1,9 +1,10 @@
 # Pi Code Gui
 
-[![Version](https://img.shields.io/visual-studio-marketplace/v/NimbleTron.pi-code-gui?label=VS%20Code&color=0066b8)](https://marketplace.visualstudio.com/items?itemName=NimbleTron.pi-code-gui)
-[![Downloads](https://img.shields.io/visual-studio-marketplace/d/NimbleTron.pi-code-gui?color=0066b8)](https://marketplace.visualstudio.com/items?itemName=NimbleTron.pi-code-gui)
-[![Rating](https://img.shields.io/visual-studio-marketplace/r/NimbleTron.pi-code-gui?color=0066b8)](https://marketplace.visualstudio.com/items?itemName=NimbleTron.pi-code-gui)
-[![Open VSX](https://img.shields.io/open-vsx/v/NimbleTron/pi-code-gui?label=Open%20VSX&color=a160e4)](https://open-vsx.org/extension/NimbleTron/pi-code-gui)
+[![Version](https://badgen.net/vs-marketplace/v/NimbleTron.pi-code-gui?label=VS%20Code&color=0066b8)](https://marketplace.visualstudio.com/items?itemName=NimbleTron.pi-code-gui)
+[![Downloads](https://badgen.net/vs-marketplace/d/NimbleTron.pi-code-gui?color=0066b8)](https://marketplace.visualstudio.com/items?itemName=NimbleTron.pi-code-gui)
+[![Rating](https://badgen.net/vs-marketplace/rating/NimbleTron.pi-code-gui?color=0066b8)](https://marketplace.visualstudio.com/items?itemName=NimbleTron.pi-code-gui)
+[![Open VSX Version](https://badgen.net/open-vsx/v/NimbleTron/pi-code-gui?label=Open%20VSX&color=a160e4)](https://open-vsx.org/extension/NimbleTron/pi-code-gui)
+[![Open VSX Downloads](https://badgen.net/open-vsx/d/NimbleTron/pi-code-gui?color=a160e4)](https://open-vsx.org/extension/NimbleTron/pi-code-gui)
 [![Publish](https://github.com/NimbleTronAI/pi-code-gui/actions/workflows/publish.yml/badge.svg)](https://github.com/NimbleTronAI/pi-code-gui/actions/workflows/publish.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -22,7 +23,9 @@
 
 ## Why Pi Code Gui?
 
-The Pi coding agent is a powerful AI pair programmer, but the default terminal TUI clashes with the editor workflow — you end up juggling a split terminal, switching contexts, and copy-pasting file paths. This extension embeds Pi directly in VS Code's native UI:
+The Pi coding agent is a powerful AI pair programmer, with an exceptional terminal (TUI) implementation. 
+
+For people who prefer a GUI experience, this extension embeds Pi directly in VS Code's native UI:
 
 - **In-editor chat** — streaming responses, thinking blocks, and tool execution results rendered in a webview panel, not a terminal buffer.
 - **Native VS Code bridge** — 17 tools that call VS Code APIs directly. The agent can inspect your active editor, check diagnostics, find symbols, look up types, apply edits, and format code, all through the same APIs VS Code uses.

@@ -37,7 +37,19 @@ async function saveOpenSessionPaths() {
   await extContext.workspaceState.update("pi-code-gui.sessionCounter", sessionCounter);
 }
 
-let statusBarItem: vscode.StatusBarItem | null = null;
+let statusBarModelItem: vscode.StatusBarItem | null = null;
+let statusBarThinkingItem: vscode.StatusBarItem | null = null;
+let statusBarEffortItem: vscode.StatusBarItem | null = null;
+let statusBarUsageItem: vscode.StatusBarItem | null = null;
+let statusBarSettingsItem: vscode.StatusBarItem | null = null;
+
+/** The most recently focused (active) session window. */
+let activeSessionWindow: SessionWindow | null = null;
+
+function setActiveSession(sw: SessionWindow | null) {
+  activeSessionWindow = sw;
+  refreshStatusBar();
+}
 let sessionTreeProvider: MultiSessionTreeProvider | null = null;
 let sessionTreeView: vscode.TreeView<SessionTreeItem> | null = null;
 
@@ -60,6 +72,9 @@ function createSessionWindow(context: vscode.ExtensionContext): SessionWindow {
     initialized: false, isStreaming: false,
     label: getGenericSessionLabel(id),
   };
+
+  // Track when this panel becomes active
+  webviewPanel.onActivate = () => setActiveSession(sw);
 
   // When the webview panel is closed (tab closed):
   // 1. Save the session to disk
@@ -433,13 +448,107 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
+  // Active-session model picker (status bar click)
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.pickModel", async () => {
+      const sw = activeSessionWindow;
+      if (!sw || !sw.initialized) {
+        vscode.window.showWarningMessage("No active Pi session.");
+        return;
+      }
+      sw.webviewPanel.show();
+      const pf = await pickModelForSession(sw.piService);
+      if (pf) {
+        await sw.piService.setModel(pf.provider, pf.modelId);
+        sessionTreeProvider?.refresh();
+        refreshStatusBar();
+      }
+    }),
+  );
+
+  // Active-session thinking picker (status bar click)
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.pickThinking", async () => {
+      const sw = activeSessionWindow;
+      if (!sw || !sw.initialized) {
+        vscode.window.showWarningMessage("No active Pi session.");
+        return;
+      }
+      sw.webviewPanel.show();
+      const level = await pickThinkingLevel(sw.piService.thinkingLevel);
+      if (level) {
+        await sw.piService.setThinkingLevel(level);
+        refreshStatusBar();
+        sessionTreeProvider?.refresh();
+      }
+    }),
+  );
+
+  // Active-session effort picker (status bar click)
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.pickEffort", async () => {
+      const sw = activeSessionWindow;
+      if (!sw || !sw.initialized) { return; }
+      sw.webviewPanel.show();
+      await sw.webviewPanel.triggerEffortPicker();
+      refreshStatusBar();
+    }),
+  );
+
+  // Active-session context budget picker (status bar click)
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.pickContextBudget", async () => {
+      const sw = activeSessionWindow;
+      if (!sw || !sw.initialized) { return; }
+      sw.webviewPanel.show();
+      await sw.webviewPanel.triggerContextBudgetPicker();
+      refreshStatusBar();
+    }),
+  );
+
+  // Toggle settings (status bar click)
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.toggleSettings", async () => {
+      const sw = activeSessionWindow;
+      if (!sw || !sw.initialized) { return; }
+      sw.webviewPanel.show();
+      await sw.piService.toggleAutoCompaction();
+      refreshStatusBar();
+    }),
+  );
+
   // ── Step 2: Status bar ─────────────────────────────────
-  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  statusBarItem.command = "pi-code-gui.pickSessionThinking";
-  statusBarItem.text = "\u03C0 Pi: off";
-  statusBarItem.tooltip = "Click to change thinking level";
-  statusBarItem.show();
-  context.subscriptions.push(statusBarItem);
+  statusBarModelItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 105);
+  statusBarModelItem.command = "pi-code-gui.pickModel";
+  statusBarModelItem.text = "$(circle-outline) \u03C0 Pi";
+  statusBarModelItem.tooltip = "Click to change model";
+  statusBarModelItem.show();
+  context.subscriptions.push(statusBarModelItem);
+
+  statusBarThinkingItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 104);
+  statusBarThinkingItem.command = "pi-code-gui.pickThinking";
+  statusBarThinkingItem.text = "";
+  statusBarThinkingItem.tooltip = "Click to change thinking level";
+  context.subscriptions.push(statusBarThinkingItem);
+
+  statusBarEffortItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 103);
+  statusBarEffortItem.command = "pi-code-gui.pickEffort";
+  statusBarEffortItem.text = "";
+  statusBarEffortItem.tooltip = "Click to change effort";
+  context.subscriptions.push(statusBarEffortItem);
+
+  statusBarUsageItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 102);
+  statusBarUsageItem.command = "pi-code-gui.pickContextBudget";
+  statusBarUsageItem.text = "";
+  statusBarUsageItem.tooltip = "Click to set context budget";
+  context.subscriptions.push(statusBarUsageItem);
+
+  statusBarSettingsItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
+  statusBarSettingsItem.command = "pi-code-gui.toggleSettings";
+  statusBarSettingsItem.text = "$(gear)";
+  statusBarSettingsItem.tooltip = "Toggle settings";
+  statusBarSettingsItem.show();
+  context.subscriptions.push(statusBarSettingsItem);
 
   // ── Step 3: Create primary session ─────────────────────
   const primary = createSessionWindow(context);
@@ -760,11 +869,63 @@ function ensureTreeProvider(context: vscode.ExtensionContext) {
 
 /** Update the status bar text to reflect the primary session's thinking level. */
 function updateStatusBar() {
-  if (!statusBarItem) { return; }
-  const primary = primarySession();
-  const level = primary?.piService?.thinkingLevel ?? "off";
-  statusBarItem.text = `\u03C0 Pi: ${level}`;
-  statusBarItem.tooltip = `Thinking: ${level} \u2014 Click to change`;
+  refreshStatusBar();
+}
+
+/** Update all status bar items from the active session's state. */
+function refreshStatusBar() {
+  const sw = activeSessionWindow;
+  const ps = sw?.piService;
+
+  // Model item
+  if (statusBarModelItem) {
+    if (!sw || !sw.initialized) {
+      statusBarModelItem.text = "$(circle-outline) \u03C0 Pi";
+      statusBarModelItem.color = undefined;
+      statusBarModelItem.backgroundColor = undefined;
+    } else {
+      const dot = sw.isStreaming
+        ? { icon: "$(sync~spin)", color: new vscode.ThemeColor("focusBorder") }
+        : { icon: "$(circle-filled)", color: new vscode.ThemeColor("testing.iconPassed") };
+      statusBarModelItem.text = dot.icon + " \u03C0 " + (ps?.model?.id ?? "...");
+      statusBarModelItem.color = dot.color;
+      statusBarModelItem.backgroundColor = undefined;
+    }
+  }
+
+  // Thinking item
+  if (statusBarThinkingItem) {
+    const level = ps?.thinkingLevel;
+    statusBarThinkingItem.text = level && level !== "off" ? "thinking: " + level : "";
+    statusBarThinkingItem.show();
+  }
+
+  // Effort item
+  if (statusBarEffortItem) {
+    const effort = ps?.effort;
+    statusBarEffortItem.text = effort && effort !== "auto" ? "effort: " + effort : "";
+    statusBarEffortItem.show();
+  }
+
+  // Usage item
+  if (statusBarUsageItem) {
+    if (ps) {
+      const stats = ps.getUsageStats();
+      const parts: string[] = [];
+      if (stats.input > 0) { parts.push("\u2191" + formatTokens(stats.input)); }
+      if (stats.output > 0) { parts.push("\u2193" + formatTokens(stats.output)); }
+      if (stats.cacheRead > 0) { parts.push("R" + formatTokens(stats.cacheRead)); }
+      if (stats.cacheWrite > 0) { parts.push("W" + formatTokens(stats.cacheWrite)); }
+      if (stats.cost > 0) { parts.push("$" + stats.cost.toFixed(3)); }
+      if (stats.contextWindow > 0 && stats.contextPercent !== null) {
+        parts.push(stats.contextPercent.toFixed(1) + "%");
+      }
+      statusBarUsageItem.text = parts.length > 0 ? parts.join(" ") : "";
+    } else {
+      statusBarUsageItem.text = "";
+    }
+    statusBarUsageItem.show();
+  }
 }
 
 /**
@@ -773,7 +934,13 @@ function updateStatusBar() {
  */
 async function refreshPastSessionsList() {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
-  await sessionTreeProvider?.refreshPastSessions(cwd);
+  if (!sessionTreeProvider) {
+    piWarn("refreshPastSessionsList: sessionTreeProvider is null, skipping");
+    return;
+  }
+  piLog(`refreshPastSessionsList: loading past sessions for cwd=${cwd}`);
+  await sessionTreeProvider.refreshPastSessions(cwd);
+  piLog(`refreshPastSessionsList: done, found ${sessionTreeProvider.pastSessions.length} past sessions`);
 }
 
 async function initSessionInBackground(context: vscode.ExtensionContext, sw: SessionWindow, opts?: { fresh?: boolean; openPath?: string }) {
@@ -854,6 +1021,16 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   // Ensure tree provider is registered (safe to call multiple times)
   ensureTreeProvider(context);
 
+  // ── Load past sessions BEFORE registering the event handler ──
+  // The event handler calls sessionTreeProvider.refresh() on every pi event,
+  // which triggers VS Code to re-render the tree. If past sessions haven't
+  // been loaded yet, the tree renders with an empty "Past Sessions" header
+  // with collapsibleState = None. By awaiting refreshPastSessionsList first,
+  // we guarantee the tree shows the correct state on initial render.
+  if (sw === primarySession()) {
+    await refreshPastSessionsList();
+  }
+
   // Auto-refresh tree when this session changes
   sw.piService.onEvent((event) => {
     // Track streaming state per session for the tree view dot
@@ -864,9 +1041,10 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
     } else if (event.type === "status-update" && event.data) {
       sw.isStreaming = !!event.data.isStreaming;
     }
-    // Keep status bar in sync
-    if (event.type === "status-update" || event.type === "thinking-level-changed") {
-      updateStatusBar();
+    // Keep status bar in sync (only if this is the active session)
+    if ((event.type === "status-update" || event.type === "thinking-level-changed" || event.type === "agent-start" || event.type === "agent-end")
+        && sw === activeSessionWindow) {
+      refreshStatusBar();
     }
     sessionTreeProvider?.refresh();
   });
@@ -888,10 +1066,6 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   // Persist open sessions for next VS Code reload
   saveOpenSessionPaths();
 
-  // Refresh the past-sessions list once the primary session initialises,
-  // so the tree view shows saved sessions from disk.
-  if (sw === primarySession()) { refreshPastSessionsList(); }
-
   console.log(`Pi Code Gui session ${sw.id} ready`);
 }
 
@@ -899,6 +1073,10 @@ function removeSession(sw: SessionWindow) {
   const idx = sessions.indexOf(sw);
   if (idx !== -1) {
     sessions.splice(idx, 1);
+  }
+  // If the removed session was the active one, fall back to the latest open session
+  if (activeSessionWindow === sw) {
+    setActiveSession(sessions.length > 0 ? sessions[sessions.length - 1] : null);
   }
   // Refresh tree so "Open Sessions (N)" header updates count
   sessionTreeProvider?.refresh();
@@ -1008,7 +1186,11 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
     this._loadingPast = true;
     try {
       this._pastSessions = await PiService.listSessions(cwd);
-    } catch { this._pastSessions = []; }
+      piLog(`refreshPastSessions: loaded ${this._pastSessions.length} past sessions`);
+    } catch (e: any) {
+      piWarn(`refreshPastSessions failed: ${e.message ?? e}`);
+      this._pastSessions = [];
+    }
     this._loadingPast = false;
     this.refresh();
   }
@@ -1485,5 +1667,9 @@ export async function deactivate() {
     sw.piService.dispose();
   }
   sessions.length = 0;
-  statusBarItem?.dispose();
+  statusBarModelItem?.dispose();
+  statusBarThinkingItem?.dispose();
+  statusBarEffortItem?.dispose();
+  statusBarUsageItem?.dispose();
+  statusBarSettingsItem?.dispose();
 }
