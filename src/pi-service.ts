@@ -353,8 +353,13 @@ export class PiService {
     try {
       const piRoot = resolvePiPackagePath();
       const SDK = await import(path.join(piRoot, "dist/index.js"));
-      return SDK.SessionManager.list(cwd);
-    } catch { return []; }
+      const sessions = await SDK.SessionManager.list(cwd);
+      piLog(`listSessions: found ${sessions.length} past sessions in ${cwd}`);
+      return sessions;
+    } catch (e: any) {
+      piWarn(`listSessions failed: ${e.message ?? e}`);
+      return [];
+    }
   }
 
   /** Delete a session file from disk. */
@@ -580,6 +585,7 @@ export class PiService {
     if (isResuming) {
       const entries = this.sessionManager.getEntries?.();
       if (Array.isArray(entries)) {
+        piLog(`Restoring model/thinking from session: ${entries.length} entries`);
         // Walk entries in reverse to find the last model_change and thinking_level_change
         for (let i = entries.length - 1; i >= 0; i--) {
           const e = entries[i];
@@ -589,20 +595,32 @@ export class PiService {
             if (found) {
               resumeModel = found;
               foundSessionModel = true;
+              piLog(`Restored model from session: ${e.provider}/${e.modelId}`);
             } else {
               // Fallback: try getModel
               const m = AI.getModel(e.provider, e.modelId);
-              if (m) { resumeModel = m; foundSessionModel = true; }
+              if (m) {
+                resumeModel = m;
+                foundSessionModel = true;
+                piLog(`Restored model from session (fallback): ${e.provider}/${e.modelId}`);
+              } else {
+                piWarn(`Could not resolve session model: ${e.provider}/${e.modelId}`);
+              }
             }
           }
           if (!foundSessionThinking && e.type === "thinking_level_change" && e.thinkingLevel) {
             resumeThinkingLevel = e.thinkingLevel;
             foundSessionThinking = true;
+            piLog(`Restored thinking from session: ${e.thinkingLevel}`);
           }
           // Stop early once both are resolved
           if (foundSessionModel && foundSessionThinking) { break; }
         }
+        if (!foundSessionModel) { piLog("No model_change entry found in session"); }
+        if (!foundSessionThinking) { piLog("No thinking_level_change entry found in session"); }
       }
+    } else {
+      piLog(`Skipping session restore (fresh=${fresh}, hasSessionManager=${!!this.sessionManager})`);
     }
 
     // ── Step 9: Create agent session ───────────────────
@@ -1201,6 +1219,17 @@ export class PiService {
 
   async sendPrompt(text: string, images?: any[]) {
     if (!this.session) { throw new Error("Pi session not initialized"); }
+
+    // Handle slash commands at the PiService level before forwarding to
+    // session.prompt(). Builtin commands (from the SDK's BUILTIN_SLASH_COMMANDS
+    // list) map to PiService methods. Extension commands (/tldr etc.) are
+    // handled by session.prompt()'s _tryExecuteExtensionCommand. Unknown
+    // commands fall through to the LLM.
+    if (text.startsWith("/")) {
+      const handled = await this.tryHandleCommand(text);
+      if (handled) { return; }
+    }
+
     if (this._isStreaming) {
       if (images && images.length > 0) {
         throw new Error("Cannot attach images while agent is streaming");
@@ -1256,13 +1285,55 @@ export class PiService {
     return null;
   }
 
+  /** Try to handle a slash command locally. Returns true if handled,
+   *  false if the caller should forward to session.prompt(). */
+  private async tryHandleCommand(text: string): Promise<boolean> {
+    const spaceIndex = text.indexOf(" ");
+    const cmdName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+
+    switch (cmdName) {
+      // Builtin commands with PiService handlers
+      case "model":  await this.cycleModel(); return true;
+      case "new":    await this.newSession(); return true;
+      case "login":  await this.login(); return true;
+      case "logout": await this.logout(); return true;
+
+      // Builtin commands forwarded to the session for extension handling
+      case "compact":
+      case "settings":
+      case "export":
+      case "fork":
+      case "sessions":
+      case "resume":
+      case "reload":
+      case "name":
+      case "tree":
+      case "clone":
+        await this.session.prompt(text);
+        return true;
+
+      default:
+        // Unknown command — let the caller send to session.prompt (handles
+        // extension commands like /tldr, or falls through to the LLM)
+        return false;
+    }
+  }
+
   async abort() {
-    if (!this.session) { return; }
-    try { this.session.agent.abort(); } catch { /* ignore */ }
+    if (!this.session) {
+      piWarn("abort() called but session not initialized — nothing to abort");
+      return;
+    }
+    try { this.session.agent.abort(); } catch { /* best-effort */ }
   }
 
   async newSession() {
-    if (!this.session) { return; }
+    if (!this.session) {
+      piWarn("newSession() called but session not initialized — creating fresh");
+      this.dispose();
+      await this.initialize({ fresh: true });
+      return;
+    }
     await this.session.agent.waitForIdle();
     this.dispose();
     await this.initialize({ fresh: true });
@@ -1344,8 +1415,25 @@ export class PiService {
     this.reportStatus();
   }
 
+  /** Write a session entry directly to the session file, bypassing SDK _persist quirks. */
+  private _forcePersistEntry(entry: Record<string, unknown>) {
+    const sf = this.sessionManager?.getSessionFile?.();
+    if (!sf) {
+      piWarn("_forcePersistEntry: no session file");
+      return;
+    }
+    try {
+      fs.appendFileSync(sf, JSON.stringify(entry) + "\n");
+    } catch (e: any) {
+      piWarn(`_forcePersistEntry failed: ${e.message}`);
+    }
+  }
+
   async setModel(provider: string, modelId: string) {
-    if (!this.session || !this.AI) { return; }
+    if (!this.session || !this.AI) {
+      piWarn(`setModel("${provider}/${modelId}") ignored: session not initialized`);
+      return;
+    }
     // Try registry first, then fall back to getModel
     let model: any = null;
     if (this.modelRegistry) {
@@ -1359,34 +1447,70 @@ export class PiService {
       this._model = { id: modelId, provider };
       this.cycleIndex = this.cycleModels.findIndex((m) => m.provider === provider && m.id === modelId);
       if (this.cycleIndex === -1) { this.cycleIndex = 0; }
+      // Force-persist the model change so it survives session close/reopen
+      this._forcePersistEntry({
+        type: "model_change",
+        id: `pi-ext-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        provider,
+        modelId,
+      });
       this.reportStatus();
     }
   }
 
   async cycleModel() {
-    if (!this.session || !this.AI || this.cycleModels.length === 0) { return; }
+    if (!this.session || !this.AI) {
+      vscode.window.showWarningMessage("Pi session not ready yet.");
+      return;
+    }
+    if (this.cycleModels.length === 0) {
+      vscode.window.showWarningMessage("No models available. Configure an API key first.");
+      return;
+    }
     this.cycleIndex = (this.cycleIndex + 1) % this.cycleModels.length;
     const next = this.cycleModels[this.cycleIndex];
     const model = this.AI.getModel(next.provider, next.id);
     if (model) {
+      const prevId = this._model?.id ?? "?";
       await this.session.setModel(model);
       this._model = { id: next.id, provider: next.provider };
+      if (this.cycleModels.length <= 1) {
+        vscode.window.showInformationMessage(`Only ${next.id} configured. Click the model name in the status bar to add more.`);
+      } else {
+        vscode.window.showInformationMessage(`Model: ${prevId} → ${next.id}`);
+      }
       this.reportStatus();
     }
   }
 
   async setThinkingLevel(level: string) {
-    if (!this.session) { return; }
+    if (!this.session) {
+      piWarn(`setThinkingLevel("${level}") ignored: session not initialized`);
+      return;
+    }
     this.session.setThinkingLevel(level);
     this._thinkingLevel = level;
     this.reportStatus();
+    // Force-persist the thinking change so it survives session close/reopen
+    this._forcePersistEntry({
+      type: "thinking_level_change",
+      id: `pi-ext-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      thinkingLevel: level,
+    });
   }
 
   // ── Default model / thinking persistence ──────────────
 
   /** Save the current model as the default for future sessions. */
   saveDefaultModel() {
-    if (!this._model?.provider || !this._model?.id) { return; }
+    if (!this._model?.provider || !this._model?.id) {
+      piWarn("saveDefaultModel() called but no model is active — ignoring");
+      return;
+    }
     const cfg = vscode.workspace.getConfiguration("pi-code-gui");
     cfg.update("defaultModelProvider", this._model.provider, vscode.ConfigurationTarget.Global);
     cfg.update("defaultModelId", this._model.id, vscode.ConfigurationTarget.Global);

@@ -23,15 +23,7 @@
   var sendButton = document.getElementById("send-button");
   var abortButton = document.getElementById("abort-button");
   var welcome = document.getElementById("welcome");
-  var statusDot = document.getElementById("status-dot");
-  var statusModel = document.getElementById("status-model");
-  var statusThinking = document.getElementById("status-thinking");
-  var statusEffort = document.getElementById("status-effort");
-  var statusUsageText = document.getElementById("status-usage-text");
-  var statusExtra = document.getElementById("status-extra");
   var attachmentBar = document.getElementById("attachment-bar");
-  var statusScopedModels = null; // Removed from UI
-  var statusSettingsBtn = document.getElementById("status-settings-btn");
   var userMsgOverlay = document.getElementById("user-msg-overlay");
   var settingsOverlay = document.getElementById("settings-overlay");
   var slashAutocomplete = document.getElementById("slash-autocomplete");
@@ -901,74 +893,16 @@
 
   function handleStatusUpdate(data) {
     if (data.reset) return;
-    if (data.model) statusModel.textContent = data.model;
-    if (data.thinkingLevel) {
-      statusThinking.textContent = "thinking: " + data.thinkingLevel;
-    } else {
-      statusThinking.textContent = "";
-    }
-    // Show effort if not "auto"
-    if (data.effort && data.effort !== "auto") {
-      statusEffort.textContent = "effort: " + data.effort;
-    } else {
-      statusEffort.textContent = "";
-    }
-
-    // Usage stats (tokens + cost + context %)
-    if (data.usage) {
-      var u = data.usage;
-      var parts = [];
-      if (u.input > 0) parts.push("\u2191" + formatTokens(u.input));
-      if (u.output > 0) parts.push("\u2193" + formatTokens(u.output));
-      if (u.cacheRead > 0) parts.push("R" + formatTokens(u.cacheRead));
-      if (u.cacheWrite > 0) parts.push("W" + formatTokens(u.cacheWrite));
-
-      var costStr = "";
-      if (u.cost > 0) {
-        costStr = "$" + u.cost.toFixed(3);
-      }
-      if (costStr) parts.push(costStr);
-
-      // Context budget override indicator
-      if (data.contextBudget > 0) {
-        parts.push("budget:" + formatTokens(data.contextBudget));
-      }
-
-      // Context %
-      if (u.contextWindow > 0 && u.contextPercent !== null) {
-        var ctx = u.contextPercent.toFixed(1) + "%/" + formatTokens(u.contextWindow);
-        // Colorize based on usage
-        if (u.contextPercent > 90) {
-          ctx = "<span style=\"color: var(--vscode-errorForeground);\">" + ctx + "</span>";
-        } else if (u.contextPercent > 70) {
-          ctx = "<span style=\"color: var(--vscode-editorWarning-foreground);\">" + ctx + "</span>";
-        }
-        parts.push(ctx);
-      } else if (u.contextWindow > 0) {
-        parts.push("?/" + formatTokens(u.contextWindow));
-      }
-
-      statusUsageText.innerHTML = parts.join(" ");
-    } else {
-      statusUsageText.innerHTML = "";
-    }
+    // Status bar info now shown via VS Code native status bar (extension.ts)
   }
 
   function handleStatus(data) {
-    if (data.model) statusModel.textContent = data.model;
-    if (data.effort) {
-      statusEffort.textContent = data.effort !== "auto" ? "effort: " + data.effort : "";
-    }
     if (data.ready) {
-      statusDot.className = "status-dot idle";
-      statusDot.style.backgroundColor = ""; // Clear inline override so CSS class takes effect
       promptInput.disabled = false;
       sendButton.disabled = false;
       promptInput.placeholder = "Ask pi to do something...";
       promptInput.focus();
     } else if (data.model === "not installed" || data.model === "init failed") {
-      statusDot.className = "status-dot idle";
-      statusDot.style.backgroundColor = "var(--vscode-errorForeground)";
       promptInput.disabled = true;
       sendButton.disabled = true;
     }
@@ -1367,11 +1301,9 @@
 
   function updateStreamingState() {
     if (isStreaming || isCompacting || isRetrying) {
-      statusDot.className = "status-dot streaming";
       sendButton.classList.add("hidden");
       abortButton.classList.remove("hidden");
     } else {
-      statusDot.className = "status-dot idle";
       sendButton.classList.remove("hidden");
       abortButton.classList.add("hidden");
     }
@@ -2206,46 +2138,6 @@
     vscode.postMessage({ type: "abort" });
   });
 
-  // ── Status bar click handlers (model, thinking, effort) ──
-
-  var statusModelPicker = document.getElementById("status-model-picker");
-  var statusThinkingPicker = document.getElementById("status-thinking-picker");
-  var statusEffortPicker = document.getElementById("status-effort-picker");
-
-  if (statusModelPicker) {
-    statusModelPicker.addEventListener("click", function () {
-      vscode.postMessage({ type: "pickModel" });
-    });
-  }
-
-  if (statusThinkingPicker) {
-    statusThinkingPicker.addEventListener("click", function () {
-      vscode.postMessage({ type: "pickThinkingLevel" });
-    });
-  }
-
-  if (statusEffortPicker) {
-    statusEffortPicker.addEventListener("click", function () {
-      vscode.postMessage({ type: "pickEffort" });
-    });
-  }
-
-  // Context budget picker — click usage area to change
-  var statusUsage = document.getElementById("status-usage");
-  if (statusUsage) {
-    statusUsage.addEventListener("click", function () {
-      vscode.postMessage({ type: "pickContextBudget" });
-    });
-  }
-
-  // Settings button (#3)
-  if (statusSettingsBtn) {
-    statusSettingsBtn.addEventListener("click", function (e) {
-      e.stopPropagation();
-      toggleSettingsPanel();
-    });
-  }
-
   // Setup code block copy buttons (event delegation, CSP-safe)
   setupCodeBlockHandlers();
 
@@ -2257,7 +2149,7 @@
       vscode.postMessage({ type: "openUrl", url: target.href });
     }
     // Close overlays when clicking outside
-    if (settingsOpen && !settingsOverlay.contains(target) && target !== statusSettingsBtn && !statusSettingsBtn.contains(target)) {
+    if (settingsOpen && !settingsOverlay.contains(target)) {
       closeAllOverlays();
     }
     if (userMsgSelectorOpen && !userMsgOverlay.contains(target) && target !== promptInput) {
@@ -2620,6 +2512,24 @@
     hideWelcome();
     var customType = data.customType || "custom";
 
+    // "info" type: render as in-chat status message (for slash command feedback)
+    if (customType === "info") {
+      var infoContent = "";
+      if (typeof data.content === "string") {
+        infoContent = data.content;
+      } else if (Array.isArray(data.content)) {
+        infoContent = data.content.filter(function (c) { return c.type === "text"; }).map(function (c) { return c.text; }).join("\n");
+      }
+      if (infoContent) {
+        var infoEl = document.createElement("div");
+        infoEl.className = "message assistant";
+        infoEl.innerHTML = '<div class="message-content" style="color: var(--vscode-descriptionForeground);">' + escapeHtml(infoContent) + '</div>';
+        chatContainer.appendChild(infoEl);
+        scrollToBottom();
+      }
+      return;
+    }
+
     // Try the registry first — extensions can register custom renderers
     var renderer = getMessageRenderer(customType);
     if (renderer) {
@@ -2771,7 +2681,7 @@
   }
 
   // Slash commands that should be handled locally (not sent to LLM)
-  var localSlashCommands = ["/login", "/logout", "/debug"];
+  var localSlashCommands = ["/login", "/logout", "/debug", "/model", "/thinking", "/sessions", "/settings"];
 
   function handleSlashCommandsUpdate(data) {
     if (data && data.commands && Array.isArray(data.commands)) {
