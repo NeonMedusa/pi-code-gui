@@ -1,5 +1,17 @@
 # Change Log
 
+## [0.0.16] — Session UX polish
+
+### Fixed
+- **Past sessions now load on startup** — no longer need to close a session first to see history.
+- **Model and thinking level persist when changed** — setting them in a session now survives close and reopen.
+- **Status bar stays in sync** — clicking sessions in the tree view, opening past sessions, or switching tabs now reliably updates the status bar.
+
+### Added
+- **`/model` slash command** — opens the native VS Code model picker.
+- **`/thinking` slash command** — opens the thinking level picker.
+- **`/sessions` slash command** — focuses the Sessions sidebar.
+
 ## [0.0.15] — Webview debug infrastructure & bash block fixes
 
 ### Fixed
