@@ -585,6 +585,7 @@ export class PiService {
     if (isResuming) {
       const entries = this.sessionManager.getEntries?.();
       if (Array.isArray(entries)) {
+        piLog(`Restoring model/thinking from session: ${entries.length} entries`);
         // Walk entries in reverse to find the last model_change and thinking_level_change
         for (let i = entries.length - 1; i >= 0; i--) {
           const e = entries[i];
@@ -594,20 +595,32 @@ export class PiService {
             if (found) {
               resumeModel = found;
               foundSessionModel = true;
+              piLog(`Restored model from session: ${e.provider}/${e.modelId}`);
             } else {
               // Fallback: try getModel
               const m = AI.getModel(e.provider, e.modelId);
-              if (m) { resumeModel = m; foundSessionModel = true; }
+              if (m) {
+                resumeModel = m;
+                foundSessionModel = true;
+                piLog(`Restored model from session (fallback): ${e.provider}/${e.modelId}`);
+              } else {
+                piWarn(`Could not resolve session model: ${e.provider}/${e.modelId}`);
+              }
             }
           }
           if (!foundSessionThinking && e.type === "thinking_level_change" && e.thinkingLevel) {
             resumeThinkingLevel = e.thinkingLevel;
             foundSessionThinking = true;
+            piLog(`Restored thinking from session: ${e.thinkingLevel}`);
           }
           // Stop early once both are resolved
           if (foundSessionModel && foundSessionThinking) { break; }
         }
+        if (!foundSessionModel) { piLog("No model_change entry found in session"); }
+        if (!foundSessionThinking) { piLog("No thinking_level_change entry found in session"); }
       }
+    } else {
+      piLog(`Skipping session restore (fresh=${fresh}, hasSessionManager=${!!this.sessionManager})`);
     }
 
     // ── Step 9: Create agent session ───────────────────
@@ -1307,12 +1320,20 @@ export class PiService {
   }
 
   async abort() {
-    if (!this.session) { return; }
-    try { this.session.agent.abort(); } catch { /* ignore */ }
+    if (!this.session) {
+      piWarn("abort() called but session not initialized — nothing to abort");
+      return;
+    }
+    try { this.session.agent.abort(); } catch { /* best-effort */ }
   }
 
   async newSession() {
-    if (!this.session) { return; }
+    if (!this.session) {
+      piWarn("newSession() called but session not initialized — creating fresh");
+      this.dispose();
+      await this.initialize({ fresh: true });
+      return;
+    }
     await this.session.agent.waitForIdle();
     this.dispose();
     await this.initialize({ fresh: true });
@@ -1394,8 +1415,25 @@ export class PiService {
     this.reportStatus();
   }
 
+  /** Write a session entry directly to the session file, bypassing SDK _persist quirks. */
+  private _forcePersistEntry(entry: Record<string, unknown>) {
+    const sf = this.sessionManager?.getSessionFile?.();
+    if (!sf) {
+      piWarn("_forcePersistEntry: no session file");
+      return;
+    }
+    try {
+      fs.appendFileSync(sf, JSON.stringify(entry) + "\n");
+    } catch (e: any) {
+      piWarn(`_forcePersistEntry failed: ${e.message}`);
+    }
+  }
+
   async setModel(provider: string, modelId: string) {
-    if (!this.session || !this.AI) { return; }
+    if (!this.session || !this.AI) {
+      piWarn(`setModel("${provider}/${modelId}") ignored: session not initialized`);
+      return;
+    }
     // Try registry first, then fall back to getModel
     let model: any = null;
     if (this.modelRegistry) {
@@ -1409,6 +1447,15 @@ export class PiService {
       this._model = { id: modelId, provider };
       this.cycleIndex = this.cycleModels.findIndex((m) => m.provider === provider && m.id === modelId);
       if (this.cycleIndex === -1) { this.cycleIndex = 0; }
+      // Force-persist the model change so it survives session close/reopen
+      this._forcePersistEntry({
+        type: "model_change",
+        id: `pi-ext-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        provider,
+        modelId,
+      });
       this.reportStatus();
     }
   }
@@ -1439,17 +1486,31 @@ export class PiService {
   }
 
   async setThinkingLevel(level: string) {
-    if (!this.session) { return; }
+    if (!this.session) {
+      piWarn(`setThinkingLevel("${level}") ignored: session not initialized`);
+      return;
+    }
     this.session.setThinkingLevel(level);
     this._thinkingLevel = level;
     this.reportStatus();
+    // Force-persist the thinking change so it survives session close/reopen
+    this._forcePersistEntry({
+      type: "thinking_level_change",
+      id: `pi-ext-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      thinkingLevel: level,
+    });
   }
 
   // ── Default model / thinking persistence ──────────────
 
   /** Save the current model as the default for future sessions. */
   saveDefaultModel() {
-    if (!this._model?.provider || !this._model?.id) { return; }
+    if (!this._model?.provider || !this._model?.id) {
+      piWarn("saveDefaultModel() called but no model is active — ignoring");
+      return;
+    }
     const cfg = vscode.workspace.getConfiguration("pi-code-gui");
     cfg.update("defaultModelProvider", this._model.provider, vscode.ConfigurationTarget.Global);
     cfg.update("defaultModelId", this._model.id, vscode.ConfigurationTarget.Global);

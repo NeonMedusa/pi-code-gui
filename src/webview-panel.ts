@@ -87,7 +87,10 @@ export class PiWebviewPanel {
   }
 
   private setupWebviewHandlers() {
-    if (!this.panel) {return;}
+    if (!this.panel) {
+      console.error("[pi-gui] setupWebviewHandlers called with no panel — webview messages will be lost");
+      return;
+    }
 
     // Proactively send status every 500ms until pi is ready
     // This avoids the webview-to-extension 'ready' handshake entirely
@@ -358,6 +361,15 @@ export class PiWebviewPanel {
         break;
       case "logout":
         await this.piService.logout();
+        break;
+      case "model":
+        await this.triggerModelPicker();
+        break;
+      case "thinking":
+        await this.triggerThinkingPicker();
+        break;
+      case "sessions":
+        await vscode.commands.executeCommand("pi-code-gui.sessions.focus");
         break;
       default:
         // Forward to pi session so extension command handlers (e.g. /tldr) can respond

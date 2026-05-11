@@ -128,6 +128,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("pi-code-gui.codeAgent", () => {
       const primary = primarySession();
       if (primary) {
+        setActiveSession(primary);
         primary.webviewPanel.show();
       } else {
         addSession(context);
@@ -145,6 +146,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("pi-code-gui.focusSession", (sessionId: string) => {
       const sw = sessions.find((s) => s.id === sessionId);
       if (sw) {
+        setActiveSession(sw);
         sw.webviewPanel.show();
       }
     }),
@@ -331,6 +333,7 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         // Create a new session tab (like Add Pi Session) and resume into it
         const sw = createSessionWindow(context);
+        setActiveSession(sw);
         sw.webviewPanel.show();
         sessionTreeProvider?.refresh();
         initSessionInBackground(context, sw, { openPath: resolved });
@@ -424,7 +427,10 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.pickSessionModel", async (sessionId?: string) => {
       const sw = sessionId ? sessions.find((s) => s.id === sessionId) : primarySession();
-      if (!sw || !sw.initialized) { return; }
+      if (!sw || !sw.initialized) {
+        piWarn(`pickSessionModel: session not initialized (sessionId=${sessionId})`);
+        return;
+      }
       // Open model picker for this specific session via its PiService
       const pf = await pickModelForSession(sw.piService);
       if (pf) {
@@ -438,7 +444,10 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.pickSessionThinking", async (sessionId?: string) => {
       const sw = sessionId ? sessions.find((s) => s.id === sessionId) : primarySession();
-      if (!sw || !sw.initialized) { return; }
+      if (!sw || !sw.initialized) {
+        piWarn(`pickSessionThinking: session not initialized (sessionId=${sessionId})`);
+        return;
+      }
       const level = await pickThinkingLevel(sw.piService.thinkingLevel);
       if (level) {
         await sw.piService.setThinkingLevel(level);
@@ -488,7 +497,10 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.pickEffort", async () => {
       const sw = activeSessionWindow;
-      if (!sw || !sw.initialized) { return; }
+      if (!sw || !sw.initialized) {
+        vscode.window.showWarningMessage("No active Pi session.");
+        return;
+      }
       sw.webviewPanel.show();
       await sw.webviewPanel.triggerEffortPicker();
       refreshStatusBar();
@@ -499,7 +511,10 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.pickContextBudget", async () => {
       const sw = activeSessionWindow;
-      if (!sw || !sw.initialized) { return; }
+      if (!sw || !sw.initialized) {
+        vscode.window.showWarningMessage("No active Pi session.");
+        return;
+      }
       sw.webviewPanel.show();
       await sw.webviewPanel.triggerContextBudgetPicker();
       refreshStatusBar();
@@ -510,7 +525,10 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.toggleSettings", async () => {
       const sw = activeSessionWindow;
-      if (!sw || !sw.initialized) { return; }
+      if (!sw || !sw.initialized) {
+        vscode.window.showWarningMessage("No active Pi session.");
+        return;
+      }
       sw.webviewPanel.show();
       await sw.piService.toggleAutoCompaction();
       refreshStatusBar();
@@ -833,6 +851,7 @@ async function doUpdatePackage(source: string) {
 
 function addSession(context: vscode.ExtensionContext) {
   const sw = createSessionWindow(context);
+  setActiveSession(sw);
   sw.webviewPanel.show();
   sessionTreeProvider?.refresh();
   initSessionInBackground(context, sw, { fresh: true });
