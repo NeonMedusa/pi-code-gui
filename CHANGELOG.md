@@ -3,9 +3,10 @@
 ## [0.0.16] — Session UX polish
 
 ### Fixed
-- **Past sessions now load on startup** — no longer need to close a session first to see history.
-- **Model and thinking level persist when changed** — setting them in a session now survives close and reopen.
-- **Status bar stays in sync** — clicking sessions in the tree view, opening past sessions, or switching tabs now reliably updates the status bar.
+- **Model and thinking level persist when changed** — Setting them in a session now survives close and reopen.
+
+## Changed
+- **Status bar relocated to VSCode Status bar ** — Clickable settings for model, thinking levels, and session budget.
 
 ### Added
 - **`/model` slash command** — opens the native VS Code model picker.
@@ -15,15 +16,10 @@
 ## [0.0.15] — Webview debug infrastructure & bash block fixes
 
 ### Fixed
-- **Bash blocks collapsed to 1px**: `#chat-container` flex layout with `flex-shrink: 1` caused `.bash-execution` and `.tool-block` elements to shrink to ~1px tall after many messages. Added `flex-shrink: 0` to block-level children.
-- **Dual-path bash dedup race**: `handleBashStart` and `handleToolStart` used separate trackers (`bashBlocks{}` vs `currentToolBlocks{}`), causing duplicate DOM nodes. All handlers now cross-check both trackers; `handleAgentEnd` sweeps orphans.
-- **`{}{}{}{}` artifacts in bash output during streaming**: Assistant content-delta events emitted `tool-update` for bash tools with `JSON.stringify(tc.arguments)`, which leaked into the output div. Fixed by skipping bash/exec in content-delta tool emissions, and making `bashToolRenderer.update()` a no-op.
+- **Bash blocks not visible or displaying contents **
 
 ### Added
 - **`/debug` slash command**: Dumps structured webview state inline (chat DOM structure, tracker state, event log, DOM mutation log, duplicate/orphan analysis).
-- **`window.__piDebug` API**: `.summary()`, `.dumpState()`, `.eventLog(n)`, `.domLog(n)`, `.bashBlocks()`, `.toolBlocks()`, `.enabled(bool)`.
-- **MutationObserver** on `#chat-container` + circular event log (500 entries).
-- `debugDumpChatStructure()` now includes `bashDetail` (headerText, outputText, offsetHeight, computedDisplay).
 
 ## [0.0.14] — Renderer registry & spacer fix
 

@@ -371,6 +371,9 @@ export class PiWebviewPanel {
       case "sessions":
         await vscode.commands.executeCommand("pi-code-gui.sessions.focus");
         break;
+      case "settings":
+        await this.triggerSettingsPicker();
+        break;
       default:
         // Forward to pi session so extension command handlers (e.g. /tldr) can respond
         try {
@@ -1605,6 +1608,47 @@ export class PiWebviewPanel {
     const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select effort level" });
     if (!picked) { return; }
     await ps.setEffort(picked.label);
+  }
+
+  /** Open VS Code quick pick for settings */
+  private async triggerSettingsPicker() {
+    const ps = this.piService;
+    const makeToggleLabel = (name: string, on: boolean) =>
+      `${on ? "$(check)" : "$(circle-outline)"} ${name}`;
+
+    const items: vscode.QuickPickItem[] = [
+      {
+        label: makeToggleLabel("Auto-compaction", ps.autoCompactionEnabled),
+        description: "Automatically compact context when limit is hit",
+      },
+      {
+        label: makeToggleLabel("Auto-retry", ps.autoRetryEnabled),
+        description: "Automatically retry on recoverable errors",
+      },
+      {
+        label: makeToggleLabel("Show images", ps.showImages),
+        description: "Display image attachments in chat",
+      },
+      {
+        label: "$(graph) Context budget",
+        description: `Current: ${ps.getContextBudget() === 0 ? "model default" : formatBudget(ps.getContextBudget())}`,
+      },
+    ];
+
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: "Pi settings — select to toggle or change",
+    });
+    if (!picked) { return; }
+
+    if (picked.label.includes("Auto-compaction")) {
+      await ps.toggleAutoCompaction();
+    } else if (picked.label.includes("Auto-retry")) {
+      await ps.toggleAutoRetry();
+    } else if (picked.label.includes("Show images")) {
+      await ps.toggleShowImages();
+    } else if (picked.label.includes("Context budget")) {
+      await this.triggerContextBudgetPicker();
+    }
   }
 
   dispose() {

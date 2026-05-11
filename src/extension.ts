@@ -41,7 +41,6 @@ let statusBarModelItem: vscode.StatusBarItem | null = null;
 let statusBarThinkingItem: vscode.StatusBarItem | null = null;
 let statusBarEffortItem: vscode.StatusBarItem | null = null;
 let statusBarUsageItem: vscode.StatusBarItem | null = null;
-let statusBarSettingsItem: vscode.StatusBarItem | null = null;
 
 /** The most recently focused (active) session window. */
 let activeSessionWindow: SessionWindow | null = null;
@@ -521,20 +520,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  // Toggle settings (status bar click)
-  context.subscriptions.push(
-    vscode.commands.registerCommand("pi-code-gui.toggleSettings", async () => {
-      const sw = activeSessionWindow;
-      if (!sw || !sw.initialized) {
-        vscode.window.showWarningMessage("No active Pi session.");
-        return;
-      }
-      sw.webviewPanel.show();
-      await sw.piService.toggleAutoCompaction();
-      refreshStatusBar();
-    }),
-  );
-
   // ── Step 2: Status bar ─────────────────────────────────
   statusBarModelItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 105);
   statusBarModelItem.command = "pi-code-gui.pickModel";
@@ -560,13 +545,6 @@ export async function activate(context: vscode.ExtensionContext) {
   statusBarUsageItem.text = "";
   statusBarUsageItem.tooltip = "Click to set context budget";
   context.subscriptions.push(statusBarUsageItem);
-
-  statusBarSettingsItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
-  statusBarSettingsItem.command = "pi-code-gui.toggleSettings";
-  statusBarSettingsItem.text = "$(gear)";
-  statusBarSettingsItem.tooltip = "Toggle settings";
-  statusBarSettingsItem.show();
-  context.subscriptions.push(statusBarSettingsItem);
 
   // ── Step 3: Create primary session ─────────────────────
   const primary = createSessionWindow(context);
@@ -1690,5 +1668,4 @@ export async function deactivate() {
   statusBarThinkingItem?.dispose();
   statusBarEffortItem?.dispose();
   statusBarUsageItem?.dispose();
-  statusBarSettingsItem?.dispose();
 }

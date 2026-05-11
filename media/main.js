@@ -2681,7 +2681,7 @@
   }
 
   // Slash commands that should be handled locally (not sent to LLM)
-  var localSlashCommands = ["/login", "/logout", "/debug", "/model", "/thinking", "/sessions"];
+  var localSlashCommands = ["/login", "/logout", "/debug", "/model", "/thinking", "/sessions", "/settings"];
 
   function handleSlashCommandsUpdate(data) {
     if (data && data.commands && Array.isArray(data.commands)) {
