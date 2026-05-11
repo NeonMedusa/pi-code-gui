@@ -31,6 +31,10 @@ export class PiWebviewPanel {
   /** Register a callback that fires when the panel/webview is closed. */
   set onDispose(cb: PanelDisposeCallback | null) { this._onDispose = cb; }
 
+  /** Register a callback that fires when this panel/view becomes active. */
+  set onActivate(cb: (() => void) | null) { this._onActivateCb = cb; }
+  private _onActivateCb: (() => void) | null = null;
+
   async show() {
     if (this.panel) {
       this.panel.reveal();
@@ -62,6 +66,12 @@ export class PiWebviewPanel {
     this.panel.webview.html = this.getWebviewContent(this.panel.webview);
     this.setupWebviewHandlers();
     this.setupServiceHandlers();
+
+    this.panel.onDidChangeViewState((e) => {
+      if (e.webviewPanel.active && this._onActivateCb) {
+        this._onActivateCb();
+      }
+    });
 
     this.panel.onDidDispose(() => {
       this.stopTabPulse();
@@ -806,54 +816,6 @@ export class PiWebviewPanel {
       text-align: center;
     }
 
-    .status-bar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 6px 12px;
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border-color);
-      font-size: 0.8em;
-      color: var(--fg-secondary);
-      min-height: 32px;
-    }
-
-    .status-bar .status-item {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .status-bar .status-item.clickable {
-      cursor: pointer;
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-
-    .status-bar .status-item.clickable:hover {
-      background: var(--vscode-list-hoverBackground);
-    }
-
-    .status-bar .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-    }
-
-    .status-bar .status-dot.streaming {
-      background: var(--accent);
-      animation: pulse 1.5s ease-in-out infinite;
-    }
-
-    .status-bar .status-dot.idle {
-      background: var(--success);
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
     /* ── Live panel (extension TUI components, e.g. tldr) ── */
 
     #live-panel {
@@ -1477,29 +1439,6 @@ export class PiWebviewPanel {
     <button id="send-button" disabled title="Submit (Enter)">↵</button>
     <button id="abort-button" class="hidden">Stop</button>
   </div>
-
-  <div class="status-bar" id="status-bar">
-    <span class="status-item">
-      <span class="status-dot idle" id="status-dot"></span>
-    </span>
-    <span class="status-item clickable" id="status-model-picker" title="Click to change model">
-      <span id="status-model">Initializing...</span>
-    </span>
-    <span class="status-item clickable" id="status-thinking-picker" title="Click to change thinking level">
-      <span id="status-thinking"></span>
-    </span>
-    <span class="status-item clickable" id="status-effort-picker" title="Click to change effort (only for certain models)">
-      <span id="status-effort"></span>
-    </span>
-    <span class="status-item clickable" id="status-usage" title="Click to set context budget">
-      <span id="status-usage-text"></span>
-    </span>
-    <span class="status-item clickable" id="status-settings-btn" title="Settings">
-      <span>⚙</span>
-    </span>
-    <span class="status-item">
-      <span id="status-extra"></span>
-    </span>
   </div>
 
   <div class="user-msg-selector-overlay" id="user-msg-overlay"></div>
@@ -1608,8 +1547,8 @@ export class PiWebviewPanel {
     }
   }
 
-  /** Open VS Code quick pick to pick context budget */
-  private async triggerContextBudgetPicker() {
+  /** Open VS Code quick pick to set context budget */
+  async triggerContextBudgetPicker() {
     const ps = this.piService;
     const current = ps.getContextBudget();
     const budgets = [
@@ -1637,7 +1576,7 @@ export class PiWebviewPanel {
   }
 
   /** Open VS Code quick pick to pick effort */
-  private async triggerEffortPicker() {
+  async triggerEffortPicker() {
     const ps = this.piService;
     const levels = [
       { label: "auto", description: "Let the model decide" },
