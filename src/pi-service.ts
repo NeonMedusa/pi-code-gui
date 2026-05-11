@@ -1201,6 +1201,17 @@ export class PiService {
 
   async sendPrompt(text: string, images?: any[]) {
     if (!this.session) { throw new Error("Pi session not initialized"); }
+
+    // Handle slash commands at the PiService level before forwarding to
+    // session.prompt(). Builtin commands (from the SDK's BUILTIN_SLASH_COMMANDS
+    // list) map to PiService methods. Extension commands (/tldr etc.) are
+    // handled by session.prompt()'s _tryExecuteExtensionCommand. Unknown
+    // commands fall through to the LLM.
+    if (text.startsWith("/")) {
+      const handled = await this.tryHandleCommand(text);
+      if (handled) { return; }
+    }
+
     if (this._isStreaming) {
       if (images && images.length > 0) {
         throw new Error("Cannot attach images while agent is streaming");
@@ -1254,6 +1265,40 @@ export class PiService {
       }
     }
     return null;
+  }
+
+  /** Try to handle a slash command locally. Returns true if handled,
+   *  false if the caller should forward to session.prompt(). */
+  private async tryHandleCommand(text: string): Promise<boolean> {
+    const spaceIndex = text.indexOf(" ");
+    const cmdName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+
+    switch (cmdName) {
+      // Builtin commands with PiService handlers
+      case "model":  await this.cycleModel(); return true;
+      case "new":    await this.newSession(); return true;
+      case "login":  await this.login(); return true;
+      case "logout": await this.logout(); return true;
+
+      // Builtin commands forwarded to the session for extension handling
+      case "compact":
+      case "settings":
+      case "export":
+      case "fork":
+      case "sessions":
+      case "resume":
+      case "reload":
+      case "name":
+      case "tree":
+      case "clone":
+        await this.session.prompt(text);
+        return true;
+
+      default:
+        // Unknown command — let the caller send to session.prompt (handles
+        // extension commands like /tldr, or falls through to the LLM)
+        return false;
+    }
   }
 
   async abort() {
@@ -1364,13 +1409,26 @@ export class PiService {
   }
 
   async cycleModel() {
-    if (!this.session || !this.AI || this.cycleModels.length === 0) { return; }
+    if (!this.session || !this.AI) {
+      vscode.window.showWarningMessage("Pi session not ready yet.");
+      return;
+    }
+    if (this.cycleModels.length === 0) {
+      vscode.window.showWarningMessage("No models available. Configure an API key first.");
+      return;
+    }
     this.cycleIndex = (this.cycleIndex + 1) % this.cycleModels.length;
     const next = this.cycleModels[this.cycleIndex];
     const model = this.AI.getModel(next.provider, next.id);
     if (model) {
+      const prevId = this._model?.id ?? "?";
       await this.session.setModel(model);
       this._model = { id: next.id, provider: next.provider };
+      if (this.cycleModels.length <= 1) {
+        vscode.window.showInformationMessage(`Only ${next.id} configured. Click the model name in the status bar to add more.`);
+      } else {
+        vscode.window.showInformationMessage(`Model: ${prevId} → ${next.id}`);
+      }
       this.reportStatus();
     }
   }

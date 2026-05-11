@@ -2620,6 +2620,24 @@
     hideWelcome();
     var customType = data.customType || "custom";
 
+    // "info" type: render as in-chat status message (for slash command feedback)
+    if (customType === "info") {
+      var infoContent = "";
+      if (typeof data.content === "string") {
+        infoContent = data.content;
+      } else if (Array.isArray(data.content)) {
+        infoContent = data.content.filter(function (c) { return c.type === "text"; }).map(function (c) { return c.text; }).join("\n");
+      }
+      if (infoContent) {
+        var infoEl = document.createElement("div");
+        infoEl.className = "message assistant";
+        infoEl.innerHTML = '<div class="message-content" style="color: var(--vscode-descriptionForeground);">' + escapeHtml(infoContent) + '</div>';
+        chatContainer.appendChild(infoEl);
+        scrollToBottom();
+      }
+      return;
+    }
+
     // Try the registry first — extensions can register custom renderers
     var renderer = getMessageRenderer(customType);
     if (renderer) {
