@@ -22,10 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.4
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm run pretest
       - uses: azure/login@v3
@@ -44,10 +45,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.4
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm run package
       - run: pnpm exec ovsx create-namespace NimbleTron --pat ${{ secrets.OPEN_VSX_MARKETPLACE_TOKEN }} || true
