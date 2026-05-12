@@ -2330,7 +2330,16 @@ window.morphdom = (function () {
         var raw = mc.getAttribute("data-raw");
         if (raw) {
           var thinkingBlock = mc.querySelector(".thinking-block");
-          mc.innerHTML = renderMarkdown(raw);
+          if (_markedAvailable) {
+            while (mc.firstChild) { mc.removeChild(mc.firstChild); }
+            var tokens = marked.lexer(raw);
+            for (var ti = 0; ti < tokens.length; ti++) {
+              mc.appendChild(renderBlock(tokens[ti]));
+            }
+            _streamPrevTokens = [];
+          } else {
+            mc.innerHTML = renderMarkdown(raw);
+          }
           if (thinkingBlock) {
             mc.prepend(thinkingBlock);
           }
@@ -2404,7 +2413,17 @@ window.morphdom = (function () {
     // #9: Entry ID for scroll-to
     if (data.entryId) el.id = "entry-" + data.entryId;
     var mc = el.querySelector(".message-content");
-    if (mc) mc.innerHTML = renderMarkdown(data.content);
+    if (mc) {
+      // Use block rendering for user messages (one-shot, no streaming)
+      if (_markedAvailable) {
+        var tokens = marked.lexer(data.content);
+        for (var ti = 0; ti < tokens.length; ti++) {
+          mc.appendChild(renderBlock(tokens[ti]));
+        }
+      } else {
+        mc.innerHTML = renderMarkdown(data.content);
+      }
+    }
     chatContainer.appendChild(el);
     scrollToBottom();
   }
@@ -2418,6 +2437,7 @@ window.morphdom = (function () {
     // #9: Entry ID for scroll-to
     if (data.entryId) currentAssistantEl.id = "entry-" + data.entryId;
     currentThinkingEl = null;
+    _streamPrevTokens = [];  // Reset token tracker for new message
     assistantToolCallIds = {};
     chatContainer.appendChild(currentAssistantEl);
     scrollToBottom();
@@ -2431,13 +2451,20 @@ window.morphdom = (function () {
       var mc = currentAssistantEl.querySelector(".message-content");
       if (mc) {
         mc.classList.remove("streaming-cursor");
+        // Final clean render from data-raw using block rendering
         var raw = mc.getAttribute("data-raw");
         if (raw) {
-          // Preserve any thinking block that was prepended during streaming.
-          // handleThinkingDelta prepends <details class="thinking-block"> into mc,
-          // but mc.innerHTML = ... would destroy it.
           var thinkingBlock = mc.querySelector(".thinking-block");
-          mc.innerHTML = renderMarkdown(raw);
+          if (_markedAvailable) {
+            while (mc.firstChild) { mc.removeChild(mc.firstChild); }
+            var tokens = marked.lexer(raw);
+            for (var ti = 0; ti < tokens.length; ti++) {
+              mc.appendChild(renderBlock(tokens[ti]));
+            }
+            _streamPrevTokens = [];
+          } else {
+            mc.innerHTML = renderMarkdown(raw);
+          }
           if (thinkingBlock) {
             mc.prepend(thinkingBlock);
           }
@@ -2474,9 +2501,11 @@ window.morphdom = (function () {
     }
   }
 
-  // ── rAF-batched stream rendering ─────────────────────
-  // Instead of re-rendering on every token (O(n²) for large messages),
-  // accumulate deltas and render once per animation frame (~60 fps).
+  // ── rAF-batched stream rendering (token-diff) ────────
+  // Uses marked.lexer() to re-parse on every frame, then diffs
+  // the token lists: only the last (in-progress) block is morphed;
+  // all prior completed blocks are untouched. This avoids O(n²)
+  // full-content re-renders during streaming.
   var _streamRafId = null;
   var _streamContentEl = null;
 
@@ -2489,11 +2518,17 @@ window.morphdom = (function () {
       var el = _streamContentEl;
       _streamContentEl = null;
 
-      // Save thinking block before innerHTML replacement
+      // Save thinking block before patching (it's prepended, not part of blocks)
       var savedThinkingBlock = currentThinkingEl || el.querySelector(".thinking-block");
 
       var raw = el.getAttribute("data-raw") || "";
-      morphRender(el, renderMarkdown(raw));
+      if (_markedAvailable) {
+        var tokens = marked.lexer(raw);
+        patchBlockList(el, _streamPrevTokens, tokens);
+        _streamPrevTokens = tokens;
+      } else {
+        morphRender(el, renderMarkdown(raw));
+      }
 
       if (savedThinkingBlock) {
         el.prepend(savedThinkingBlock);
@@ -2519,7 +2554,14 @@ window.morphdom = (function () {
 
         var savedThinkingBlock = currentThinkingEl || el.querySelector(".thinking-block");
         var raw = el.getAttribute("data-raw") || "";
-        morphRender(el, renderMarkdown(raw));
+        if (_markedAvailable) {
+          var tokens = marked.lexer(raw);
+          patchBlockList(el, _streamPrevTokens, tokens);
+          _streamPrevTokens = tokens;
+        } else {
+          morphRender(el, renderMarkdown(raw));
+        }
+
         if (savedThinkingBlock) {
           el.prepend(savedThinkingBlock);
           if (!currentThinkingEl) {
@@ -2537,6 +2579,7 @@ window.morphdom = (function () {
       // Safety: create container if assistant-start was missed
       currentAssistantEl = createMessageEl("assistant");
       currentThinkingEl = null;
+      _streamPrevTokens = [];
       chatContainer.appendChild(currentAssistantEl);
     }
     var contentEl = currentAssistantEl.querySelector(".message-content");
@@ -3241,181 +3284,251 @@ window.morphdom = (function () {
   // and a "copy" button.  Users can click to open the snippet in
   // a real VS Code editor via the extension host.
 
+  // ── Markdown rendering (marked-based) ─────────────────
+  // Uses marked.parse() for correctness, then post-processes
+  // to add custom code block wrappers, line numbers, and syntax
+  // highlighting. Used for non-streaming contexts (user messages,
+  // tool results, live cards, compaction summaries, etc.).
+
+  /** Configure marked once at load time, or bail gracefully. */
+  var _markedAvailable = typeof marked !== "undefined" && marked && marked.parse && marked.lexer;
+  if (_markedAvailable) {
+    marked.setOptions({ gfm: true, breaks: false });
+  }
+
+  /** Render markdown text to HTML string.
+   *  Uses marked.parse() when available; falls back to plain escape. */
   function renderMarkdown(text) {
     if (!text) return "";
-    var html = escapeHtml(text);
+    if (!_markedAvailable) { return escapeHtml(text).replace(/\n/g, "<br>"); }
+    var html = marked.parse(text);
+    return postProcessMarkedHTML(html);
+  }
 
-    // Code blocks: ```lang\n...``` — render with preserved whitespace,
-    // syntax-highlight class, line numbers, and a copy button.
+  /** Post-process marked output: add code block wrappers, line
+   *  numbers, syntax highlighting, and copy buttons. */
+  function postProcessMarkedHTML(html) {
+    // Replace marked's <pre><code> with our rich code block wrapper
     html = html.replace(
-      /```(\w*)\n([\s\S]*?)```/g,
+      /<pre><code(?: class="language-(\w*)")?>([\s\S]*?)<\/code><\/pre>/g,
       function (m, lang, code) {
-        // Normalise \r\n and trim trailing newline for consistent line counting
-        code = code.replace(/\r\n?/g, "\n");
-        code = code.replace(/\n+$/, "");
-
-        // Build line-numbered content with syntax classes
-        var lines = code.split("\n");
-        var numberedContent = lines
-          .map(function (line) {
-            return (
-              '<span class="code-ln"></span>' +
-              '<span class="code-text" data-lang="' +
-              escapeHtml(lang) +
-              '">' +
-              syntaxHighlightLine(line, lang) +
-              "</span>"
-            );
-          })
-          .join("\n");
-
-        var langLabel = lang
-          ? '<span class="code-lang-label">' + escapeHtml(lang) + "</span>"
-          : "";
-        return (
-          '<div class="code-block-wrapper">' +
-          '<div class="code-block-header">' +
-          langLabel +
-          '<button class="code-copy-btn" type="button">Copy</button>' +
-          "</div>" +
-          '<pre class="code-block" data-lang="' +
-          escapeHtml(lang) +
-          '"><code>' +
-          numberedContent +
-          "</code></pre>" +
-          "</div>"
-        );
-      },
+        // Unescape HTML entities that marked re-escaped inside code
+        var decoded = code
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'");
+        return renderCodeBlockHTML(decoded, lang || "");
+      }
     );
+    return html;
+  }
 
-    // Headers: # through ######
-    html = html.replace(/^(#{1,6})\s+(.+)$/gm, function (m, hashes, text) {
-      var level = hashes.length;
-      return "<h" + level + ">" + text + "</h" + level + ">";
-    });
-    // Horizontal rules: ---, ***, ___
-    html = html.replace(/^(?:[-*_]\s*){3,}$/gm, "<hr>");
-    // Blockquotes: > text
-    html = html.replace(/^>\s*(.+)$/gm, "<blockquote>$1</blockquote>");
-    // Links: [text](url)
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href=\"$2\">$1</a>");
-    // Strikethrough: ~~text~~
-    html = html.replace(/~~([^~]+)~~/g, "<del>$1</del>");
-    // Inline code: `...`
-    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-    // Bold
-    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    // Italic (must come after bold so ** doesn't match the italic pattern)
-    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-    // Unordered lists
-    html = html.replace(/^[\s]*[-*]\s+(.+)$/gm, "<li>$1</li>");
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>");
-    // Ordered lists
-    html = html.replace(/^[\s]*\d+\.\s+(.+)$/gm, "<li>$1</li>");
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, function (m) {
-      return m.indexOf("<ol>") === -1 ? "<ol>" + m + "</ol>" : m;
-    });
-
-    // ── Tables ───────────────────────────────────────────
-    // Convert pipe-delimited markdown tables to <table> elements.
-    // Matches blocks of consecutive lines that contain | characters.
-    html = html.replace(/((?:^\|?[^\n]*\|[^\n]*\|?$\n?)+)/gm, function (block) {
-      var lines = block.trim().split(/\n/);
-      if (lines.length < 2) return block; // need at least header + separator
-
-      // Strip leading/trailing pipes and whitespace from each cell
-      var parseRow = function (line) {
-        return line.replace(/^\|/, "").replace(/\|$/, "").split("|").map(function (c) { return c.trim(); });
-      };
-
-      // Check if line is a separator row (contains --- or :-- or --:)
-      var isSep = function (cells) {
-        return cells.every(function (c) { return /^:?-{2,}:?$/.test(c); });
-      };
-
-      // Parse alignments from separator
-      var parseAlign = function (cells) {
-        return cells.map(function (c) {
-          if (c[0] === ":" && c[c.length - 1] === ":") return "center";
-          if (c[c.length - 1] === ":") return "right";
-          return "left";
-        });
-      };
-
-      // Build table
-      var rows = [];
-      var headerCells = null;
-      var alignments = null;
-
-      for (var i = 0; i < lines.length; i++) {
-        var cells = parseRow(lines[i]);
-        if (headerCells === null && isSep(cells)) {
-          // Separator before header? Unusual but treat next row as header
-          continue;
-        }
-        if (headerCells === null) {
-          headerCells = cells;
-        } else if (alignments === null && isSep(cells)) {
-          alignments = parseAlign(cells);
-        } else {
-          rows.push(cells);
-        }
-      }
-
-      // If no separator found but we have a header, treat all as body
-      if (headerCells === null) return block;
-      if (alignments === null) alignments = headerCells.map(function () { return "left"; });
-
-      var htmlOut = "<table>";
-
-      // <thead>
-      htmlOut += "<thead><tr>";
-      for (var h = 0; h < headerCells.length; h++) {
-        htmlOut += "<th style=\"text-align:" + (alignments[h] || "left") + "\">" + headerCells[h] + "</th>";
-      }
-      htmlOut += "</tr></thead>";
-
-      // <tbody>
-      if (rows.length > 0) {
-        htmlOut += "<tbody>";
-        for (var r = 0; r < rows.length; r++) {
-          htmlOut += "<tr>";
-          for (var c = 0; c < rows[r].length; c++) {
-            var align = alignments[c] || "left";
-            htmlOut += "<td style=\"text-align:" + align + "\">" + rows[r][c] + "</td>";
-          }
-          htmlOut += "</tr>";
-        }
-        htmlOut += "</tbody>";
-      }
-
-      htmlOut += "</table>";
-      return htmlOut;
-    });
-
-    // Paragraphs
-    var segments = html.split(/\n{2,}/);
-    html = segments
-      .map(function (s) {
-        s = s.trim();
-        if (!s) return "";
-        s = s.replace(/\n/g, "<br>");
-        // Elements that should NOT be wrapped in <p>
-        if (
-          s.indexOf("<div class=\"code-block-wrapper\">") === 0 ||
-          s.indexOf("<pre>") === 0 ||
-          s.indexOf("<ul>") === 0 ||
-          s.indexOf("<ol>") === 0 ||
-          s.indexOf("<blockquote>") === 0 ||
-          s.indexOf("<table") === 0 ||
-          s.indexOf("<h") === 0 ||
-          s.indexOf("<hr>") === 0
-        )
-          return s;
-        return "<p>" + s + "</p>";
+  /** Build the rich code block HTML (wrapper, header, copy button,
+   *  line numbers, syntax highlighting). */
+  function renderCodeBlockHTML(code, lang) {
+    code = code.replace(/\r\n?/g, "\n");
+    code = code.replace(/\n+$/, "");
+    var lines = code.split("\n");
+    var numberedContent = lines
+      .map(function (line) {
+        return (
+          '<span class="code-ln"></span>' +
+          '<span class="code-text" data-lang="' +
+          escapeHtml(lang) +
+          '">' +
+          syntaxHighlightLine(line, lang) +
+          "</span>"
+        );
       })
       .join("\n");
+    var langLabel = lang
+      ? '<span class="code-lang-label">' + escapeHtml(lang) + "</span>"
+      : "";
+    return (
+      '<div class="code-block-wrapper">' +
+      '<div class="code-block-header">' +
+      langLabel +
+      '<button class="code-copy-btn" type="button">Copy</button>' +
+      "</div>" +
+      '<pre class="code-block" data-lang="' +
+      escapeHtml(lang) +
+      '"><code>' +
+      numberedContent +
+      "</code></pre>" +
+      "</div>"
+    );
+  }
+
+  // ── Block-level rendering (for structured streaming) ───
+  // These functions convert marked tokens directly to DOM nodes
+  // instead of HTML strings, enabling incremental append during
+  // streaming without full re-renders.
+
+  /** Render a single marked token (block) to a DOM element. */
+  function renderBlock(token) {
+    var el;
+    switch (token.type) {
+      case "heading":
+        el = document.createElement("h" + token.depth);
+        el.innerHTML = renderInline(token.tokens);
+        return el;
+
+      case "paragraph":
+        el = document.createElement("p");
+        el.innerHTML = renderInline(token.tokens);
+        return el;
+
+      case "code":
+        // Fenced code block — use our rich wrapper
+        var wrapper = document.createElement("div");
+        wrapper.innerHTML = renderCodeBlockHTML(token.text, token.lang || "");
+        return wrapper.firstChild;
+
+      case "list":
+        el = document.createElement(token.ordered ? "ol" : "ul");
+        for (var i = 0; i < token.items.length; i++) {
+          var li = document.createElement("li");
+          li.innerHTML = renderInline(token.items[i].tokens);
+          el.appendChild(li);
+        }
+        return el;
+
+      case "table":
+        return renderTableBlock(token);
+
+      case "blockquote":
+        el = document.createElement("blockquote");
+        for (var j = 0; j < token.tokens.length; j++) {
+          el.appendChild(renderBlock(token.tokens[j]));
+        }
+        return el;
+
+      case "hr":
+        return document.createElement("hr");
+
+      case "space":
+        return document.createTextNode("");
+
+      default:
+        el = document.createElement("div");
+        el.textContent = token.raw || "";
+        return el;
+    }
+  }
+
+  /** Render a marked table token to a <table> DOM element. */
+  function renderTableBlock(token) {
+    var table = document.createElement("table");
+
+    // <thead>
+    var thead = document.createElement("thead");
+    var headerRow = document.createElement("tr");
+    for (var h = 0; h < token.header.length; h++) {
+      var th = document.createElement("th");
+      th.style.textAlign = token.align[h] || "left";
+      th.innerHTML = renderInline(token.header[h].tokens);
+      headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // <tbody>
+    if (token.rows.length > 0) {
+      var tbody = document.createElement("tbody");
+      for (var r = 0; r < token.rows.length; r++) {
+        var tr = document.createElement("tr");
+        for (var c = 0; c < token.rows[r].length; c++) {
+          var td = document.createElement("td");
+          td.style.textAlign = token.align[c] || "left";
+          td.innerHTML = renderInline(token.rows[r][c].tokens);
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+    }
+    return table;
+  }
+
+  /** Render inline tokens to an HTML string.
+   *  Called by renderBlock for headings, paragraphs, list items, etc. */
+  function renderInline(tokens) {
+    if (!tokens || tokens.length === 0) return "";
+    var html = "";
+    for (var i = 0; i < tokens.length; i++) {
+      var t = tokens[i];
+      switch (t.type) {
+        case "text":       html += escapeHtml(t.text); break;
+        case "strong":     html += "<strong>" + renderInline(t.tokens) + "</strong>"; break;
+        case "em":         html += "<em>" + renderInline(t.tokens) + "</em>"; break;
+        case "codespan":   html += "<code>" + escapeHtml(t.text) + "</code>"; break;
+        case "link":       html += '<a href="' + escapeHtml(t.href) + '">' + renderInline(t.tokens) + '</a>'; break;
+        case "del":        html += "<del>" + renderInline(t.tokens) + "</del>"; break;
+        case "image":      html += '<img src="' + escapeHtml(t.href) + '" alt="' + escapeHtml(t.text) + '">'; break;
+        case "br":         html += "<br>"; break;
+        case "html":       html += t.text || t.raw || ""; break;
+        case "escape":     html += escapeHtml(t.text); break;
+        default:           html += escapeHtml(t.raw || t.text || "");
+      }
+    }
     return html;
+  }
+
+  // ── Token-diff streaming ───────────────────────────────
+  // During streaming, we re-lex the full accumulated text with
+  // marked.lexer() on every frame, then diff the token lists:
+  // - Completed blocks (all but last): static, untouched
+  // - Last block: morphed in-place to reflect growing text
+  // - New blocks: appended when they appear
+  // - Type changes: morphdom replaces element (imperceptible at 60fps)
+
+  var _streamPrevTokens = [];
+
+  /** Diff prev/new token lists and patch the DOM container efficiently.
+   *  Only modifies blocks that changed — typically just the last one.
+   *  Falls back to full morphRender when marked is unavailable. */
+  function patchBlockList(container, prevTokens, newTokens) {
+    if (!_markedAvailable) {
+      // Fallback: use the old full-render approach
+      var raw = container.getAttribute("data-raw") || "";
+      morphRender(container, renderMarkdown(raw));
+      return;
+    }
+    // Remove stale blocks if newTokens is shorter (shouldn't happen normally)
+    while (container.children.length > newTokens.length) {
+      container.removeChild(container.lastChild);
+    }
+
+    // Patch existing blocks where content changed
+    var commonLen = Math.min(prevTokens.length, newTokens.length);
+    for (var i = 0; i < commonLen; i++) {
+      var child = container.children[i];
+      if (!child) {
+        // Safety: missing child — append
+        container.appendChild(renderBlock(newTokens[i]));
+      } else if (prevTokens[i].raw !== newTokens[i].raw ||
+                 prevTokens[i].type !== newTokens[i].type) {
+        // Content or type changed — morph this single block
+        morphRender(child, renderBlockToHTML(newTokens[i]));
+      }
+      // else: block is unchanged, skip
+    }
+
+    // Append new blocks
+    for (var i = prevTokens.length; i < newTokens.length; i++) {
+      container.appendChild(renderBlock(newTokens[i]));
+    }
+  }
+
+  /** Render a single block token to an HTML string (for morphdom patching).
+   *  This is the bridge between structured block rendering and morphdom's
+   *  string-based diff. */
+  function renderBlockToHTML(token) {
+    var temp = document.createElement("div");
+    temp.appendChild(renderBlock(token));
+    return temp.innerHTML;
   }
 
   /**

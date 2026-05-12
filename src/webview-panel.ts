@@ -399,6 +399,9 @@ export class PiWebviewPanel {
 
   private getWebviewContent(webview: vscode.Webview): string {
     const nonce = this.getNonce();
+    const markedUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "marked.min.js"),
+    );
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "media", "main.js"),
     );
@@ -1598,6 +1601,7 @@ export class PiWebviewPanel {
   <div class="settings-overlay" id="settings-overlay"></div>
   <div class="slash-autocomplete" id="slash-autocomplete"></div>
 
+  <script nonce="${nonce}" src="${markedUri}"></script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 
 </body>
