@@ -170,6 +170,10 @@ export class PiWebviewPanel {
             vscode.env.openExternal(vscode.Uri.parse(message.url));
             break;
 
+          case "openFile":
+            vscode.window.showTextDocument(vscode.Uri.file(message.path));
+            break;
+
           // Slash commands intercepted locally (not sent to LLM)
           case "slashCommand":
             this.handleSlashCommand(message.command);
@@ -399,11 +403,20 @@ export class PiWebviewPanel {
 
   private getWebviewContent(webview: vscode.Webview): string {
     const nonce = this.getNonce();
+    const morphdomUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "lib", "morphdom.js"),
+    );
     const markedUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "media", "marked.min.js"),
     );
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "media", "main.js"),
+    const coreUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "core.js"),
+    );
+    const toolsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "tools.js"),
+    );
+    const appUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "app.js"),
     );
 
     return `<!DOCTYPE html>
@@ -690,6 +703,28 @@ export class PiWebviewPanel {
       margin-top: 6px;
     }
 
+    .thinking-block .thinking-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--fg-secondary);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: think-spin 0.8s linear infinite;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    .thinking-block .thinking-preview {
+      font-weight: 400;
+      opacity: 0.7;
+      font-style: italic;
+    }
+
+    @keyframes think-spin {
+      to { transform: rotate(360deg); }
+    }
+
     /* Inline quickstart guide */
     .quickstart-content {
       font-size: 0.9em;
@@ -835,6 +870,17 @@ export class PiWebviewPanel {
 
     .tool-block .tool-header .tool-path {
       font-weight: 400;
+    }
+
+    .tool-block .tool-header .tool-path[data-path] {
+      cursor: pointer;
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-underline-offset: 2px;
+    }
+
+    .tool-block .tool-header .tool-path[data-path]:hover {
+      color: var(--accent);
     }
 
     /* ── Edit change preview (per-edit diff in call block) ── */
@@ -1601,8 +1647,11 @@ export class PiWebviewPanel {
   <div class="settings-overlay" id="settings-overlay"></div>
   <div class="slash-autocomplete" id="slash-autocomplete"></div>
 
+  <script nonce="${nonce}" src="${morphdomUri}"></script>
   <script nonce="${nonce}" src="${markedUri}"></script>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${coreUri}"></script>
+  <script nonce="${nonce}" src="${toolsUri}"></script>
+  <script nonce="${nonce}" src="${appUri}"></script>
 
 </body>
 </html>`;
