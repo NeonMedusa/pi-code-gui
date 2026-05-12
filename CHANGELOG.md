@@ -1,5 +1,16 @@
 # Change Log
 
+## [0.0.17] — Marked-based rendering & webview modularization
+
+### Changed
+- **Markdown rendering replaced with marked parser** 
+- **Progressive block-level streaming** r
+- **Webview modularized into 5 files** 
+- **Thinking blocks collapsed by default** 
+
+### Added
+- **Clickable file names in tool headers** 
+
 ## [0.0.16] — Session UX polish
 
 ### Fixed

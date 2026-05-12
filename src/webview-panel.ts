@@ -170,6 +170,10 @@ export class PiWebviewPanel {
             vscode.env.openExternal(vscode.Uri.parse(message.url));
             break;
 
+          case "openFile":
+            vscode.window.showTextDocument(vscode.Uri.file(message.path));
+            break;
+
           // Slash commands intercepted locally (not sent to LLM)
           case "slashCommand":
             this.handleSlashCommand(message.command);
@@ -399,8 +403,20 @@ export class PiWebviewPanel {
 
   private getWebviewContent(webview: vscode.Webview): string {
     const nonce = this.getNonce();
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "media", "main.js"),
+    const morphdomUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "lib", "morphdom.js"),
+    );
+    const markedUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "marked.min.js"),
+    );
+    const coreUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "core.js"),
+    );
+    const toolsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "tools.js"),
+    );
+    const appUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "app.js"),
     );
 
     return `<!DOCTYPE html>
@@ -687,6 +703,28 @@ export class PiWebviewPanel {
       margin-top: 6px;
     }
 
+    .thinking-block .thinking-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--fg-secondary);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: think-spin 0.8s linear infinite;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    .thinking-block .thinking-preview {
+      font-weight: 400;
+      opacity: 0.7;
+      font-style: italic;
+    }
+
+    @keyframes think-spin {
+      to { transform: rotate(360deg); }
+    }
+
     /* Inline quickstart guide */
     .quickstart-content {
       font-size: 0.9em;
@@ -812,6 +850,117 @@ export class PiWebviewPanel {
       margin: 4px 0;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+
+    /* ── Tool content area (write/edit inline display) ── */
+
+    .tool-block .tool-content {
+      margin-top: 8px;
+      font-size: 0.85em;
+    }
+
+    .tool-block .tool-content .code-block-wrapper {
+      margin: 4px 0;
+    }
+
+    .tool-block .tool-content .code-block {
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    .tool-block .tool-header .tool-path {
+      font-weight: 400;
+    }
+
+    .tool-block .tool-header .tool-path[data-path] {
+      cursor: pointer;
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-underline-offset: 2px;
+    }
+
+    .tool-block .tool-header .tool-path[data-path]:hover {
+      color: var(--accent);
+    }
+
+    /* ── Edit change preview (per-edit diff in call block) ── */
+
+    .tool-block .edit-change {
+      margin: 8px 0;
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.85em;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .tool-block .edit-change .edit-header {
+      font-weight: 600;
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+      margin-bottom: 2px;
+    }
+
+    .tool-block .edit-change .edit-old {
+      color: var(--vscode-diffEditor-removedTextBackground, #f14c4c);
+      background: rgba(255,0,0,0.08);
+      padding: 2px 8px;
+      border-radius: 2px;
+      margin: 1px 0;
+    }
+
+    .tool-block .edit-change .edit-new {
+      color: var(--vscode-diffEditor-insertedTextBackground, #4ec9b0);
+      background: rgba(0,255,0,0.08);
+      padding: 2px 8px;
+      border-radius: 2px;
+      margin: 1px 0;
+    }
+
+    /* ── Tool result expand/collapse ── */
+
+    .tool-block .tool-result.tool-result-collapsed {
+      max-height: 200px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .tool-block .tool-result.tool-result-collapsed::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 40px;
+      background: linear-gradient(transparent, var(--tool-bg));
+    }
+
+    .tool-block .tool-expand-btn {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 4px;
+      margin-top: 4px;
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8em;
+      font-family: inherit;
+    }
+
+    .tool-block .tool-expand-btn:hover {
+      background: var(--vscode-button-secondaryHoverBackground);
+    }
+
+    /* ── Compact read label (skills/docs/resources) ── */
+
+    .tool-block .compact-label {
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+      font-style: italic;
+      margin-top: 4px;
     }
 
     .streaming-cursor::after {
@@ -1436,6 +1585,44 @@ export class PiWebviewPanel {
       font-size: 0.85em;
     }
 
+    /* ── Tables ───────────────────────────────────── */
+
+    .message.assistant .message-content table {
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 0.9em;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+    }
+
+    .message.assistant .message-content thead {
+      border-bottom: 2px solid var(--border-color);
+    }
+
+    .message.assistant .message-content th {
+      padding: 8px 12px;
+      font-weight: 600;
+      color: var(--fg-primary);
+      background: var(--vscode-sideBar-background);
+      white-space: nowrap;
+    }
+
+    .message.assistant .message-content td {
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--fg-primary);
+      vertical-align: top;
+    }
+
+    .message.assistant .message-content tbody tr:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+
+    .message.assistant .message-content tbody tr:last-child td {
+      border-bottom: none;
+    }
+
   </style>
 </head>
 <body>
@@ -1460,7 +1647,11 @@ export class PiWebviewPanel {
   <div class="settings-overlay" id="settings-overlay"></div>
   <div class="slash-autocomplete" id="slash-autocomplete"></div>
 
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${morphdomUri}"></script>
+  <script nonce="${nonce}" src="${markedUri}"></script>
+  <script nonce="${nonce}" src="${coreUri}"></script>
+  <script nonce="${nonce}" src="${toolsUri}"></script>
+  <script nonce="${nonce}" src="${appUri}"></script>
 
 </body>
 </html>`;

@@ -4,7 +4,7 @@
   "author": "Jack Noppé",
   "displayName": "Pi Code Gui",
   "description": "Native VS Code editor experience for Pi coding agent",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "license": "MIT",
   "sponsor": {
     "url": "https://github.com/sponsors/NimbleTronAI"
@@ -302,7 +302,14 @@
         "pi-code-gui.defaultThinkingLevel": {
           "type": "string",
           "default": "off",
-          "enum": ["off", "minimal", "low", "medium", "high", "xhigh"],
+          "enum": [
+            "off",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
           "description": "Default thinking level for new sessions"
         },
         "pi-code-gui.contextBudget": {
@@ -433,5 +440,8 @@
     "ovsx": "^0.10.11",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1"
+  },
+  "dependencies": {
+    "morphdom": "^2.7.8"
   }
 }
