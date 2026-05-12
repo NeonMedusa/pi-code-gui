@@ -1,6 +1,795 @@
 /*global acquireVsCodeApi*/
 (function () {
   "use strict";
+/* morphdom v2.7.8 — MIT — DOM tree patching */
+window.morphdom = (function () {
+'use strict';
+
+    var DOCUMENT_FRAGMENT_NODE = 11;
+
+    function morphAttrs(fromNode, toNode) {
+        var toNodeAttrs = toNode.attributes;
+        var attr;
+        var attrName;
+        var attrNamespaceURI;
+        var attrValue;
+        var fromValue;
+
+        // document-fragments dont have attributes so lets not do anything
+        if (toNode.nodeType === DOCUMENT_FRAGMENT_NODE || fromNode.nodeType === DOCUMENT_FRAGMENT_NODE) {
+          return;
+        }
+
+        // update attributes on original DOM element
+        for (var i = toNodeAttrs.length - 1; i >= 0; i--) {
+            attr = toNodeAttrs[i];
+            attrName = attr.name;
+            attrNamespaceURI = attr.namespaceURI;
+            attrValue = attr.value;
+
+            if (attrNamespaceURI) {
+                attrName = attr.localName || attrName;
+                fromValue = fromNode.getAttributeNS(attrNamespaceURI, attrName);
+
+                if (fromValue !== attrValue) {
+                    if (attr.prefix === 'xmlns'){
+                        attrName = attr.name; // It's not allowed to set an attribute with the XMLNS namespace without specifying the `xmlns` prefix
+                    }
+                    fromNode.setAttributeNS(attrNamespaceURI, attrName, attrValue);
+                }
+            } else {
+                fromValue = fromNode.getAttribute(attrName);
+
+                if (fromValue !== attrValue) {
+                    fromNode.setAttribute(attrName, attrValue);
+                }
+            }
+        }
+
+        // Remove any extra attributes found on the original DOM element that
+        // weren't found on the target element.
+        var fromNodeAttrs = fromNode.attributes;
+
+        for (var d = fromNodeAttrs.length - 1; d >= 0; d--) {
+            attr = fromNodeAttrs[d];
+            attrName = attr.name;
+            attrNamespaceURI = attr.namespaceURI;
+
+            if (attrNamespaceURI) {
+                attrName = attr.localName || attrName;
+
+                if (!toNode.hasAttributeNS(attrNamespaceURI, attrName)) {
+                    fromNode.removeAttributeNS(attrNamespaceURI, attrName);
+                }
+            } else {
+                if (!toNode.hasAttribute(attrName)) {
+                    fromNode.removeAttribute(attrName);
+                }
+            }
+        }
+    }
+
+    var range; // Create a range object for efficently rendering strings to elements.
+    var NS_XHTML = 'http://www.w3.org/1999/xhtml';
+
+    var doc = typeof document === 'undefined' ? undefined : document;
+    var HAS_TEMPLATE_SUPPORT = !!doc && 'content' in doc.createElement('template');
+    var HAS_RANGE_SUPPORT = !!doc && doc.createRange && 'createContextualFragment' in doc.createRange();
+
+    function createFragmentFromTemplate(str) {
+        var template = doc.createElement('template');
+        template.innerHTML = str;
+        return template.content.childNodes[0];
+    }
+
+    function createFragmentFromRange(str) {
+        if (!range) {
+            range = doc.createRange();
+            range.selectNode(doc.body);
+        }
+
+        var fragment = range.createContextualFragment(str);
+        return fragment.childNodes[0];
+    }
+
+    function createFragmentFromWrap(str) {
+        var fragment = doc.createElement('body');
+        fragment.innerHTML = str;
+        return fragment.childNodes[0];
+    }
+
+    /**
+     * This is about the same
+     * var html = new DOMParser().parseFromString(str, 'text/html');
+     * return html.body.firstChild;
+     *
+     * @method toElement
+     * @param {String} str
+     */
+    function toElement(str) {
+        str = str.trim();
+        if (HAS_TEMPLATE_SUPPORT) {
+          // avoid restrictions on content for things like `<tr><th>Hi</th></tr>` which
+          // createContextualFragment doesn't support
+          // <template> support not available in IE
+          return createFragmentFromTemplate(str);
+        } else if (HAS_RANGE_SUPPORT) {
+          return createFragmentFromRange(str);
+        }
+
+        return createFragmentFromWrap(str);
+    }
+
+    /**
+     * Returns true if two node's names are the same.
+     *
+     * NOTE: We don't bother checking `namespaceURI` because you will never find two HTML elements with the same
+     *       nodeName and different namespace URIs.
+     *
+     * @param {Element} a
+     * @param {Element} b The target element
+     * @return {boolean}
+     */
+    function compareNodeNames(fromEl, toEl) {
+        var fromNodeName = fromEl.nodeName;
+        var toNodeName = toEl.nodeName;
+        var fromCodeStart, toCodeStart;
+
+        if (fromNodeName === toNodeName) {
+            return true;
+        }
+
+        fromCodeStart = fromNodeName.charCodeAt(0);
+        toCodeStart = toNodeName.charCodeAt(0);
+
+        // If the target element is a virtual DOM node or SVG node then we may
+        // need to normalize the tag name before comparing. Normal HTML elements that are
+        // in the "http://www.w3.org/1999/xhtml"
+        // are converted to upper case
+        if (fromCodeStart <= 90 && toCodeStart >= 97) { // from is upper and to is lower
+            return fromNodeName === toNodeName.toUpperCase();
+        } else if (toCodeStart <= 90 && fromCodeStart >= 97) { // to is upper and from is lower
+            return toNodeName === fromNodeName.toUpperCase();
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * Create an element, optionally with a known namespace URI.
+     *
+     * @param {string} name the element name, e.g. 'div' or 'svg'
+     * @param {string} [namespaceURI] the element's namespace URI, i.e. the value of
+     * its `xmlns` attribute or its inferred namespace.
+     *
+     * @return {Element}
+     */
+    function createElementNS(name, namespaceURI) {
+        return !namespaceURI || namespaceURI === NS_XHTML ?
+            doc.createElement(name) :
+            doc.createElementNS(namespaceURI, name);
+    }
+
+    /**
+     * Copies the children of one DOM element to another DOM element
+     */
+    function moveChildren(fromEl, toEl) {
+        var curChild = fromEl.firstChild;
+        while (curChild) {
+            var nextChild = curChild.nextSibling;
+            toEl.appendChild(curChild);
+            curChild = nextChild;
+        }
+        return toEl;
+    }
+
+    function syncBooleanAttrProp(fromEl, toEl, name) {
+        if (fromEl[name] !== toEl[name]) {
+            fromEl[name] = toEl[name];
+            if (fromEl[name]) {
+                fromEl.setAttribute(name, '');
+            } else {
+                fromEl.removeAttribute(name);
+            }
+        }
+    }
+
+    var specialElHandlers = {
+        OPTION: function(fromEl, toEl) {
+            var parentNode = fromEl.parentNode;
+            if (parentNode) {
+                var parentName = parentNode.nodeName.toUpperCase();
+                if (parentName === 'OPTGROUP') {
+                    parentNode = parentNode.parentNode;
+                    parentName = parentNode && parentNode.nodeName.toUpperCase();
+                }
+                if (parentName === 'SELECT' && !parentNode.hasAttribute('multiple')) {
+                    if (fromEl.hasAttribute('selected') && !toEl.selected) {
+                        // Workaround for MS Edge bug where the 'selected' attribute can only be
+                        // removed if set to a non-empty value:
+                        // https://developer.microsoft.com/en-us/microsoft-edge/platform/issues/12087679/
+                        fromEl.setAttribute('selected', 'selected');
+                        fromEl.removeAttribute('selected');
+                    }
+                    // We have to reset select element's selectedIndex to -1, otherwise setting
+                    // fromEl.selected using the syncBooleanAttrProp below has no effect.
+                    // The correct selectedIndex will be set in the SELECT special handler below.
+                    parentNode.selectedIndex = -1;
+                }
+            }
+            syncBooleanAttrProp(fromEl, toEl, 'selected');
+        },
+        /**
+         * The "value" attribute is special for the <input> element since it sets
+         * the initial value. Changing the "value" attribute without changing the
+         * "value" property will have no effect since it is only used to the set the
+         * initial value.  Similar for the "checked" attribute, and "disabled".
+         */
+        INPUT: function(fromEl, toEl) {
+            syncBooleanAttrProp(fromEl, toEl, 'checked');
+            syncBooleanAttrProp(fromEl, toEl, 'disabled');
+
+            if (fromEl.value !== toEl.value) {
+                fromEl.value = toEl.value;
+            }
+
+            if (!toEl.hasAttribute('value')) {
+                fromEl.removeAttribute('value');
+            }
+        },
+
+        TEXTAREA: function(fromEl, toEl) {
+            var newValue = toEl.value;
+            if (fromEl.value !== newValue) {
+                fromEl.value = newValue;
+            }
+
+            var firstChild = fromEl.firstChild;
+            if (firstChild) {
+                // Needed for IE. Apparently IE sets the placeholder as the
+                // node value and vise versa. This ignores an empty update.
+                var oldValue = firstChild.nodeValue;
+
+                if (oldValue == newValue || (!newValue && oldValue == fromEl.placeholder)) {
+                    return;
+                }
+
+                firstChild.nodeValue = newValue;
+            }
+        },
+        SELECT: function(fromEl, toEl) {
+            if (!toEl.hasAttribute('multiple')) {
+                var selectedIndex = -1;
+                var i = 0;
+                // We have to loop through children of fromEl, not toEl since nodes can be moved
+                // from toEl to fromEl directly when morphing.
+                // At the time this special handler is invoked, all children have already been morphed
+                // and appended to / removed from fromEl, so using fromEl here is safe and correct.
+                var curChild = fromEl.firstChild;
+                var optgroup;
+                var nodeName;
+                while(curChild) {
+                    nodeName = curChild.nodeName && curChild.nodeName.toUpperCase();
+                    if (nodeName === 'OPTGROUP') {
+                        optgroup = curChild;
+                        curChild = optgroup.firstChild;
+                        // handle empty optgroups
+                        if (!curChild) {
+                            curChild = optgroup.nextSibling;
+                            optgroup = null;
+                        }
+                    } else {
+                        if (nodeName === 'OPTION') {
+                            if (curChild.hasAttribute('selected')) {
+                                selectedIndex = i;
+                                break;
+                            }
+                            i++;
+                        }
+                        curChild = curChild.nextSibling;
+                        if (!curChild && optgroup) {
+                            curChild = optgroup.nextSibling;
+                            optgroup = null;
+                        }
+                    }
+                }
+
+                fromEl.selectedIndex = selectedIndex;
+            }
+        }
+    };
+
+    var ELEMENT_NODE = 1;
+    var DOCUMENT_FRAGMENT_NODE$1 = 11;
+    var TEXT_NODE = 3;
+    var COMMENT_NODE = 8;
+
+    function noop() {}
+
+    function defaultGetNodeKey(node) {
+      if (node) {
+        return (node.getAttribute && node.getAttribute('id')) || node.id;
+      }
+    }
+
+    function morphdomFactory(morphAttrs) {
+
+      return function morphdom(fromNode, toNode, options) {
+        if (!options) {
+          options = {};
+        }
+
+        if (typeof toNode === 'string') {
+          if (fromNode.nodeName === '#document' || fromNode.nodeName === 'HTML') {
+            var toNodeHtml = toNode;
+            toNode = doc.createElement('html');
+            toNode.innerHTML = toNodeHtml;
+          } else if (fromNode.nodeName === 'BODY') {
+            var toNodeBody = toNode;
+            toNode = doc.createElement('html');
+            toNode.innerHTML = toNodeBody;
+            // Extract the body element from the created HTML structure
+            var bodyElement = toNode.querySelector('body');
+            if (bodyElement) {
+              toNode = bodyElement;
+            }
+          } else {
+            toNode = toElement(toNode);
+          }
+        } else if (toNode.nodeType === DOCUMENT_FRAGMENT_NODE$1) {
+          toNode = toNode.firstElementChild;
+        }
+
+        var getNodeKey = options.getNodeKey || defaultGetNodeKey;
+        var onBeforeNodeAdded = options.onBeforeNodeAdded || noop;
+        var onNodeAdded = options.onNodeAdded || noop;
+        var onBeforeElUpdated = options.onBeforeElUpdated || noop;
+        var onElUpdated = options.onElUpdated || noop;
+        var onBeforeNodeDiscarded = options.onBeforeNodeDiscarded || noop;
+        var onNodeDiscarded = options.onNodeDiscarded || noop;
+        var onBeforeElChildrenUpdated = options.onBeforeElChildrenUpdated || noop;
+        var skipFromChildren = options.skipFromChildren || noop;
+        var addChild = options.addChild || function(parent, child){ return parent.appendChild(child); };
+        var childrenOnly = options.childrenOnly === true;
+
+        // This object is used as a lookup to quickly find all keyed elements in the original DOM tree.
+        var fromNodesLookup = Object.create(null);
+        var keyedRemovalList = [];
+
+        function addKeyedRemoval(key) {
+          keyedRemovalList.push(key);
+        }
+
+        function walkDiscardedChildNodes(node, skipKeyedNodes) {
+          if (node.nodeType === ELEMENT_NODE) {
+            var curChild = node.firstChild;
+            while (curChild) {
+
+              var key = undefined;
+
+              if (skipKeyedNodes && (key = getNodeKey(curChild))) {
+                // If we are skipping keyed nodes then we add the key
+                // to a list so that it can be handled at the very end.
+                addKeyedRemoval(key);
+              } else {
+                // Only report the node as discarded if it is not keyed. We do this because
+                // at the end we loop through all keyed elements that were unmatched
+                // and then discard them in one final pass.
+                onNodeDiscarded(curChild);
+                if (curChild.firstChild) {
+                  walkDiscardedChildNodes(curChild, skipKeyedNodes);
+                }
+              }
+
+              curChild = curChild.nextSibling;
+            }
+          }
+        }
+
+        /**
+        * Removes a DOM node out of the original DOM
+        *
+        * @param  {Node} node The node to remove
+        * @param  {Node} parentNode The nodes parent
+        * @param  {Boolean} skipKeyedNodes If true then elements with keys will be skipped and not discarded.
+        * @return {undefined}
+        */
+        function removeNode(node, parentNode, skipKeyedNodes) {
+          if (onBeforeNodeDiscarded(node) === false) {
+            return;
+          }
+
+          if (parentNode) {
+            parentNode.removeChild(node);
+          }
+
+          onNodeDiscarded(node);
+          walkDiscardedChildNodes(node, skipKeyedNodes);
+        }
+
+        // // TreeWalker implementation is no faster, but keeping this around in case this changes in the future
+        // function indexTree(root) {
+        //     var treeWalker = document.createTreeWalker(
+        //         root,
+        //         NodeFilter.SHOW_ELEMENT);
+        //
+        //     var el;
+        //     while((el = treeWalker.nextNode())) {
+        //         var key = getNodeKey(el);
+        //         if (key) {
+        //             fromNodesLookup[key] = el;
+        //         }
+        //     }
+        // }
+
+        // // NodeIterator implementation is no faster, but keeping this around in case this changes in the future
+        //
+        // function indexTree(node) {
+        //     var nodeIterator = document.createNodeIterator(node, NodeFilter.SHOW_ELEMENT);
+        //     var el;
+        //     while((el = nodeIterator.nextNode())) {
+        //         var key = getNodeKey(el);
+        //         if (key) {
+        //             fromNodesLookup[key] = el;
+        //         }
+        //     }
+        // }
+
+        function indexTree(node) {
+          if (node.nodeType === ELEMENT_NODE || node.nodeType === DOCUMENT_FRAGMENT_NODE$1) {
+            var curChild = node.firstChild;
+            while (curChild) {
+              var key = getNodeKey(curChild);
+              if (key) {
+                fromNodesLookup[key] = curChild;
+              }
+
+              // Walk recursively
+              indexTree(curChild);
+
+              curChild = curChild.nextSibling;
+            }
+          }
+        }
+
+        indexTree(fromNode);
+
+        function handleNodeAdded(el) {
+          onNodeAdded(el);
+
+          var curChild = el.firstChild;
+          while (curChild) {
+            var nextSibling = curChild.nextSibling;
+
+            var key = getNodeKey(curChild);
+            if (key) {
+              var unmatchedFromEl = fromNodesLookup[key];
+              // if we find a duplicate #id node in cache, replace `el` with cache value
+              // and morph it to the child node.
+              if (unmatchedFromEl && compareNodeNames(curChild, unmatchedFromEl)) {
+                curChild.parentNode.replaceChild(unmatchedFromEl, curChild);
+                morphEl(unmatchedFromEl, curChild);
+              } else {
+                handleNodeAdded(curChild);
+              }
+            } else {
+              // recursively call for curChild and it's children to see if we find something in
+              // fromNodesLookup
+              handleNodeAdded(curChild);
+            }
+
+            curChild = nextSibling;
+          }
+        }
+
+        function cleanupFromEl(fromEl, curFromNodeChild, curFromNodeKey) {
+          // We have processed all of the "to nodes". If curFromNodeChild is
+          // non-null then we still have some from nodes left over that need
+          // to be removed
+          while (curFromNodeChild) {
+            var fromNextSibling = curFromNodeChild.nextSibling;
+            if ((curFromNodeKey = getNodeKey(curFromNodeChild))) {
+              // Since the node is keyed it might be matched up later so we defer
+              // the actual removal to later
+              addKeyedRemoval(curFromNodeKey);
+            } else {
+              // NOTE: we skip nested keyed nodes from being removed since there is
+              //       still a chance they will be matched up later
+              removeNode(curFromNodeChild, fromEl, true /* skip keyed nodes */);
+            }
+            curFromNodeChild = fromNextSibling;
+          }
+        }
+
+        function morphEl(fromEl, toEl, childrenOnly) {
+          var toElKey = getNodeKey(toEl);
+
+          if (toElKey) {
+            // If an element with an ID is being morphed then it will be in the final
+            // DOM so clear it out of the saved elements collection
+            delete fromNodesLookup[toElKey];
+          }
+
+          if (!childrenOnly) {
+            // optional
+            var beforeUpdateResult = onBeforeElUpdated(fromEl, toEl);
+            if (beforeUpdateResult === false) {
+              return;
+            } else if (beforeUpdateResult instanceof HTMLElement) {
+              fromEl = beforeUpdateResult;
+              // reindex the new fromEl in case it's not in the same
+              // tree as the original fromEl
+              // (Phoenix LiveView sometimes returns a cloned tree,
+              //  but keyed lookups would still point to the original tree)
+              indexTree(fromEl);
+            }
+
+            // update attributes on original DOM element first
+            morphAttrs(fromEl, toEl);
+            // optional
+            onElUpdated(fromEl);
+
+            if (onBeforeElChildrenUpdated(fromEl, toEl) === false) {
+              return;
+            }
+          }
+
+          if (fromEl.nodeName !== 'TEXTAREA') {
+            morphChildren(fromEl, toEl);
+          } else {
+            specialElHandlers.TEXTAREA(fromEl, toEl);
+          }
+        }
+
+        function morphChildren(fromEl, toEl) {
+          var skipFrom = skipFromChildren(fromEl, toEl);
+          var curToNodeChild = toEl.firstChild;
+          var curFromNodeChild = fromEl.firstChild;
+          var curToNodeKey;
+          var curFromNodeKey;
+
+          var fromNextSibling;
+          var toNextSibling;
+          var matchingFromEl;
+
+          // walk the children
+          outer: while (curToNodeChild) {
+            toNextSibling = curToNodeChild.nextSibling;
+            curToNodeKey = getNodeKey(curToNodeChild);
+
+            // walk the fromNode children all the way through
+            while (!skipFrom && curFromNodeChild) {
+              fromNextSibling = curFromNodeChild.nextSibling;
+
+              if (curToNodeChild.isSameNode && curToNodeChild.isSameNode(curFromNodeChild)) {
+                curToNodeChild = toNextSibling;
+                curFromNodeChild = fromNextSibling;
+                continue outer;
+              }
+
+              curFromNodeKey = getNodeKey(curFromNodeChild);
+
+              var curFromNodeType = curFromNodeChild.nodeType;
+
+              // this means if the curFromNodeChild doesnt have a match with the curToNodeChild
+              var isCompatible = undefined;
+
+              if (curFromNodeType === curToNodeChild.nodeType) {
+                if (curFromNodeType === ELEMENT_NODE) {
+                  // Both nodes being compared are Element nodes
+
+                  if (curToNodeKey) {
+                    // The target node has a key so we want to match it up with the correct element
+                    // in the original DOM tree
+                    if (curToNodeKey !== curFromNodeKey) {
+                      // The current element in the original DOM tree does not have a matching key so
+                      // let's check our lookup to see if there is a matching element in the original
+                      // DOM tree
+                      if ((matchingFromEl = fromNodesLookup[curToNodeKey])) {
+                        if (fromNextSibling === matchingFromEl) {
+                          // Special case for single element removals. To avoid removing the original
+                          // DOM node out of the tree (since that can break CSS transitions, etc.),
+                          // we will instead discard the current node and wait until the next
+                          // iteration to properly match up the keyed target element with its matching
+                          // element in the original tree
+                          isCompatible = false;
+                        } else {
+                          // We found a matching keyed element somewhere in the original DOM tree.
+                          // Let's move the original DOM node into the current position and morph
+                          // it.
+
+                          // NOTE: We use insertBefore instead of replaceChild because we want to go through
+                          // the `removeNode()` function for the node that is being discarded so that
+                          // all lifecycle hooks are correctly invoked
+                          fromEl.insertBefore(matchingFromEl, curFromNodeChild);
+
+                          // fromNextSibling = curFromNodeChild.nextSibling;
+
+                          if (curFromNodeKey) {
+                            // Since the node is keyed it might be matched up later so we defer
+                            // the actual removal to later
+                            addKeyedRemoval(curFromNodeKey);
+                          } else {
+                            // NOTE: we skip nested keyed nodes from being removed since there is
+                            //       still a chance they will be matched up later
+                            removeNode(curFromNodeChild, fromEl, true /* skip keyed nodes */);
+                          }
+
+                          curFromNodeChild = matchingFromEl;
+                          curFromNodeKey = getNodeKey(curFromNodeChild);
+                        }
+                      } else {
+                        // The nodes are not compatible since the "to" node has a key and there
+                        // is no matching keyed node in the source tree
+                        isCompatible = false;
+                      }
+                    }
+                  } else if (curFromNodeKey) {
+                    // The original has a key
+                    isCompatible = false;
+                  }
+
+                  isCompatible = isCompatible !== false && compareNodeNames(curFromNodeChild, curToNodeChild);
+                  if (isCompatible) {
+                    // We found compatible DOM elements so transform
+                    // the current "from" node to match the current
+                    // target DOM node.
+                    // MORPH
+                    morphEl(curFromNodeChild, curToNodeChild);
+                  }
+
+                } else if (curFromNodeType === TEXT_NODE || curFromNodeType == COMMENT_NODE) {
+                  // Both nodes being compared are Text or Comment nodes
+                  isCompatible = true;
+                  // Simply update nodeValue on the original node to
+                  // change the text value
+                  if (curFromNodeChild.nodeValue !== curToNodeChild.nodeValue) {
+                    curFromNodeChild.nodeValue = curToNodeChild.nodeValue;
+                  }
+
+                }
+              }
+
+              if (isCompatible) {
+                // Advance both the "to" child and the "from" child since we found a match
+                // Nothing else to do as we already recursively called morphChildren above
+                curToNodeChild = toNextSibling;
+                curFromNodeChild = fromNextSibling;
+                continue outer;
+              }
+
+              // No compatible match so remove the old node from the DOM and continue trying to find a
+              // match in the original DOM. However, we only do this if the from node is not keyed
+              // since it is possible that a keyed node might match up with a node somewhere else in the
+              // target tree and we don't want to discard it just yet since it still might find a
+              // home in the final DOM tree. After everything is done we will remove any keyed nodes
+              // that didn't find a home
+              if (curFromNodeKey) {
+                // Since the node is keyed it might be matched up later so we defer
+                // the actual removal to later
+                addKeyedRemoval(curFromNodeKey);
+              } else {
+                // NOTE: we skip nested keyed nodes from being removed since there is
+                //       still a chance they will be matched up later
+                removeNode(curFromNodeChild, fromEl, true /* skip keyed nodes */);
+              }
+
+              curFromNodeChild = fromNextSibling;
+            } // END: while(curFromNodeChild) {}
+
+            // If we got this far then we did not find a candidate match for
+            // our "to node" and we exhausted all of the children "from"
+            // nodes. Therefore, we will just append the current "to" node
+            // to the end
+            if (curToNodeKey && (matchingFromEl = fromNodesLookup[curToNodeKey]) && compareNodeNames(matchingFromEl, curToNodeChild)) {
+              // MORPH
+              if(!skipFrom){ addChild(fromEl, matchingFromEl); }
+              morphEl(matchingFromEl, curToNodeChild);
+            } else {
+              var onBeforeNodeAddedResult = onBeforeNodeAdded(curToNodeChild);
+              if (onBeforeNodeAddedResult !== false) {
+                if (onBeforeNodeAddedResult) {
+                  curToNodeChild = onBeforeNodeAddedResult;
+                }
+
+                if (curToNodeChild.actualize) {
+                  curToNodeChild = curToNodeChild.actualize(fromEl.ownerDocument || doc);
+                }
+                addChild(fromEl, curToNodeChild);
+                handleNodeAdded(curToNodeChild);
+              }
+            }
+
+            curToNodeChild = toNextSibling;
+            curFromNodeChild = fromNextSibling;
+          }
+
+          cleanupFromEl(fromEl, curFromNodeChild, curFromNodeKey);
+
+          var specialElHandler = specialElHandlers[fromEl.nodeName];
+          if (specialElHandler) {
+            specialElHandler(fromEl, toEl);
+          }
+        } // END: morphChildren(...)
+
+        var morphedNode = fromNode;
+        var morphedNodeType = morphedNode.nodeType;
+        var toNodeType = toNode.nodeType;
+
+        if (!childrenOnly) {
+          // Handle the case where we are given two DOM nodes that are not
+          // compatible (e.g. <div> --> <span> or <div> --> TEXT)
+          if (morphedNodeType === ELEMENT_NODE) {
+            if (toNodeType === ELEMENT_NODE) {
+              if (!compareNodeNames(fromNode, toNode)) {
+                onNodeDiscarded(fromNode);
+                morphedNode = moveChildren(fromNode, createElementNS(toNode.nodeName, toNode.namespaceURI));
+              }
+            } else {
+              // Going from an element node to a text node
+              morphedNode = toNode;
+            }
+          } else if (morphedNodeType === TEXT_NODE || morphedNodeType === COMMENT_NODE) { // Text or comment node
+            if (toNodeType === morphedNodeType) {
+              if (morphedNode.nodeValue !== toNode.nodeValue) {
+                morphedNode.nodeValue = toNode.nodeValue;
+              }
+
+              return morphedNode;
+            } else {
+              // Text node to something else
+              morphedNode = toNode;
+            }
+          }
+        }
+
+        if (morphedNode === toNode) {
+          // The "to node" was not compatible with the "from node" so we had to
+          // toss out the "from node" and use the "to node"
+          onNodeDiscarded(fromNode);
+        } else {
+          if (toNode.isSameNode && toNode.isSameNode(morphedNode)) {
+            return;
+          }
+
+          morphEl(morphedNode, toNode, childrenOnly);
+
+          // We now need to loop over any keyed nodes that might need to be
+          // removed. We only do the removal if we know that the keyed node
+          // never found a match. When a keyed node is matched up we remove
+          // it out of fromNodesLookup and we use fromNodesLookup to determine
+          // if a keyed node has been matched up or not
+          if (keyedRemovalList) {
+            for (var i=0, len=keyedRemovalList.length; i<len; i++) {
+              var elToRemove = fromNodesLookup[keyedRemovalList[i]];
+              if (elToRemove) {
+                removeNode(elToRemove, elToRemove.parentNode, false);
+              }
+            }
+          }
+        }
+
+        if (!childrenOnly && morphedNode !== fromNode && fromNode.parentNode) {
+          if (morphedNode.actualize) {
+            morphedNode = morphedNode.actualize(fromNode.ownerDocument || doc);
+          }
+          // If we had to swap out the from node with a new node because the old
+          // node was not compatible with the target node then we need to
+          // replace the old DOM node in the original DOM tree. This is only
+          // possible if the original DOM node was part of a DOM tree which
+          // we know is the case if it has a parent node.
+          fromNode.parentNode.replaceChild(morphedNode, fromNode);
+        }
+
+        return morphedNode;
+      };
+    }
+
+    var morphdom = morphdomFactory(morphAttrs);
+
+    return morphdom;
+})();
+
 
   var vscode = acquireVsCodeApi();
 
@@ -236,6 +1025,1015 @@
   // Expose for pi extensions to register custom tool renderers
   window.__piRegisterToolRenderer = registerToolRenderer;
 
+  // ── Helpers for tool content rendering ──────────────────
+
+  /** Map file extension to language for syntax highlighting. */
+  function getLangFromPath(filePath) {
+    if (!filePath) return undefined;
+    var ext = filePath.split(".").pop().toLowerCase();
+    var extToLang = {
+      ts: "typescript", tsx: "typescript",
+      js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript",
+      py: "python", rs: "rust", go: "go", java: "java",
+      c: "c", h: "c", cpp: "cpp", cc: "cpp", cxx: "cpp", hpp: "cpp",
+      cs: "csharp", sh: "bash", bash: "bash", zsh: "bash",
+      html: "html", htm: "html", css: "css", scss: "scss", less: "less",
+      json: "json", yaml: "yaml", yml: "yaml", toml: "toml",
+      xml: "xml", svg: "svg", md: "markdown", markdown: "markdown",
+      sql: "sql", php: "php", rb: "ruby", swift: "swift", kt: "kotlin",
+      lua: "lua", r: "r", scala: "scala", hs: "haskell",
+      ex: "elixir", exs: "elixir", erl: "erlang",
+      dockerfile: "dockerfile", makefile: "makefile",
+      proto: "protobuf", graphql: "graphql", tf: "hcl", hcl: "hcl", ps1: "powershell",
+    };
+    return extToLang[ext];
+  }
+
+  /** Compact read classifications (skills/docs/resources get abbreviated labels). */
+  function getCompactReadLabel(filePath) {
+    if (!filePath) return undefined;
+    var name = filePath.split("/").pop() || filePath;
+    if (name === "SKILL.md") {
+      var parts = filePath.split("/");
+      var parent = parts.length >= 2 ? parts[parts.length - 2] : name;
+      return { kind: "skill", label: parent };
+    }
+    if (name === "AGENTS.md" || name === "AGENTS.MD" || name === "CLAUDE.md" || name === "CLAUDE.MD") {
+      return { kind: "resource", label: filePath };
+    }
+    if (name === "README.md" || filePath.indexOf("docs/") !== -1 || filePath.indexOf("examples/") !== -1) {
+      return { kind: "docs", label: filePath };
+    }
+    return undefined;
+  }
+
+  /** Render file content with syntax-highlighted line numbers into a code-block-wrapper. */
+  function renderFileContent(content, lang) {
+    if (!content) return "";
+    content = content.replace(/\r\n?/g, "\n");
+    content = content.replace(/\n+$/, "");
+    if (!content) return "";
+    var lines = content.split("\n");
+    var langLabel = lang ? '<span class="code-lang-label">' + escapeHtml(lang) + '</span>' : "";
+    var numbered = lines.map(function (line) {
+      return '<span class="code-ln"></span>' +
+        '<span class="code-text" data-lang="' + escapeHtml(lang || "") + '">' +
+        syntaxHighlightLine(line, lang) +
+        '</span>';
+    }).join("\n");
+    return '<div class="code-block-wrapper">' +
+      '<div class="code-block-header">' + langLabel +
+      '<button class="code-copy-btn" type="button">Copy</button></div>' +
+      '<pre class="code-block" data-lang="' + escapeHtml(lang || "") + '"><code>' +
+      numbered + '</code></pre></div>';
+  }
+
+  // ── DOM morphing helper ─────────────────────────────────
+
+  /** Replace el's children to match offscreen-rendered html, patching only changed nodes. */
+  function morphRender(el, html) {
+    if (!el || html === undefined || html === null) return;
+    var temp = document.createElement("div");
+    temp.innerHTML = html;
+    window.morphdom(el, temp, { childrenOnly: true });
+  }
+
+  // ── Error message formatting ────────────────────────────
+
+  /** Replace raw SDK validation errors with user-friendly messages. */
+  function formatToolError(text, toolName) {
+    if (!text) return text;
+    if (text.indexOf("Validation failed for tool") !== -1) {
+      var issues = [];
+      var missingRe = /must have required propert(?:y|ies) (\w+)/g;
+      var extraRe = /must not have additional propert(?:y|ies)/g;
+      var match;
+      while ((match = missingRe.exec(text)) !== null) {
+        issues.push("missing \u201C" + match[1] + "\u201D");
+      }
+      if (extraRe.test(text)) {
+        var extraMatch = text.match(/additional properties.*?(\w+)/g);
+        if (!extraMatch) issues.push("unexpected field(s)");
+      }
+      var hint = issues.length > 0 ? " (" + issues.join(", ") + ")" : "";
+      return "\u26A0 Argument structure mismatch" + hint + " \u2014 the agent will self-correct.";
+    }
+    if (/abort|aborted|cancell?ed/i.test(text)) return "\u2717 Operation cancelled.";
+    if (/permission denied|EACCES|not permitted/i.test(text)) return "\u26D4 Permission denied \u2014 cannot access the file.";
+    if (/no such file|ENOENT|not found/i.test(text) && text.indexOf("Validation") === -1) return "\uD83D\uDD0D File not found \u2014 check the path.";
+    if (/timed?\s*out/i.test(text)) return "\u23F0 Command timed out.";
+    return text;
+  }
+
+  // ═══ Write Tool Renderer ══════════════════════════════════
+
+  var writeToolRenderer = {
+    create: function (data) {
+      hideWelcome();
+      var block = document.createElement("div");
+      block.className = "tool-block";
+      block.id = data.entryId ? "entry-" + data.entryId : "tool-" + data.toolCallId;
+      block.setAttribute("data-status", "running");
+      var rawPath = data.args && (data.args.path || data.args.file_path);
+      var fileContent = data.args && data.args.content;
+      var pathDisplay = rawPath || "...";
+      var lang = rawPath ? getLangFromPath(rawPath) : undefined;
+      block.innerHTML =
+        '<div class="tool-header">' +
+        '<span class="tool-name">write</span>' +
+        '<span class="tool-path">' + escapeHtml(pathDisplay) + '</span>' +
+        '<span class="tool-status running">running</span>' +
+        '</div>' +
+        '<div class="tool-content"></div>' +
+        '<div class="tool-result"></div>';
+      block._writeState = { lang: lang, content: "", rawPath: rawPath };
+      if (typeof fileContent === "string" && fileContent) {
+        block._writeState.content = fileContent;
+        renderWriteContentBlock(block);
+      }
+      return block;
+    },
+    update: function (el, partialResult) {
+      if (!partialResult || !partialResult.content) return;
+      var text = partialResult.content
+        .filter(function (c) { return c.type === "text"; })
+        .map(function (c) { return c.text; })
+        .join("\n");
+      if (!text) return;
+      el._writePending = text;
+      if (!el._writeRafId) {
+        el._writeRafId = requestAnimationFrame(function () {
+          el._writeRafId = null;
+          if (el._writePending) {
+            processWriteUpdate(el, el._writePending);
+            el._writePending = null;
+          }
+        });
+      }
+    },
+    finalize: function (el, result, isError, entryId) {
+      if (el._writeRafId) { cancelAnimationFrame(el._writeRafId); el._writeRafId = null; }
+      if (el._writePending) { processWriteUpdate(el, el._writePending); el._writePending = null; }
+      var statusEl = el.querySelector(".tool-status");
+      if (statusEl) {
+        statusEl.textContent = isError ? "error" : "done";
+        statusEl.className = "tool-status " + (isError ? "error" : "success");
+      }
+      el.setAttribute("data-status", isError ? "error" : "done");
+      if (entryId && !el.id.startsWith("entry-")) {
+        el.id = "entry-" + entryId;
+      }
+      if (isError && result && result.content) {
+        var errorText = result.content
+          .filter(function (c) { return c.type === "text"; })
+          .map(function (c) { return c.text; })
+          .join("\n");
+        var tr = el.querySelector(".tool-result");
+        if (tr && errorText) {
+          tr.innerHTML = '<div style="color:var(--vscode-errorForeground);margin-top:6px;white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(errorText, "write")) + '</div>';
+        }
+      }
+    },
+  };
+
+  function processWriteUpdate(el, text) {
+    try {
+      var args = JSON.parse(text);
+      if (args.content && typeof args.content === "string") {
+        el._writeState.content = args.content;
+        renderWriteContentBlock(el);
+      }
+      if (args.path) {
+        el._writeState.rawPath = args.path;
+        el._writeState.lang = getLangFromPath(args.path);
+        var pathEl = el.querySelector(".tool-path");
+        if (pathEl) pathEl.textContent = args.path;
+      }
+    } catch (e) {
+      var match = text.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if (match) {
+        el._writeState.content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+        renderWriteContentBlock(el);
+      }
+    }
+  }
+
+  function renderWriteContentBlock(el) {
+    var tc = el.querySelector(".tool-content");
+    if (!tc) return;
+    var state = el._writeState || {};
+    var content = state.content || "";
+    var lang = state.lang;
+    var displayContent = content;
+    var maxCollapsedLines = 10;
+    var allLines = content.split("\n");
+    var collapsed = allLines.length > maxCollapsedLines + 5;
+    if (collapsed) {
+      displayContent = allLines.slice(0, maxCollapsedLines).join("\n");
+    }
+    morphRender(tc, renderFileContent(displayContent, lang));
+    if (collapsed) {
+      var remaining = allLines.length - maxCollapsedLines;
+      tc.innerHTML += '<div style="text-align:center;margin-top:4px;">' +
+        '<button class="tool-expand-btn" type="button">' +
+        '\u25BC ' + remaining + ' more lines (' + allLines.length + ' total)' +
+        '</button></div>';
+      var btn = tc.querySelector(".tool-expand-btn");
+      if (btn) {
+        btn.addEventListener("click", function () {
+          morphRender(tc, renderFileContent(content, lang));
+          var collapsedBtn = tc.querySelector(".tool-expand-btn");
+          if (!collapsedBtn) {
+            tc.innerHTML += '<div style="text-align:center;margin-top:4px;">' +
+              '<button class="tool-expand-btn" type="button">\u25B2 Show less</button></div>';
+            var cb = tc.querySelector(".tool-expand-btn");
+            if (cb) {
+              cb.addEventListener("click", function () {
+                renderWriteContentBlock(el);
+              });
+            }
+          }
+        });
+      }
+    }
+  }
+
+  // ═══ Edit Tool Renderer ══════════════════════════════════
+
+  var editToolRenderer = {
+    create: function (data) {
+      hideWelcome();
+      var block = document.createElement("div");
+      block.className = "tool-block";
+      block.id = data.entryId ? "entry-" + data.entryId : "tool-" + data.toolCallId;
+      block.setAttribute("data-status", "running");
+      var rawPath = data.args && (data.args.path || data.args.file_path);
+      var edits = data.args && data.args.edits;
+      var pathDisplay = rawPath || "...";
+      var editCount = Array.isArray(edits) ? edits.length : 0;
+      var editLabel = editCount > 1 ? " (" + editCount + " edits)" : "";
+      block.innerHTML =
+        '<div class="tool-header">' +
+        '<span class="tool-name">edit</span>' +
+        '<span class="tool-path">' + escapeHtml(pathDisplay) + editLabel + '</span>' +
+        '<span class="tool-status running">running</span>' +
+        '</div>' +
+        '<div class="tool-content"></div>' +
+        '<div class="tool-result"></div>';
+      if (Array.isArray(edits) && edits.length > 0) {
+        renderEditPreviews(block, edits);
+      }
+      return block;
+    },
+    update: function (el, partialResult) {
+      if (!partialResult || !partialResult.content) return;
+      var text = partialResult.content
+        .filter(function (c) { return c.type === "text"; })
+        .map(function (c) { return c.text; })
+        .join("\n");
+      if (!text) return;
+      try {
+        var args = JSON.parse(text);
+        var edits = args.edits;
+        if (Array.isArray(edits) && edits.length > 0) {
+          var editLabel = edits.length > 1 ? " (" + edits.length + " edits)" : "";
+          var pathEl = el.querySelector(".tool-path");
+          if (pathEl) pathEl.textContent = (args.path || "...") + editLabel;
+          renderEditPreviews(el, edits);
+        }
+      } catch (e) {}
+    },
+    finalize: function (el, result, isError, entryId) {
+      var statusEl = el.querySelector(".tool-status");
+      if (statusEl) {
+        statusEl.textContent = isError ? "error" : "done";
+        statusEl.className = "tool-status " + (isError ? "error" : "success");
+      }
+      el.setAttribute("data-status", isError ? "error" : "done");
+      if (entryId && !el.id.startsWith("entry-")) {
+        el.id = "entry-" + entryId;
+      }
+      var text = "";
+      if (result && result.content) {
+        text = result.content
+          .filter(function (c) { return c.type === "text"; })
+          .map(function (c) { return c.text; })
+          .join("\n");
+      }
+      var tr = el.querySelector(".tool-result");
+      if (tr && text) {
+        if (isError) {
+          tr.innerHTML = '<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(text, "edit")) + '</div>';
+        } else {
+          tr.innerHTML = '<div style="margin-top:4px;">' + renderDiffIfApplicable(text) + '</div>';
+        }
+      }
+    },
+  };
+
+  function renderEditPreviews(el, edits) {
+    var tc = el.querySelector(".tool-content");
+    if (!tc) return;
+    var maxVisible = 3;
+    var html = "";
+    var remaining = edits.length - maxVisible;
+    for (var i = 0; i < Math.min(edits.length, maxVisible); i++) {
+      var edit = edits[i];
+      var oldText = edit.oldText || "";
+      var newText = edit.newText || "";
+      html += '<div class="edit-change">';
+      if (edits.length > 1) {
+        html += '<div class="edit-header">Edit ' + (i + 1) + ' of ' + edits.length + '</div>';
+      }
+      html += '<div class="edit-old">- ' + escapeHtml(oldText.slice(0, 300)) + (oldText.length > 300 ? '\u2026' : '') + '</div>';
+      html += '<div class="edit-new">+ ' + escapeHtml(newText.slice(0, 300)) + (newText.length > 300 ? '\u2026' : '') + '</div>';
+      html += '</div>';
+    }
+    if (remaining > 0) {
+      html += '<div style="text-align:center;margin-top:4px;font-size:0.85em;color:var(--vscode-descriptionForeground);">' +
+        '\u2026 ' + remaining + ' more edit(s) not shown</div>';
+    }
+    morphRender(tc, html);
+  }
+
+  // ═══ Read Tool Renderer ═══════════════════════════════════
+
+  var readToolRenderer = {
+    create: function (data) {
+      hideWelcome();
+      var block = document.createElement("div");
+      block.className = "tool-block";
+      block.id = data.entryId ? "entry-" + data.entryId : "tool-" + data.toolCallId;
+      block.setAttribute("data-status", "running");
+      var rawPath = data.args && (data.args.path || data.args.file_path);
+      var offset = data.args && data.args.offset;
+      var limit = data.args && data.args.limit;
+      var pathDisplay = rawPath || "...";
+      var rangeLabel = "";
+      if (offset !== undefined) {
+        rangeLabel = ":" + offset;
+        if (limit !== undefined) rangeLabel += "-" + (offset + limit - 1);
+      }
+      var compact = getCompactReadLabel(rawPath);
+      block.innerHTML =
+        '<div class="tool-header">' +
+        '<span class="tool-name">read</span>' +
+        '<span class="tool-path">' + escapeHtml(pathDisplay) + rangeLabel + '</span>' +
+        '<span class="tool-status running">running</span>' +
+        '</div>' +
+        (compact ? '<div class="compact-label">[' + compact.kind + '] ' + escapeHtml(compact.label) + '</div>' : '') +
+        '<div class="tool-content"></div>' +
+        '<div class="tool-result"></div>';
+      block._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath) : undefined, compact: compact };
+      return block;
+    },
+    update: function (el, partialResult) {
+      // Read tool results come via tool-end, not incremental updates
+    },
+    finalize: function (el, result, isError, entryId) {
+      var statusEl = el.querySelector(".tool-status");
+      if (statusEl) {
+        statusEl.textContent = isError ? "error" : "done";
+        statusEl.className = "tool-status " + (isError ? "error" : "success");
+      }
+      el.setAttribute("data-status", isError ? "error" : "done");
+      if (entryId && !el.id.startsWith("entry-")) {
+        el.id = "entry-" + entryId;
+      }
+      var text = "";
+      if (result && result.content) {
+        text = result.content
+          .filter(function (c) { return c.type === "text"; })
+          .map(function (c) { return c.text; })
+          .join("\n");
+      }
+      var tr = el.querySelector(".tool-result");
+      if (!tr) return;
+      if (isError) {
+        tr.innerHTML = '<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(text, "read")) + '</div>';
+        return;
+      }
+      if (!text) {
+        tr.innerHTML = '<div style="color:var(--vscode-descriptionForeground);font-size:0.85em;">(empty)</div>';
+        return;
+      }
+      var state = el._readState || {};
+      var lang = state.lang;
+      var lines = text.split("\n");
+      var maxCollapsed = 10;
+      var collapsed = lines.length > maxCollapsed + 5;
+      if (collapsed) {
+        var previewLines = lines.slice(0, maxCollapsed);
+        var previewText = previewLines.join("\n");
+        var remaining = lines.length - maxCollapsed;
+        tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:220px;overflow:hidden;">' +
+          renderFileContent(previewText, lang) +
+          '</div>' +
+          '<button class="tool-expand-btn" type="button">' +
+          '\u25BC ' + remaining + ' more lines (' + lines.length + ' total)' +
+          '</button>';
+        var btn = tr.querySelector(".tool-expand-btn");
+        if (btn) {
+          btn.addEventListener("click", function () {
+            tr.innerHTML = renderFileContent(text, lang);
+            var cb = tr.querySelector(".tool-expand-btn");
+            if (!cb) {
+              tr.innerHTML += '<button class="tool-expand-btn" type="button">\u25B2 Show less</button>';
+              var cb2 = tr.querySelector(".tool-expand-btn");
+              if (cb2) {
+                cb2.addEventListener("click", function () {
+                  tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:220px;overflow:hidden;">' +
+                    renderFileContent(previewText, lang) +
+                    '</div>' +
+                    '<button class="tool-expand-btn" type="button">' +
+                    '\u25BC ' + remaining + ' more lines (' + lines.length + ' total)' +
+                    '</button>';
+                  var btn3 = tr.querySelector(".tool-expand-btn");
+                  if (btn3) btn3.addEventListener("click", arguments.callee);
+                });
+              }
+            }
+          });
+        }
+      } else {
+        tr.innerHTML = renderFileContent(text, lang);
+      }
+      if (result && result.details && result.details.truncation) {
+        var t = result.details.truncation;
+        if (t.truncated) {
+          var note = '<div style="margin-top:6px;font-size:0.8em;color:var(--vscode-editorWarning-foreground);">';
+          if (t.truncatedBy === "lines") {
+            note += '[' + t.outputLines + ' of ' + t.totalLines + ' lines shown (line limit)]';
+          } else {
+            note += '[Truncated: ' + t.outputLines + ' lines shown]';
+          }
+          note += '</div>';
+          tr.innerHTML += note;
+        }
+      }
+    },
+  };
+
+
+  // ── Error message formatting ────────────────────────────
+
+  /** Replace raw SDK validation errors with user-friendly messages. */
+  function formatToolError(text, toolName) {
+    if (!text) return text;
+
+    // SDK validation errors (model used wrong field names / structure)
+    if (text.indexOf("Validation failed for tool") !== -1) {
+      var issues = [];
+      var missingRe = /must have required propert(?:y|ies) (\w+)/g;
+      var extraRe = /must not have additional propert(?:y|ies)/g;
+      var match;
+      while ((match = missingRe.exec(text)) !== null) {
+        issues.push("missing \u201C" + match[1] + "\u201D");
+      }
+      if (extraRe.test(text)) {
+        // Extract the extra property name if possible
+        var extraMatch = text.match(/additional properties.*?(\w+)/g);
+        if (!extraMatch) issues.push("unexpected field(s)");
+      }
+      var hint = issues.length > 0
+        ? " (" + issues.join(", ") + ")"
+        : "";
+      return "\u26A0 Argument structure mismatch" + hint + " \u2014 the agent will self-correct.";
+    }
+
+    // Aborted / cancelled
+    if (/abort|aborted|cancell?ed/i.test(text)) {
+      return "\u2717 Operation cancelled.";
+    }
+
+    // Permission / access errors
+    if (/permission denied|EACCES|not permitted/i.test(text)) {
+      return "\u26D4 Permission denied \u2014 cannot access the file.";
+    }
+
+    // File not found
+    if (/no such file|ENOENT|not found/i.test(text) && text.indexOf("Validation") === -1) {
+      return "\uD83D\uDD0D File not found \u2014 check the path.";
+    }
+
+    // Timeout
+    if (/timed?\s*out/i.test(text)) {
+      return "\u23F0 Command timed out.";
+    }
+
+    return text;
+  }
+
+  // ── Helpers for tool content rendering ──────────────────
+
+  function shortenPath(filePath) {
+    if (!filePath) return "";
+    // Try to make path relative to common workspace indicators
+    return filePath;
+  }
+
+  /** Map file extension to language for syntax highlighting. */
+  function getLangFromPath(filePath) {
+    if (!filePath) return undefined;
+    var ext = filePath.split(".").pop().toLowerCase();
+    var extToLang = {
+      ts: "typescript", tsx: "typescript",
+      js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript",
+      py: "python",
+      rs: "rust",
+      go: "go",
+      java: "java",
+      c: "c", h: "c",
+      cpp: "cpp", cc: "cpp", cxx: "cpp", hpp: "cpp",
+      cs: "csharp",
+      sh: "bash", bash: "bash", zsh: "bash",
+      html: "html", htm: "html",
+      css: "css", scss: "scss", less: "less",
+      json: "json",
+      yaml: "yaml", yml: "yaml",
+      toml: "toml",
+      xml: "xml", svg: "svg",
+      md: "markdown", markdown: "markdown",
+      sql: "sql",
+      php: "php",
+      rb: "ruby",
+      swift: "swift",
+      kt: "kotlin",
+      lua: "lua",
+      r: "r",
+      scala: "scala",
+      hs: "haskell",
+      ex: "elixir", exs: "elixir",
+      erl: "erlang",
+      dockerfile: "dockerfile",
+      makefile: "makefile",
+      proto: "protobuf",
+      graphql: "graphql",
+      tf: "hcl", hcl: "hcl",
+      ps1: "powershell",
+    };
+    return extToLang[ext];
+  }
+
+  /** Compact read classifications (skills/docs/resources get abbreviated labels). */
+  function getCompactReadLabel(filePath) {
+    if (!filePath) return undefined;
+    var name = filePath.split("/").pop() || filePath;
+    // SKILL.md files — show parent dir as label
+    if (name === "SKILL.md") {
+      var parts = filePath.split("/");
+      var parent = parts.length >= 2 ? parts[parts.length - 2] : name;
+      return { kind: "skill", label: parent };
+    }
+    // AGENTS.md, CLAUDE.md — show as resource
+    if (name === "AGENTS.md" || name === "AGENTS.MD" || name === "CLAUDE.md" || name === "CLAUDE.MD") {
+      return { kind: "resource", label: filePath };
+    }
+    // README.md or docs/ paths — show as docs
+    if (name === "README.md" || filePath.indexOf("docs/") !== -1 || filePath.indexOf("examples/") !== -1) {
+      return { kind: "docs", label: filePath };
+    }
+    return undefined;
+  }
+
+  /** Render file content with syntax-highlighted line numbers into a code-block-wrapper. */
+  function renderFileContent(content, lang) {
+    if (!content) return "";
+    content = content.replace(/\r\n?/g, "\n");
+    content = content.replace(/\n+$/, "");
+    if (!content) return "";
+    var lines = content.split("\n");
+    var langLabel = lang ? '<span class="code-lang-label">' + escapeHtml(lang) + '</span>' : "";
+    var numbered = lines.map(function (line) {
+      return '<span class="code-ln"></span>' +
+        '<span class="code-text" data-lang="' + escapeHtml(lang || "") + '">' +
+        syntaxHighlightLine(line, lang) +
+        '</span>';
+    }).join("\n");
+    return '<div class="code-block-wrapper">' +
+      '<div class="code-block-header">' + langLabel +
+      '<button class="code-copy-btn" type="button">Copy</button></div>' +
+      '<pre class="code-block" data-lang="' + escapeHtml(lang || "") + '"><code>' +
+      numbered + '</code></pre></div>';
+  }
+
+  // ═══ Write Tool Renderer ══════════════════════════════════
+  //
+  // Shows file content inline with syntax highlighting as the
+  // model streams the write call.  The result area only shows
+  // error output (matching the pi TUI behaviour).
+
+  var writeToolRenderer = {
+    create: function (data) {
+      hideWelcome();
+      var block = document.createElement("div");
+      block.className = "tool-block";
+      block.id = data.entryId ? "entry-" + data.entryId : "tool-" + data.toolCallId;
+      block.setAttribute("data-status", "running");
+
+      var rawPath = data.args && (data.args.path || data.args.file_path);
+      var fileContent = data.args && data.args.content;
+      var pathDisplay = rawPath || "...";
+      var lang = rawPath ? getLangFromPath(rawPath) : undefined;
+
+      block.innerHTML =
+        '<div class="tool-header">' +
+        '<span class="tool-name">write</span>' +
+        '<span class="tool-path">' + escapeHtml(pathDisplay) + '</span>' +
+        '<span class="tool-status running">running</span>' +
+        '</div>' +
+        '<div class="tool-content"></div>' +
+        '<div class="tool-result"></div>';
+
+      block._writeState = { lang: lang, content: "", rawPath: rawPath };
+
+      if (typeof fileContent === "string" && fileContent) {
+        block._writeState.content = fileContent;
+        renderWriteContentBlock(block);
+      }
+
+      return block;
+    },
+    update: function (el, partialResult) {
+      if (!partialResult || !partialResult.content) return;
+      var text = partialResult.content
+        .filter(function (c) { return c.type === "text"; })
+        .map(function (c) { return c.text; })
+        .join("\n");
+      if (!text) return;
+
+      // rAF-batched: accumulate latest args JSON, flush once per frame.
+      // Prevents bursty re-renders when write-tool args stream token by token.
+      el._writePending = text;
+      if (!el._writeRafId) {
+        el._writeRafId = requestAnimationFrame(function () {
+          el._writeRafId = null;
+          if (el._writePending) {
+            processWriteUpdate(el, el._writePending);
+            el._writePending = null;
+          }
+        });
+      }
+    },
+    finalize: function (el, result, isError, entryId) {
+      // Flush any pending rAF render
+      if (el._writeRafId) { cancelAnimationFrame(el._writeRafId); el._writeRafId = null; }
+      if (el._writePending) { processWriteUpdate(el, el._writePending); el._writePending = null; }
+
+      var statusEl = el.querySelector(".tool-status");
+      if (statusEl) {
+        statusEl.textContent = isError ? "error" : "done";
+        statusEl.className = "tool-status " + (isError ? "error" : "success");
+      }
+      el.setAttribute("data-status", isError ? "error" : "done");
+      if (entryId && !el.id.startsWith("entry-")) {
+        el.id = "entry-" + entryId;
+      }
+
+      // Only show error output (matching TUI: result hidden on success)
+      if (isError && result && result.content) {
+        var errorText = result.content
+          .filter(function (c) { return c.type === "text"; })
+          .map(function (c) { return c.text; })
+          .join("\n");
+        var tr = el.querySelector(".tool-result");
+        if (tr && errorText) {
+          tr.innerHTML = '<div style="color:var(--vscode-errorForeground);margin-top:6px;white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(errorText, "write")) + '</div>';
+        }
+      }
+    },
+  };
+
+  /** Process a write tool update from streaming JSON args. */
+  function processWriteUpdate(el, text) {
+    try {
+      var args = JSON.parse(text);
+      if (args.content && typeof args.content === "string") {
+        el._writeState.content = args.content;
+        renderWriteContentBlock(el);
+      }
+      if (args.path) {
+        el._writeState.rawPath = args.path;
+        el._writeState.lang = getLangFromPath(args.path);
+        var pathEl = el.querySelector(".tool-path");
+        if (pathEl) pathEl.textContent = args.path;
+      }
+    } catch (e) {
+      // JSON incomplete (mid-stream) — try heuristic extraction of content
+      var match = text.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if (match) {
+        el._writeState.content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+        renderWriteContentBlock(el);
+      }
+    }
+  }
+
+  /** Update the .tool-content area of a write block with highlighted file content. */
+  function renderWriteContentBlock(el) {
+    var tc = el.querySelector(".tool-content");
+    if (!tc) return;
+    var state = el._writeState || {};
+    var content = state.content || "";
+    var lang = state.lang;
+    var displayContent = content;
+    var maxCollapsedLines = 10;
+    var allLines = content.split("\n");
+    var collapsed = allLines.length > maxCollapsedLines + 5;
+
+    if (collapsed) {
+      displayContent = allLines.slice(0, maxCollapsedLines).join("\n");
+    }
+
+    tc.innerHTML = renderFileContent(displayContent, lang);
+
+    if (collapsed) {
+      var remaining = allLines.length - maxCollapsedLines;
+      tc.innerHTML += '<div style="text-align:center;margin-top:4px;">' +
+        '<button class="tool-expand-btn" type="button">' +
+        '\u25BC ' + remaining + ' more lines (' + allLines.length + ' total)' +
+        '</button></div>';
+
+      // Wire the expand button
+      var btn = tc.querySelector(".tool-expand-btn");
+      if (btn) {
+        btn.addEventListener("click", function () {
+          tc.innerHTML = renderFileContent(content, lang);
+          var collapsedBtn = tc.querySelector(".tool-expand-btn");
+          if (!collapsedBtn) {
+            tc.innerHTML += '<div style="text-align:center;margin-top:4px;">' +
+              '<button class="tool-expand-btn" type="button">\u25B2 Show less</button></div>';
+            var cb = tc.querySelector(".tool-expand-btn");
+            if (cb) {
+              cb.addEventListener("click", function () {
+                renderWriteContentBlock(el);
+              });
+            }
+          }
+        });
+      }
+    }
+  }
+
+  // ═══ Edit Tool Renderer ══════════════════════════════════
+  //
+  // Shows each edit as a mini-diff with word-level change
+  // highlighting in the call block.  The result area shows the
+  // actual computed diff when execution finishes.
+
+  var editToolRenderer = {
+    create: function (data) {
+      hideWelcome();
+      var block = document.createElement("div");
+      block.className = "tool-block";
+      block.id = data.entryId ? "entry-" + data.entryId : "tool-" + data.toolCallId;
+      block.setAttribute("data-status", "running");
+
+      var rawPath = data.args && (data.args.path || data.args.file_path);
+      var edits = data.args && data.args.edits;
+      var pathDisplay = rawPath || "...";
+      var editCount = Array.isArray(edits) ? edits.length : 0;
+      var editLabel = editCount > 1 ? " (" + editCount + " edits)" : "";
+
+      block.innerHTML =
+        '<div class="tool-header">' +
+        '<span class="tool-name">edit</span>' +
+        '<span class="tool-path">' + escapeHtml(pathDisplay) + editLabel + '</span>' +
+        '<span class="tool-status running">running</span>' +
+        '</div>' +
+        '<div class="tool-content"></div>' +
+        '<div class="tool-result"></div>';
+
+      if (Array.isArray(edits) && edits.length > 0) {
+        renderEditPreviews(block, edits);
+      }
+
+      return block;
+    },
+    update: function (el, partialResult) {
+      if (!partialResult || !partialResult.content) return;
+      var text = partialResult.content
+        .filter(function (c) { return c.type === "text"; })
+        .map(function (c) { return c.text; })
+        .join("\n");
+      if (!text) return;
+
+      try {
+        var args = JSON.parse(text);
+        var edits = args.edits;
+        if (Array.isArray(edits) && edits.length > 0) {
+          // Update edit count in header
+          var editLabel = edits.length > 1 ? " (" + edits.length + " edits)" : "";
+          var pathEl = el.querySelector(".tool-path");
+          if (pathEl) pathEl.textContent = (args.path || "...") + editLabel;
+          renderEditPreviews(el, edits);
+        }
+      } catch (e) {
+        // JSON incomplete — ignore
+      }
+    },
+    finalize: function (el, result, isError, entryId) {
+      var statusEl = el.querySelector(".tool-status");
+      if (statusEl) {
+        statusEl.textContent = isError ? "error" : "done";
+        statusEl.className = "tool-status " + (isError ? "error" : "success");
+      }
+      el.setAttribute("data-status", isError ? "error" : "done");
+      if (entryId && !el.id.startsWith("entry-")) {
+        el.id = "entry-" + entryId;
+      }
+
+      var text = "";
+      if (result && result.content) {
+        text = result.content
+          .filter(function (c) { return c.type === "text"; })
+          .map(function (c) { return c.text; })
+          .join("\n");
+      }
+
+      var tr = el.querySelector(".tool-result");
+      if (tr && text) {
+        if (isError) {
+          tr.innerHTML = '<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(text, "edit")) + '</div>';
+        } else {
+          // Render diff output
+          tr.innerHTML = '<div style="margin-top:4px;">' + renderDiffIfApplicable(text) + '</div>';
+        }
+      }
+    },
+  };
+
+  /** Render per-edit mini-diffs into the .tool-content of an edit block. */
+  function renderEditPreviews(el, edits) {
+    var tc = el.querySelector(".tool-content");
+    if (!tc) return;
+    var maxVisible = 3;  // Show at most 3 edit previews inline
+    var html = "";
+    var remaining = edits.length - maxVisible;
+
+    for (var i = 0; i < Math.min(edits.length, maxVisible); i++) {
+      var edit = edits[i];
+      var oldText = edit.oldText || "";
+      var newText = edit.newText || "";
+      html += '<div class="edit-change">';
+      if (edits.length > 1) {
+        html += '<div class="edit-header">Edit ' + (i + 1) + ' of ' + edits.length + '</div>';
+      }
+      html += '<div class="edit-old">- ' + escapeHtml(oldText.slice(0, 300)) + (oldText.length > 300 ? '\u2026' : '') + '</div>';
+      html += '<div class="edit-new">+ ' + escapeHtml(newText.slice(0, 300)) + (newText.length > 300 ? '\u2026' : '') + '</div>';
+      html += '</div>';
+    }
+
+    if (remaining > 0) {
+      html += '<div style="text-align:center;margin-top:4px;font-size:0.85em;color:var(--vscode-descriptionForeground);">' +
+        '\u2026 ' + remaining + ' more edit(s) not shown' +
+        '</div>';
+    }
+
+    tc.innerHTML = html;
+  }
+
+  // ═══ Read Tool Renderer ═══════════════════════════════════
+  //
+  // Shows the file path with optional line range in the header.
+  // Results are syntax-highlighted from the file extension with
+  // expand / collapse for long content.  Compact labels are used
+  // for SKILL.md, AGENTS.md, and other resource files.
+
+  var readToolRenderer = {
+    create: function (data) {
+      hideWelcome();
+      var block = document.createElement("div");
+      block.className = "tool-block";
+      block.id = data.entryId ? "entry-" + data.entryId : "tool-" + data.toolCallId;
+      block.setAttribute("data-status", "running");
+
+      var rawPath = data.args && (data.args.path || data.args.file_path);
+      var offset = data.args && data.args.offset;
+      var limit = data.args && data.args.limit;
+      var pathDisplay = rawPath || "...";
+      var rangeLabel = "";
+      if (offset !== undefined) {
+        rangeLabel = ":" + offset;
+        if (limit !== undefined) rangeLabel += "-" + (offset + limit - 1);
+      }
+
+      var compact = getCompactReadLabel(rawPath);
+
+      block.innerHTML =
+        '<div class="tool-header">' +
+        '<span class="tool-name">read</span>' +
+        '<span class="tool-path">' + escapeHtml(pathDisplay) + rangeLabel + '</span>' +
+        '<span class="tool-status running">running</span>' +
+        '</div>' +
+        (compact ? '<div class="compact-label">[' + compact.kind + '] ' + escapeHtml(compact.label) + '</div>' : '') +
+        '<div class="tool-content"></div>' +
+        '<div class="tool-result"></div>';
+
+      // Store path for result rendering
+      block._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath) : undefined, compact: compact };
+
+      return block;
+    },
+    update: function (el, partialResult) {
+      // Read tool results come via tool-end, not incremental updates
+    },
+    finalize: function (el, result, isError, entryId) {
+      var statusEl = el.querySelector(".tool-status");
+      if (statusEl) {
+        statusEl.textContent = isError ? "error" : "done";
+        statusEl.className = "tool-status " + (isError ? "error" : "success");
+      }
+      el.setAttribute("data-status", isError ? "error" : "done");
+      if (entryId && !el.id.startsWith("entry-")) {
+        el.id = "entry-" + entryId;
+      }
+
+      var text = "";
+      if (result && result.content) {
+        text = result.content
+          .filter(function (c) { return c.type === "text"; })
+          .map(function (c) { return c.text; })
+          .join("\n");
+      }
+
+      var tr = el.querySelector(".tool-result");
+      if (!tr) return;
+
+      if (isError) {
+        tr.innerHTML = '<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(text, "read")) + '</div>';
+        return;
+      }
+
+      if (!text) {
+        tr.innerHTML = '<div style="color:var(--vscode-descriptionForeground);font-size:0.85em;">(empty)</div>';
+        return;
+      }
+
+      var state = el._readState || {};
+      var lang = state.lang;
+
+      // For read results, render with syntax highlighting inline (not as markdown code block)
+      var lines = text.split("\n");
+      var maxCollapsed = 10;
+      var collapsed = lines.length > maxCollapsed + 5;
+
+      if (collapsed) {
+        var previewLines = lines.slice(0, maxCollapsed);
+        var previewText = previewLines.join("\n");
+        var remaining = lines.length - maxCollapsed;
+
+        tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:220px;overflow:hidden;">' +
+          renderFileContent(previewText, lang) +
+          '</div>' +
+          '<button class="tool-expand-btn" type="button">' +
+          '\u25BC ' + remaining + ' more lines (' + lines.length + ' total)' +
+          '</button>';
+
+        var btn = tr.querySelector(".tool-expand-btn");
+        if (btn) {
+          btn.addEventListener("click", function () {
+            tr.innerHTML = renderFileContent(text, lang);
+            var cb = tr.querySelector(".tool-expand-btn");
+            if (!cb) {
+              tr.innerHTML += '<button class="tool-expand-btn" type="button">\u25B2 Show less</button>';
+              var cb2 = tr.querySelector(".tool-expand-btn");
+              if (cb2) {
+                cb2.addEventListener("click", function () {
+                  // Re-collapse
+                  tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:220px;overflow:hidden;">' +
+                    renderFileContent(previewText, lang) +
+                    '</div>' +
+                    '<button class="tool-expand-btn" type="button">' +
+                    '\u25BC ' + remaining + ' more lines (' + lines.length + ' total)' +
+                    '</button>';
+                  var btn3 = tr.querySelector(".tool-expand-btn");
+                  if (btn3) btn3.addEventListener("click", arguments.callee);
+                });
+              }
+            }
+          });
+        }
+      } else {
+        tr.innerHTML = renderFileContent(text, lang);
+      }
+
+      // Truncation note from details
+      if (result && result.details && result.details.truncation) {
+        var t = result.details.truncation;
+        if (t.truncated) {
+          var note = '<div style="margin-top:6px;font-size:0.8em;color:var(--vscode-editorWarning-foreground);">';
+          if (t.truncatedBy === "lines") {
+            note += '[' + t.outputLines + ' of ' + t.totalLines + ' lines shown (line limit)]';
+          } else {
+            note += '[Truncated: ' + t.outputLines + ' lines shown]';
+          }
+          note += '</div>';
+          tr.innerHTML += note;
+        }
+      }
+    },
+  };
+
   // ── Default (generic) tool renderer ──────────────────────
 
   var defaultToolRenderer = {
@@ -252,7 +2050,7 @@
       if (!text) return;
       var lines = text.split("\n");
       var displayText = lines.length > 60 ? "...\n" + lines.slice(-60).join("\n") : text;
-      tr.innerHTML = renderToolResult(displayText);
+      morphRender(tr, renderToolResult(displayText));
     },
     finalize: function (el, result, isError, entryId) {
       var statusEl = el.querySelector(".tool-status");
@@ -273,8 +2071,13 @@
       }
       var tr = el.querySelector(".tool-result");
       if (tr) {
-        var lines = text.split("\n");
-        tr.innerHTML = lines.length > 50 ? renderToolResultTruncated(text) : renderToolResult(text);
+        if (isError) {
+          var displayText = formatToolError(text, el.querySelector(".tool-name") ? el.querySelector(".tool-name").textContent : "");
+          tr.innerHTML = '<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;margin-top:4px;">' + escapeHtml(displayText) + '</div>';
+        } else {
+          var lines = text.split("\n");
+          tr.innerHTML = lines.length > 50 ? renderToolResultTruncated(text) : renderToolResult(text);
+        }
       }
     },
   };
@@ -314,7 +2117,7 @@
           .join("\n");
       }
       var outEl = el.querySelector(".bash-output");
-      if (outEl && text) outEl.innerHTML = escapeHtml(text);
+      if (outEl && text) morphRender(outEl, escapeHtml(text));
       var footer = el.querySelector(".bash-footer");
       var details = result && result.details ? result.details : {};
       var exitCode = details.exitCode != null ? details.exitCode : 0;
@@ -333,6 +2136,12 @@
   };
 
   registerToolRenderer("bash", bashToolRenderer);
+  registerToolRenderer("write", writeToolRenderer);
+  registerToolRenderer("edit", editToolRenderer);
+  registerToolRenderer("read", readToolRenderer);
+  registerToolRenderer("write", writeToolRenderer);
+  registerToolRenderer("edit", editToolRenderer);
+  registerToolRenderer("read", readToolRenderer);
 
   // ═══ Message Renderer Registry ════════════════════════════
   //
@@ -510,6 +2319,9 @@
     removeCompactionIndicator();
     removeRetryIndicator();
 
+    // Flush any pending batched stream renders
+    _flushStreamRender();
+
     // If there's a stale streaming component (e.g. aborted without message_end), finalize it
     if (currentAssistantEl) {
       var mc = currentAssistantEl.querySelector(".message-content");
@@ -614,6 +2426,8 @@
   function handleAssistantEnd(data) {
     // Finalize the assistant message
     if (currentAssistantEl) {
+      // Flush any pending batched renders before finalizing
+      _flushStreamRender();
       var mc = currentAssistantEl.querySelector(".message-content");
       if (mc) {
         mc.classList.remove("streaming-cursor");
@@ -660,6 +2474,63 @@
     }
   }
 
+  // ── rAF-batched stream rendering ─────────────────────
+  // Instead of re-rendering on every token (O(n²) for large messages),
+  // accumulate deltas and render once per animation frame (~60 fps).
+  var _streamRafId = null;
+  var _streamContentEl = null;
+
+  function _scheduleStreamRender(contentEl) {
+    if (_streamRafId) return;
+    _streamContentEl = contentEl;
+    _streamRafId = requestAnimationFrame(function () {
+      _streamRafId = null;
+      if (!_streamContentEl) return;
+      var el = _streamContentEl;
+      _streamContentEl = null;
+
+      // Save thinking block before innerHTML replacement
+      var savedThinkingBlock = currentThinkingEl || el.querySelector(".thinking-block");
+
+      var raw = el.getAttribute("data-raw") || "";
+      morphRender(el, renderMarkdown(raw));
+
+      if (savedThinkingBlock) {
+        el.prepend(savedThinkingBlock);
+        if (!currentThinkingEl) {
+          currentThinkingEl = savedThinkingBlock;
+        }
+      }
+      el.classList.add("streaming-cursor");
+      scrollToBottom();
+    });
+  }
+
+  /** Flush any pending rAF render immediately (called before finalize). */
+  function _flushStreamRender() {
+    // Flush thinking text first so it's visible in the final render
+    _flushThinkingRender();
+    if (_streamRafId) {
+      cancelAnimationFrame(_streamRafId);
+      _streamRafId = null;
+      if (_streamContentEl) {
+        var el = _streamContentEl;
+        _streamContentEl = null;
+
+        var savedThinkingBlock = currentThinkingEl || el.querySelector(".thinking-block");
+        var raw = el.getAttribute("data-raw") || "";
+        morphRender(el, renderMarkdown(raw));
+        if (savedThinkingBlock) {
+          el.prepend(savedThinkingBlock);
+          if (!currentThinkingEl) {
+            currentThinkingEl = savedThinkingBlock;
+          }
+        }
+        el.classList.add("streaming-cursor");
+      }
+    }
+  }
+
   function handleStreamDelta(data) {
     hideWelcome();
     if (!currentAssistantEl) {
@@ -670,35 +2541,54 @@
     }
     var contentEl = currentAssistantEl.querySelector(".message-content");
     if (contentEl) {
-      // Preserve the thinking block across innerHTML re-renders.
-      // handleThinkingDelta prepends <details class="thinking-block"> into mc,
-      // but innerHTML = renderMarkdown(raw) would destroy it.
-      // We must save it BEFORE innerHTML and restore it AFTER.
-      // currentThinkingEl is null after thinking finishes (done:true), so
-      // we need to also look for an existing DOM thinking-block.
-      var savedThinkingBlock = currentThinkingEl || contentEl.querySelector(".thinking-block");
-
+      // Accumulate delta into data-raw (the source of truth)
       var raw = contentEl.getAttribute("data-raw") || "";
       raw += data.delta;
       contentEl.setAttribute("data-raw", raw);
-      contentEl.innerHTML = renderMarkdown(raw);
 
-      // Restore the thinking block after re-render
-      if (savedThinkingBlock) {
-        contentEl.prepend(savedThinkingBlock);
-        // Keep currentThinkingEl in sync if it was the live one
-        if (!currentThinkingEl) {
-          currentThinkingEl = savedThinkingBlock;
-        }
-      }
-
-      contentEl.classList.add("streaming-cursor");
+      // Schedule a single render per animation frame
+      _scheduleStreamRender(contentEl);
     }
     scrollToBottom();
   }
 
+  // ── rAF-batched thinking delta ───────────────────────
+  // Uses textContent (no HTML parse) for efficiency, batched
+  // per animation frame like stream deltas.
+  var _thinkingRafId = null;
+  var _thinkingEl = null;   // the .thinking-content element
+
+  function _scheduleThinkingRender(tc) {
+    if (_thinkingRafId) return;
+    _thinkingEl = tc;
+    _thinkingRafId = requestAnimationFrame(function () {
+      _thinkingRafId = null;
+      if (!_thinkingEl) return;
+      var el = _thinkingEl;
+      _thinkingEl = null;
+      // Flush accumulated text via textContent (avoids HTML parse)
+      var raw = el.getAttribute("data-raw") || "";
+      el.textContent = raw;
+      scrollToBottom();
+    });
+  }
+
+  function _flushThinkingRender() {
+    if (_thinkingRafId) {
+      cancelAnimationFrame(_thinkingRafId);
+      _thinkingRafId = null;
+      if (_thinkingEl) {
+        var el = _thinkingEl;
+        _thinkingEl = null;
+        var raw = el.getAttribute("data-raw") || "";
+        el.textContent = raw;
+      }
+    }
+  }
+
   function handleThinkingDelta(data) {
     if (data.done) {
+      _flushThinkingRender();
       // Keep currentThinkingEl alive so handleStreamDelta can save and
       // re-prepend it. If there's no more stream-delta after this,
       // handleAssistantEnd / handleAgentEnd will clean up references.
@@ -713,8 +2603,11 @@
     }
     var tc = currentThinkingEl.querySelector(".thinking-content");
     if (tc) {
-      tc.innerHTML += escapeHtml(data.delta);
-      // No cursor — display-only block
+      // Accumulate into data-raw, render once per frame via textContent
+      var raw = tc.getAttribute("data-raw") || "";
+      raw += data.delta;
+      tc.setAttribute("data-raw", raw);
+      _scheduleThinkingRender(tc);
     }
     scrollToBottom();
   }
@@ -1422,6 +3315,84 @@
     html = html.replace(/(<li>.*<\/li>\n?)+/g, function (m) {
       return m.indexOf("<ol>") === -1 ? "<ol>" + m + "</ol>" : m;
     });
+
+    // ── Tables ───────────────────────────────────────────
+    // Convert pipe-delimited markdown tables to <table> elements.
+    // Matches blocks of consecutive lines that contain | characters.
+    html = html.replace(/((?:^\|?[^\n]*\|[^\n]*\|?$\n?)+)/gm, function (block) {
+      var lines = block.trim().split(/\n/);
+      if (lines.length < 2) return block; // need at least header + separator
+
+      // Strip leading/trailing pipes and whitespace from each cell
+      var parseRow = function (line) {
+        return line.replace(/^\|/, "").replace(/\|$/, "").split("|").map(function (c) { return c.trim(); });
+      };
+
+      // Check if line is a separator row (contains --- or :-- or --:)
+      var isSep = function (cells) {
+        return cells.every(function (c) { return /^:?-{2,}:?$/.test(c); });
+      };
+
+      // Parse alignments from separator
+      var parseAlign = function (cells) {
+        return cells.map(function (c) {
+          if (c[0] === ":" && c[c.length - 1] === ":") return "center";
+          if (c[c.length - 1] === ":") return "right";
+          return "left";
+        });
+      };
+
+      // Build table
+      var rows = [];
+      var headerCells = null;
+      var alignments = null;
+
+      for (var i = 0; i < lines.length; i++) {
+        var cells = parseRow(lines[i]);
+        if (headerCells === null && isSep(cells)) {
+          // Separator before header? Unusual but treat next row as header
+          continue;
+        }
+        if (headerCells === null) {
+          headerCells = cells;
+        } else if (alignments === null && isSep(cells)) {
+          alignments = parseAlign(cells);
+        } else {
+          rows.push(cells);
+        }
+      }
+
+      // If no separator found but we have a header, treat all as body
+      if (headerCells === null) return block;
+      if (alignments === null) alignments = headerCells.map(function () { return "left"; });
+
+      var htmlOut = "<table>";
+
+      // <thead>
+      htmlOut += "<thead><tr>";
+      for (var h = 0; h < headerCells.length; h++) {
+        htmlOut += "<th style=\"text-align:" + (alignments[h] || "left") + "\">" + headerCells[h] + "</th>";
+      }
+      htmlOut += "</tr></thead>";
+
+      // <tbody>
+      if (rows.length > 0) {
+        htmlOut += "<tbody>";
+        for (var r = 0; r < rows.length; r++) {
+          htmlOut += "<tr>";
+          for (var c = 0; c < rows[r].length; c++) {
+            var align = alignments[c] || "left";
+            htmlOut += "<td style=\"text-align:" + align + "\">" + rows[r][c] + "</td>";
+          }
+          htmlOut += "</tr>";
+        }
+        htmlOut += "</tbody>";
+      }
+
+      htmlOut += "</table>";
+      return htmlOut;
+    });
+
     // Paragraphs
     var segments = html.split(/\n{2,}/);
     html = segments
@@ -1436,6 +3407,7 @@
           s.indexOf("<ul>") === 0 ||
           s.indexOf("<ol>") === 0 ||
           s.indexOf("<blockquote>") === 0 ||
+          s.indexOf("<table") === 0 ||
           s.indexOf("<h") === 0 ||
           s.indexOf("<hr>") === 0
         )
@@ -2853,7 +4825,7 @@
     bashOutputs[callId] = (bashOutputs[callId] || "") + (data.output || "");
     var outEl = block.querySelector(".bash-output");
     if (outEl) {
-      outEl.innerHTML = escapeHtml(bashOutputs[callId]);
+      morphRender(outEl, escapeHtml(bashOutputs[callId]));
     }
     scrollToBottom();
   }
