@@ -429,17 +429,17 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
+    "@types/node": "~22.19.19",
     "@types/vscode": "^1.118.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.1",
-    "esbuild": "^0.27.3",
-    "eslint": "^9.39.3",
+    "esbuild": "^0.27.7",
+    "eslint": "^9.39.4",
     "npm-run-all": "^4.1.5",
-    "ovsx": "^0.10.11",
+    "ovsx": "^0.10.12",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.1"
+    "typescript-eslint": "^8.59.3"
   },
   "dependencies": {
     "morphdom": "^2.7.8"
