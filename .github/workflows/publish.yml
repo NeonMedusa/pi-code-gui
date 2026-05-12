@@ -32,7 +32,7 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           allow-no-subscriptions: true
-      - run: pnpm exec vsce publish --no-yarn --skip-duplicate --azure-credential
+      - run: pnpm exec vsce publish --no-dependencies --no-yarn --skip-duplicate --azure-credential
 
   publish-ovsx:
     name: Publish to Open VSX
