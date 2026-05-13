@@ -1235,9 +1235,9 @@ export class PiService {
         throw new Error("Cannot attach images while agent is streaming");
       }
       if (mode === "queue") {
-        await this.session.followUp(text);
+        this.session.followUp(text);
       } else {
-        await this.session.steer(text);
+        this.session.steer(text);
       }
     } else {
       const opts: any = {};
@@ -1720,9 +1720,12 @@ export class PiService {
   /** Promote a follow-up message to a steering message. */
   async promoteToSteer(text: string) {
     if (!this.session) { return; }
-    // Clear all queues, then re-queue as steer
+    var existingSteer = this.session.getSteeringMessages ? [...this.session.getSteeringMessages()] : [];
     this.session.clearQueue();
-    await this.session.steer(text);
+    for (var i = 0; i < existingSteer.length; i++) {
+      this.session.steer(existingSteer[i]);
+    }
+    this.session.steer(text);
   }
 
   /** Clear all queued messages. */

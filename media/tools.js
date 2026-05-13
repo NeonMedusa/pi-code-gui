@@ -19,6 +19,7 @@
   var renderToolResult = core.renderToolResult;
   var renderFileContent = core.renderFileContent;
   var renderDiffMarkup = core.renderDiffMarkup;
+  var renderDiffIfApplicable = core.renderDiffIfApplicable;
   var formatToolError = core.formatToolError;
   var getLangFromPath = core.getLangFromPath;
   var getCompactReadLabel = core.getCompactReadLabel;
@@ -157,6 +158,7 @@
     }
 
     tc.innerHTML = renderFileContent(displayContent, lang);
+    tc.scrollTop = tc.scrollHeight;
 
     if (collapsed) {
       var remaining = allLines.length - maxCollapsedLines;
@@ -170,6 +172,7 @@
       if (btn) {
         btn.addEventListener("click", function () {
           tc.innerHTML = renderFileContent(content, lang);
+          tc.scrollTop = tc.scrollHeight;
           var collapsedBtn = tc.querySelector(".tool-expand-btn");
           if (!collapsedBtn) {
             tc.innerHTML += '<div style="text-align:center;margin-top:4px;">' +
@@ -261,13 +264,17 @@
           .map(function (c) { return c.text; })
           .join("\n");
       }
+      if (!text && result && typeof result.text === "string") text = result.text;
+      if (!text && result && typeof result === "string") text = result;
+      if (!text && result && result.content && result.content.length > 0) {
+        try { text = JSON.stringify(result.content, null, 2); } catch (e) {}
+      }
 
       var tr = el.querySelector(".tool-result");
       if (tr && text) {
         if (isError) {
           tr.innerHTML = '<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(text, "edit")) + '</div>';
         } else {
-          // Render diff output
           tr.innerHTML = '<div style="margin-top:4px;">' + renderDiffIfApplicable(text) + '</div>';
         }
       }
@@ -302,6 +309,7 @@
     }
 
     tc.innerHTML = html;
+    tc.scrollTop = tc.scrollHeight;
   }
 
   // ═══ Read Tool Renderer ═══════════════════════════════════
@@ -394,8 +402,18 @@
         var previewText = previewLines.join("\n");
         var remaining = lines.length - maxCollapsed;
 
-        tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:220px;overflow:hidden;">' +
-          renderFileContent(previewText, lang) +
+        // Store state on the element for simple toggle
+        el._readCollapseState = {
+          previewText: previewText,
+          fullText: text,
+          lang: lang,
+          remaining: remaining,
+          totalLines: lines.length,
+          expanded: false,
+        };
+
+        tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:220px;overflow-y:auto;">' +
+          renderMarkdown(text) +
           '</div>' +
           '<button class="tool-expand-btn" type="button">' +
           '\u25BC ' + remaining + ' more lines (' + lines.length + ' total)' +
@@ -403,27 +421,34 @@
 
         var btn = tr.querySelector(".tool-expand-btn");
         if (btn) {
-          btn.addEventListener("click", function () {
-            tr.innerHTML = renderFileContent(text, lang);
-            var cb = tr.querySelector(".tool-expand-btn");
-            if (!cb) {
-              tr.innerHTML += '<button class="tool-expand-btn" type="button">\u25B2 Show less</button>';
-              var cb2 = tr.querySelector(".tool-expand-btn");
-              if (cb2) {
-                cb2.addEventListener("click", function () {
-                  // Re-collapse
-                  tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:220px;overflow:hidden;">' +
-                    renderFileContent(previewText, lang) +
-                    '</div>' +
-                    '<button class="tool-expand-btn" type="button">' +
-                    '\u25BC ' + remaining + ' more lines (' + lines.length + ' total)' +
-                    '</button>';
-                  var btn3 = tr.querySelector(".tool-expand-btn");
-                  if (btn3) btn3.addEventListener("click", arguments.callee);
-                });
-              }
+          function toggleReadCollapse() {
+            var st = el._readCollapseState;
+            if (!st) return;
+            st.expanded = !st.expanded;
+            if (st.expanded) {
+              // For markdown files, render instead of showing code
+              var expandedContent = (st.lang === "markdown" || st.lang === "md")
+                ? renderMarkdown(st.fullText)
+                : renderFileContent(st.fullText, st.lang);
+              tr.innerHTML = expandedContent +
+                '<button class="tool-expand-btn" type="button">\u25B2 Show less</button>';
+              tr.scrollTop = 0;
+            } else {
+              tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:220px;overflow-y:auto;">' +
+                renderMarkdown(st.fullText) +
+                '</div>' +
+                '<button class="tool-expand-btn" type="button">' +
+                '\u25BC ' + st.remaining + ' more lines (' + st.totalLines + ' total)' +
+                '</button>';
             }
-          });
+            var newBtn = tr.querySelector(".tool-expand-btn");
+            if (newBtn) newBtn.addEventListener("click", toggleReadCollapse);
+            if (!st.expanded) {
+              tr.scrollTop = 0;
+              el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          }
+          btn.addEventListener("click", toggleReadCollapse);
         }
       } else {
         tr.innerHTML = renderFileContent(text, lang);

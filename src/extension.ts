@@ -176,11 +176,18 @@ export async function activate(context: vscode.ExtensionContext) {
   // or falls back to reading the selected tree item from the session tree view
   // (for right-click context menu usage where args are not auto-populated).
   context.subscriptions.push(
-    vscode.commands.registerCommand("pi-code-gui.revealEntry", (sessionId?: string, entryId?: string) => {
+    vscode.commands.registerCommand("pi-code-gui.revealEntry", (sessionId?: string | SessionTreeItem, entryId?: string) => {
       let sw: SessionWindow | undefined;
       let id = entryId;
 
-      if (sessionId) {
+      // Handle context menu: VS Code passes the tree item as first arg
+      if (sessionId instanceof SessionTreeItem) {
+        const cmdArgs = sessionId.command?.arguments;
+        if (cmdArgs && cmdArgs.length >= 2) {
+          sw = sessions.find((s) => s.id === cmdArgs[0]);
+          id = cmdArgs[1] as string;
+        }
+      } else if (typeof sessionId === "string") {
         sw = sessions.find((s) => s.id === sessionId);
       }
 
@@ -202,24 +209,29 @@ export async function activate(context: vscode.ExtensionContext) {
       if (sw && id) {
         sw.webviewPanel.show();
         sw.webviewPanel.postMessage({ type: "revealEntry", entryId: id });
-      } else if (sessionId || id) {
-        console.log(`[pi-gui] revealEntry: session or entry not found (sessionId=${sessionId}, entryId=${id})`);
       }
     }),
   );
 
   // Copy the text content of a selected entry from the Sessions tree
   context.subscriptions.push(
-    vscode.commands.registerCommand("pi-code-gui.copyEntryText", async () => {
-      const selection = sessionTreeView?.selection;
-      if (!selection || selection.length === 0) { return; }
-      const item = selection[0] as SessionTreeItem;
-      if (item.contextValue !== "sessionEntry") { return; }
+    vscode.commands.registerCommand("pi-code-gui.copyEntryText", async (treeItem?: SessionTreeItem) => {
+      var item: SessionTreeItem | undefined = treeItem;
+      // Fallback: read from tree view selection
+      if (!item || item.contextValue !== "sessionEntry") {
+        const selection = sessionTreeView?.selection;
+        if (selection && selection.length > 0) {
+          item = selection[0] as SessionTreeItem;
+        }
+      }
+      if (!item || item.contextValue !== "sessionEntry") { return; }
 
-      // The tooltip contains the full entry text (label is truncated)
-      const text = typeof item.tooltip === "string"
-        ? item.tooltip
-        : (item.tooltip as vscode.MarkdownString)?.value ?? "";
+      var text = (item as any)._fullText;
+      if (!text) {
+        text = typeof item.tooltip === "string"
+          ? item.tooltip
+          : (item.tooltip as vscode.MarkdownString)?.value ?? "";
+      }
       if (text) {
         await vscode.env.clipboard.writeText(text);
         vscode.window.showInformationMessage("Entry text copied to clipboard");
@@ -372,7 +384,7 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         await PiService.deleteSessionFile(resolved);
         await refreshPastSessionsList();
-        sessionTreeProvider?.refresh();
+        sessionTreeProvider?.refreshPastOnly();
       } catch (e: any) {
         vscode.window.showErrorMessage(`Delete failed: ${e.message ?? e}`);
       }
@@ -851,10 +863,16 @@ function ensureTreeProvider(context: vscode.ExtensionContext) {
       if (e.element.contextValue === "entries-header") {
         sessionTreeProvider!.setEntryHeaderExpanded(e.element.sessionId!, true);
       }
+      if (e.element.contextValue === "past-sessions-header") {
+        sessionTreeProvider!.pastSessionsExpanded = true;
+      }
     });
     sessionTreeView.onDidCollapseElement((e) => {
       if (e.element.contextValue === "entries-header") {
         sessionTreeProvider!.setEntryHeaderExpanded(e.element.sessionId!, false);
+      }
+      if (e.element.contextValue === "past-sessions-header") {
+        sessionTreeProvider!.pastSessionsExpanded = false;
       }
     });
 
@@ -1161,6 +1179,8 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
 
   /** Track which sessions have their entries header expanded so refresh doesn't collapse them. */
   private expandedEntries = new Set<string>();
+  /** Track if past sessions header is expanded. */
+  pastSessionsExpanded = false;
   /** Past sessions loaded from disk via SessionManager.list(). */
   private _pastSessions: any[] = [];
   /** True while we are refreshing past sessions. */
@@ -1195,6 +1215,13 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   /** Lightweight refresh (does not re-fetch past sessions). */
   refresh() { this._onDidChangeTreeData.fire(); }
 
+  /** Refresh only past sessions children — preserves expand state. */
+  refreshPastOnly() {
+    var item = new SessionTreeItem("", "past-sessions-header");
+    item.id = "__past_sessions_header__";
+    this._onDidChangeTreeData.fire(item);
+  }
+
   getTreeItem(element: SessionTreeItem): vscode.TreeItem { return element; }
 
   async getChildren(element?: SessionTreeItem): Promise<SessionTreeItem[]> {
@@ -1228,9 +1255,10 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
         "past-sessions-header",
         undefined,
         pastCount > 0
-          ? vscode.TreeItemCollapsibleState.Collapsed
+          ? (this.pastSessionsExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed)
           : vscode.TreeItemCollapsibleState.None,
       );
+      pastItem.id = "__past_sessions_header__";
       if (this.pastFilter) {
         pastItem.iconPath = new vscode.ThemeIcon("filter");
       }
@@ -1380,7 +1408,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
     if (!entries || entries.length === 0) { return []; }
 
     return entries.map((entry: any) => {
-      const { label, tooltip, type } = formatEntryLabel(entry);
+      const { label, tooltip, type, fullText } = formatEntryLabel(entry);
       const item = new SessionTreeItem(label, type, {
         command: "pi-code-gui.revealEntry",
         title: "Show in Chat",
@@ -1388,6 +1416,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
       });
       item.tooltip = tooltip;
       item.contextValue = "sessionEntry";
+      (item as any)._fullText = fullText;
       return item;
     });
   }
@@ -1439,67 +1468,74 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
  * Format a session entry for display in the tree.
  * Mirrors the pi TUI's entry display logic (roles, compaction, tools, etc.).
  */
-function formatEntryLabel(entry: any): { label: string; tooltip: string; type: string } {
+function formatEntryLabel(entry: any): { label: string; tooltip: string; type: string; fullText: string } {
   const maxLen = 60;
 
   if (entry.type === "message") {
     const role = entry.message?.role;
     if (role === "user") {
-      const text = truncate(extractText(entry.message?.content), maxLen);
-      return { label: `📝 ${text || "(empty)"}`, tooltip: text, type: "user" };
+      const fullText = extractText(entry.message?.content);
+      const text = truncate(fullText, maxLen);
+      return { label: `📝 ${text || "(empty)"}`, tooltip: fullText, type: "user", fullText };
     }
     if (role === "assistant") {
-      const text = truncate(extractText(entry.message?.content), maxLen);
+      const fullText = extractText(entry.message?.content);
+      const text = truncate(fullText, maxLen);
       const label = text
         ? `🤖 ${text}`
         : `🤖 (${entry.message?.stopReason ?? "tool use"})`;
-      return { label, tooltip: text || entry.message?.errorMessage || "", type: "assistant" };
+      return { label, tooltip: fullText || entry.message?.errorMessage || "", type: "assistant", fullText: fullText || "" };
     }
     if (role === "toolResult") {
       const tcName = entry.message?.toolName ?? "tool";
-      const text = truncate(extractText(entry.message?.content), maxLen);
-      return { label: `[${tcName}] ${text}`, tooltip: text, type: "toolResult" };
+      const fullText = extractText(entry.message?.content);
+      const text = truncate(fullText, maxLen);
+      return { label: `[${tcName}] ${text}`, tooltip: fullText, type: "toolResult", fullText };
     }
     if (role === "bashExecution") {
-      const cmd = truncate(entry.message?.command ?? "", maxLen);
-      return { label: `[bash] ${cmd}`, tooltip: cmd, type: "bashExecution" };
+      const cmd = entry.message?.command ?? "";
+      return { label: `[bash] ${truncate(cmd, maxLen)}`, tooltip: cmd, type: "bashExecution", fullText: cmd };
     }
     if (role === "custom") {
-      const text = truncate(extractText(entry.message?.content), maxLen);
-      return { label: `[custom] ${text}`, tooltip: text, type: "custom_message" };
+      const fullText = extractText(entry.message?.content);
+      const text = truncate(fullText, maxLen);
+      return { label: `[custom] ${text}`, tooltip: fullText, type: "custom_message", fullText };
     }
   }
 
   if (entry.type === "compaction") {
     const kt = Math.round((entry.tokensBefore ?? 0) / 1000);
-    return { label: `[compaction: ~${kt}k tokens]`, tooltip: entry.summary ?? "", type: "compaction" };
+    return { label: `[compaction: ~${kt}k tokens]`, tooltip: entry.summary ?? "", type: "compaction", fullText: entry.summary ?? "" };
   }
   if (entry.type === "branch_summary") {
-    const text = truncate(entry.summary ?? "", maxLen);
-    return { label: `[branch summary] ${text}`, tooltip: entry.summary ?? "", type: "branch_summary" };
+    const fullText = entry.summary ?? "";
+    const text = truncate(fullText, maxLen);
+    return { label: `[branch summary] ${text}`, tooltip: fullText, type: "branch_summary", fullText };
   }
   if (entry.type === "model_change") {
-    return { label: `[model: ${entry.modelId}]`, tooltip: `Provider: ${entry.provider}`, type: "model_change" };
+    const fullText = `Provider: ${entry.provider}`;
+    return { label: `[model: ${entry.modelId}]`, tooltip: fullText, type: "model_change", fullText };
   }
   if (entry.type === "thinking_level_change") {
-    return { label: `[thinking: ${entry.thinkingLevel}]`, tooltip: "", type: "thinking_level_change" };
+    return { label: `[thinking: ${entry.thinkingLevel}]`, tooltip: "", type: "thinking_level_change", fullText: "" };
   }
   if (entry.type === "custom_message") {
-    const text = truncate(typeof entry.content === "string" ? entry.content : extractText(entry.content), maxLen);
-    return { label: `[${entry.customType}] ${text}`, tooltip: text, type: "custom_message" };
+    const fullText = typeof entry.content === "string" ? entry.content : extractText(entry.content);
+    const text = truncate(fullText, maxLen);
+    return { label: `[${entry.customType}] ${text}`, tooltip: fullText, type: "custom_message", fullText };
   }
   if (entry.type === "custom") {
-    return { label: `[custom: ${entry.customType}]`, tooltip: "", type: "custom" };
+    return { label: `[custom: ${entry.customType}]`, tooltip: "", type: "custom", fullText: "" };
   }
   if (entry.type === "label") {
-    return { label: `[label: ${entry.label ?? "(cleared)"}]`, tooltip: "", type: "label" };
+    return { label: `[label: ${entry.label ?? "(cleared)"}]`, tooltip: "", type: "label", fullText: "" };
   }
   if (entry.type === "session_info") {
-    return { label: `[title: ${entry.name ?? "(empty)"}]`, tooltip: "", type: "session_info" };
+    return { label: `[title: ${entry.name ?? "(empty)"}]`, tooltip: "", type: "session_info", fullText: "" };
   }
 
   // Fallback for unknown entry types
-  return { label: `[${entry.type}]`, tooltip: JSON.stringify(entry, null, 2), type: entry.type };
+  return { label: `[${entry.type}]`, tooltip: JSON.stringify(entry, null, 2), type: entry.type, fullText: "" };
 }
 
 function getEntryCount(sw: SessionWindow): number {
