@@ -125,7 +125,7 @@ export class PiWebviewPanel {
           case "prompt":
             try {
               const msg = message as any;
-              await this.piService.sendPrompt(msg.text, msg.images);
+              await this.piService.sendPrompt(msg.text, msg.images, msg.mode);
             } catch (error: any) {
               let errMsg = error.message ?? String(error);
               if (/api.?key|login|authenticate|provider/i.test(errMsg)) {
@@ -216,6 +216,16 @@ export class PiWebviewPanel {
             if (message.text) {
               await this.piService.sendPrompt(message.text);
             }
+            break;
+
+          case "promoteToSteer":
+            if (message.text) {
+              await this.piService.promoteToSteer(message.text);
+            }
+            break;
+
+          case "clearQueue":
+            await this.piService.clearQueue();
             break;
         }
       },
@@ -1207,6 +1217,28 @@ export class PiWebviewPanel {
       background: var(--vscode-button-secondaryHoverBackground);
     }
 
+    #mode-toggle {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border: none;
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 0.85em;
+      align-self: flex-end;
+      line-height: 1;
+    }
+
+    #mode-toggle:hover {
+      background: var(--vscode-button-secondaryHoverBackground);
+    }
+
+    #mode-toggle.steer-mode {
+      background: var(--vscode-inputValidation-warningBackground);
+      color: var(--vscode-inputValidation-warningForeground);
+      border: 1px solid var(--vscode-inputValidation-warningBorder);
+    }
+
     .hidden {
       display: none !important;
     }
@@ -1639,6 +1671,7 @@ export class PiWebviewPanel {
   <div id="input-area">
     <textarea id="prompt-input" placeholder="Ask pi to do something..." rows="1" disabled></textarea>
     <button id="send-button" disabled title="Submit (Enter)">↵</button>
+    <button id="mode-toggle" class="hidden" title="Toggle Queue / Steer">▾</button>
     <button id="abort-button" class="hidden">Stop</button>
   </div>
   </div>

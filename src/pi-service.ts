@@ -1217,7 +1217,7 @@ export class PiService {
 
   // ── User actions ───────────────────────────────────────
 
-  async sendPrompt(text: string, images?: any[]) {
+  async sendPrompt(text: string, images?: any[], mode?: string) {
     if (!this.session) { throw new Error("Pi session not initialized"); }
 
     // Handle slash commands at the PiService level before forwarding to
@@ -1234,7 +1234,11 @@ export class PiService {
       if (images && images.length > 0) {
         throw new Error("Cannot attach images while agent is streaming");
       }
-      await this.session.steer(text);
+      if (mode === "queue") {
+        await this.session.followUp(text);
+      } else {
+        await this.session.steer(text);
+      }
     } else {
       const opts: any = {};
       if (images && images.length > 0) {
@@ -1712,6 +1716,20 @@ export class PiService {
   get isStreaming() { return this._isStreaming; }
   get model() { return this._model; }
   get thinkingLevel() { return this._thinkingLevel; }
+
+  /** Promote a follow-up message to a steering message. */
+  async promoteToSteer(text: string) {
+    if (!this.session) { return; }
+    // Clear all queues, then re-queue as steer
+    this.session.clearQueue();
+    await this.session.steer(text);
+  }
+
+  /** Clear all queued messages. */
+  async clearQueue() {
+    if (!this.session) { return; }
+    this.session.clearQueue();
+  }
   get effort() { return this._effort; }
   get sdkRoot(): string | null { return this._piRoot; }
   get sessionManagerInstance(): any { return this.sessionManager; }

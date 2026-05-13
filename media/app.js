@@ -13,6 +13,7 @@
   var promptInput = state.promptInput;
   var sendButton = state.sendButton;
   var abortButton = state.abortButton;
+  var modeToggle = state.modeToggle;
   var attachmentBar = state.attachmentBar;
   var userMsgOverlay = state.userMsgOverlay;
   var settingsOverlay = state.settingsOverlay;
@@ -33,6 +34,9 @@
   var debugMaxEvents = state.debugMaxEvents;
   var debugMaxDomLog = state.debugMaxDomLog;
   var debugEnabled = state.debugEnabled;
+
+  // ── Send mode when streaming: "queue" (default) or "steer" ──
+  var queueMode = "queue";
 
   // read-write primitives already replaced with state.xxx in body
 
@@ -232,6 +236,7 @@
   function handleAgentStart() {
     debugLogEvent("agent-start", { bashBlocksN: Object.keys(bashBlocks).length, toolBlocksN: Object.keys(currentToolBlocks).length });
     state.isStreaming = true;
+    updateModeToggleUI();
     assistantToolCallIds = {};
     // Do NOT clear the live panel here — extension cards (like tldr summaries)
     // should persist across prompts and be replaced only when new output of
@@ -256,6 +261,7 @@
     });
     state.isStreaming = false;
     state.isRetrying = false;
+    updateModeToggleUI();
     assistantToolCallIds = {};
     removeWorkingIndicator();
     removeCompactionIndicator();
@@ -656,14 +662,52 @@
       "padding: 6px 16px; font-size: 0.8em; color: var(--vscode-descriptionForeground); " +
       "background: var(--vscode-sideBar-background); border-top: 1px solid var(--vscode-panel-border);";
 
-    var lines = [];
+    var html = "";
+
+    // Steering messages — already interrupting, show with label
     steering.forEach(function (m) {
-      lines.push("\u21E8 " + escapeHtml(m));
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">' +
+        '<span style="color:var(--vscode-inputValidation-warningForeground);font-weight:600;">↨ Steer:</span> ' +
+        '<span style="flex:1;">' + escapeHtml(m) + '</span></div>';
     });
-    followUp.forEach(function (m) {
-      lines.push("Follow-up: " + escapeHtml(m));
+
+    // Follow-up messages — queued, with promote button
+    followUp.forEach(function (m, i) {
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">' +
+        '<span style="font-weight:600;">⏎ Queue:</span> ' +
+        '<span style="flex:1;">' + escapeHtml(m) + '</span>' +
+        '<button class="queue-promote-btn" data-idx="' + i + '" title="Promote to Steer (interrupt now)" style="font-size:0.75em;padding:1px 6px;cursor:pointer;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;">↨ Steer</button>' +
+        '</div>';
     });
-    el.innerHTML = lines.join("<br>");
+
+    // Clear all button
+    if (steering.length + followUp.length > 1) {
+      html += '<div style="margin-top:4px;text-align:right;">' +
+        '<button class="queue-clear-btn" style="font-size:0.75em;padding:1px 8px;cursor:pointer;background:transparent;color:var(--vscode-descriptionForeground);border:1px solid var(--vscode-panel-border);border-radius:3px;">Clear all</button>' +
+        '</div>';
+    }
+
+    el.innerHTML = html;
+
+    // Wire promote buttons
+    el.querySelectorAll(".queue-promote-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var idx = parseInt(btn.getAttribute("data-idx"), 10);
+        var msg = (data.followUp || [])[idx];
+        if (msg) {
+          // Promote: clear all queues, then re-steer this message
+          vscode.postMessage({ type: "promoteToSteer", text: msg });
+        }
+      });
+    });
+
+    // Wire clear button
+    var clearBtn = el.querySelector(".queue-clear-btn");
+    if (clearBtn) {
+      clearBtn.addEventListener("click", function () {
+        vscode.postMessage({ type: "clearQueue" });
+      });
+    }
 
     var inputArea = document.getElementById("input-area");
     if (inputArea && inputArea.parentNode) {
@@ -721,6 +765,7 @@
 
     addErrorMessage(data.message || "Unknown error");
     state.isStreaming = false;
+    updateModeToggleUI();
     if (state.currentAssistantEl) {
       var mc = state.currentAssistantEl.querySelector(".message-content");
       if (mc) mc.classList.remove("streaming-cursor");
@@ -1171,6 +1216,7 @@
       type: "prompt",
       text: text,
       images: images.length > 0 ? images : undefined,
+      mode: state.isStreaming ? queueMode : undefined,
     });
 
     promptInput.value = "";
@@ -1184,6 +1230,33 @@
   abortButton.addEventListener("click", function () {
     vscode.postMessage({ type: "abort" });
   });
+
+  // Mode toggle (Queue / Steer) — visible only when streaming
+  modeToggle.addEventListener("click", function () {
+    queueMode = queueMode === "queue" ? "steer" : "queue";
+    updateModeToggleUI();
+  });
+
+  function updateModeToggleUI() {
+    if (state.isStreaming) {
+      modeToggle.classList.remove("hidden");
+      if (queueMode === "steer") {
+        modeToggle.classList.add("steer-mode");
+        modeToggle.title = "Mode: Steer (interrupt). Click for Queue.";
+        sendButton.textContent = "↨";
+        sendButton.title = "Steer (interrupt current request)";
+      } else {
+        modeToggle.classList.remove("steer-mode");
+        modeToggle.title = "Mode: Queue (wait). Click for Steer.";
+        sendButton.textContent = "↵";
+        sendButton.title = "Queue (process after current turn)";
+      }
+    } else {
+      modeToggle.classList.add("hidden");
+      sendButton.textContent = "↵";
+      sendButton.title = "Submit (Enter)";
+    }
+  }
 
   // Setup code block copy buttons (event delegation, CSP-safe)
   setupCodeBlockHandlers();

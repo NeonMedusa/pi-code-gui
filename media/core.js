@@ -27,6 +27,7 @@
   var promptInput = document.getElementById("prompt-input");
   var sendButton = document.getElementById("send-button");
   var abortButton = document.getElementById("abort-button");
+  var modeToggle = document.getElementById("mode-toggle");
   var welcome = document.getElementById("welcome");
   var attachmentBar = document.getElementById("attachment-bar");
   var userMsgOverlay = document.getElementById("user-msg-overlay");
@@ -1368,6 +1369,7 @@
   state.promptInput = typeof promptInput !== "undefined" ? promptInput : null;
   state.sendButton = typeof sendButton !== "undefined" ? sendButton : null;
   state.abortButton = typeof abortButton !== "undefined" ? abortButton : null;
+  state.modeToggle = typeof modeToggle !== "undefined" ? modeToggle : null;
   state.attachmentBar = typeof attachmentBar !== "undefined" ? attachmentBar : null;
   state.userMsgOverlay = typeof userMsgOverlay !== "undefined" ? userMsgOverlay : null;
   state.settingsOverlay = typeof settingsOverlay !== "undefined" ? settingsOverlay : null;
