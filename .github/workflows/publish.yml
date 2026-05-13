@@ -47,6 +47,6 @@ jobs:
           node-version: '22'
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run package
+      - run: pnpm exec vsce package --no-dependencies -o pi-code-gui.vsix
       - run: pnpm exec ovsx create-namespace NimbleTron --pat ${{ secrets.OPEN_VSX_MARKETPLACE_TOKEN }} || true
-      - run: pnpm exec ovsx publish --pat ${{ secrets.OPEN_VSX_MARKETPLACE_TOKEN }}
+      - run: pnpm exec ovsx publish pi-code-gui.vsix --pat ${{ secrets.OPEN_VSX_MARKETPLACE_TOKEN }}
