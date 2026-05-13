@@ -735,6 +735,14 @@
         bashToolRenderer.finalize(bashBlock, data.result, data.isError, data.entryId);
         delete bashBlocks[callId];
         delete bashOutputs[callId];
+        return;
+      }
+      // Second fallback: find block by DOM ID (tool-{callId} or entry-{entryId})
+      var domBlock = document.getElementById("tool-" + callId) || (data.entryId ? document.getElementById("entry-" + data.entryId) : null);
+      if (domBlock) {
+        debugLogEvent("tool-end:FALLBACK-DOM", { callId: callId, tag: domBlock.tagName, classes: domBlock.className });
+        // Use defaultToolRenderer to finalize
+        defaultToolRenderer.finalize(domBlock, data.result, data.isError, data.entryId);
       }
       return;
     }
