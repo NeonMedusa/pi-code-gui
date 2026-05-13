@@ -27,6 +27,7 @@
   var promptInput = document.getElementById("prompt-input");
   var sendButton = document.getElementById("send-button");
   var abortButton = document.getElementById("abort-button");
+  var steerDropdown = document.getElementById("steer-dropdown");
   var welcome = document.getElementById("welcome");
   var attachmentBar = document.getElementById("attachment-bar");
   var userMsgOverlay = document.getElementById("user-msg-overlay");
@@ -437,14 +438,37 @@
   }
 
   function createThinkingBlock(content) {
-    var el = document.createElement("details");
-    el.className = "thinking-block";
-    el.open = false;
+    var el = document.createElement("div");
+    el.className = "thinking-block thinking-collapsed";
     el.innerHTML =
-      "<summary>Thinking <span class=\"thinking-spinner\"></span><span class=\"thinking-preview\"></span></summary>" +
-      "<div class=\"thinking-content\">" +
+      '<div class="thinking-header">' +
+      '<span class="thinking-label">Thinking</span>' +
+      '<span class="thinking-spinner"></span>' +
+      '<span class="thinking-line-count"></span>' +
+      '</div>' +
+      '<div class="thinking-content">' +
       escapeHtml(content) +
-      "</div>";
+      '</div>' +
+      '<button class="thinking-expand-btn" style="display:none;">Show more</button>';
+    // Wire expand button
+    var btn = el.querySelector(".thinking-expand-btn");
+    var contentEl = el.querySelector(".thinking-content");
+    btn.addEventListener("click", function () {
+      var wasCollapsed = el.classList.contains("thinking-collapsed");
+      if (wasCollapsed) {
+        el.classList.remove("thinking-collapsed");
+        contentEl.classList.remove("overflowing");
+        btn.textContent = "Show less";
+      } else {
+        el.classList.add("thinking-collapsed");
+        btn.textContent = "Show more";
+        contentEl.scrollTop = 0;
+        if (contentEl.scrollHeight > contentEl.clientHeight + 2) {
+          contentEl.classList.add("overflowing");
+        }
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
     return el;
   }
 
@@ -492,10 +516,14 @@
 
   function updateStreamingState() {
     if (isStreaming || isCompacting || isRetrying) {
-      sendButton.classList.add("hidden");
+      sendButton.textContent = "Steer";
+      sendButton.title = "Steer (interrupt current request)";
+      steerDropdown.classList.remove("hidden");
       abortButton.classList.remove("hidden");
     } else {
-      sendButton.classList.remove("hidden");
+      sendButton.textContent = "↵";
+      sendButton.title = "Submit (Enter)";
+      steerDropdown.classList.add("hidden");
       abortButton.classList.add("hidden");
     }
   }
@@ -1198,11 +1226,11 @@
         var previewEl = truncEl.querySelector(".tool-result-preview");
         if (!previewEl) return;
         if (expanded) {
-          previewEl.innerHTML = renderToolResult(stored.preview);
+          previewEl.innerHTML = renderMarkdown(stored.preview);
           truncEl.setAttribute("data-expanded", "0");
           showMoreBtn.textContent = "\u25BC " + truncEl.getAttribute("data-hidden") + " more lines";
         } else {
-          previewEl.innerHTML = renderToolResult(stored.full);
+          previewEl.innerHTML = renderMarkdown(stored.full);
           truncEl.setAttribute("data-expanded", "1");
           showMoreBtn.textContent = "\u25B2 Show less";
         }
@@ -1368,6 +1396,7 @@
   state.promptInput = typeof promptInput !== "undefined" ? promptInput : null;
   state.sendButton = typeof sendButton !== "undefined" ? sendButton : null;
   state.abortButton = typeof abortButton !== "undefined" ? abortButton : null;
+  state.steerDropdown = typeof steerDropdown !== "undefined" ? steerDropdown : null;
   state.attachmentBar = typeof attachmentBar !== "undefined" ? attachmentBar : null;
   state.userMsgOverlay = typeof userMsgOverlay !== "undefined" ? userMsgOverlay : null;
   state.settingsOverlay = typeof settingsOverlay !== "undefined" ? settingsOverlay : null;
@@ -1422,6 +1451,7 @@
   core.renderToolResult = typeof renderToolResult !== "undefined" ? renderToolResult : null;
   core.renderFileContent = typeof renderFileContent !== "undefined" ? renderFileContent : null;
   core.renderDiffMarkup = typeof renderDiffMarkup !== "undefined" ? renderDiffMarkup : null;
+  core.renderDiffIfApplicable = typeof renderDiffIfApplicable !== "undefined" ? renderDiffIfApplicable : null;
   core.renderToolResultTruncated = typeof renderToolResultTruncated !== "undefined" ? renderToolResultTruncated : null;
   core.formatToolError = typeof formatToolError !== "undefined" ? formatToolError : null;
   core.formatTokens = typeof formatTokens !== "undefined" ? formatTokens : null;

@@ -1,106 +1,110 @@
 # Change Log
 
-## [0.0.17] — Marked-based rendering & webview modularization
+## [0.0.18] — Steer/Queue & thinking block polish
 
 ### Changed
-- **Markdown rendering replaced with marked parser** 
-- **Progressive block-level streaming** r
-- **Webview modularized into 5 files** 
-- **Thinking blocks collapsed by default** 
+- **Steer/Queue split button** replaces single submit when streaming, with ▾ toggle to switch modes — Enter key follows selection.
+- **Thinking blocks** show 10-line scrollable preview with gradient fade, expand button only when overflowing.
+- **Queue indicator** shows labeled Steer/Queue items with per-item promote button and bulk clear.
+- **Read/edit/write tool headers** show clickable filenames that open in the VS Code editor.
 
-### Added
-- **Clickable file names in tool headers** 
+### Fixed
+- **Session Panel** can now navigate to specific entries in current conversations.
+
+## [0.0.17] — Marked rendering & webview modularization
+
+### Changed
+- **Markdown rendering** uses marked parser for correct GFM handling.
+- **Text streaming** renders via token-diff — only the last block morphs each frame instead of full re-render.
+- **Webview split** into 5 files (core, tools, app, morphdom, marked) with shared `__pi` namespace.
+- **Duplicate tool renderers** removed — old copy discarded, v2 retained with rAF-batched streaming and edit count display.
+
+### Fixed
+- **Double `acquireVsCodeApi` call** prevented extension initialization.
+- **Session event handlers** restored after extraction loss.
+- **Edit/receive/queue buttons** rationalized for stop/steer/queue tri-action.
 
 ## [0.0.16] — Session UX polish
 
 ### Fixed
-- **Model and thinking level persist when changed** — Setting them in a session now survives close and reopen.
+- **Model and thinking level** persist across close and reopen.
 
-## Changed
-- **Status bar relocated to VSCode Status bar ** — Clickable settings for model, thinking levels, and session budget.
+### Changed
+- **Status bar** shows model, thinking, and budget — clickable for quick settings.
 
 ### Added
-- **`/model` slash command** — opens the native VS Code model picker.
-- **`/thinking` slash command** — opens the thinking level picker.
-- **`/sessions` slash command** — focuses the Sessions sidebar.
+- **`/model`, `/thinking`, `/sessions`** slash commands open native pickers.
 
-## [0.0.15] — Webview debug infrastructure & bash block fixes
+## [0.0.15] — Debug & bash
 
 ### Fixed
-- **Bash blocks not visible or displaying contents **
+- **Bash blocks** not displaying output.
 
 ### Added
-- **`/debug` slash command**: Dumps structured webview state inline (chat DOM structure, tracker state, event log, DOM mutation log, duplicate/orphan analysis).
+- **`/debug` slash command** dumps webview state inline.
 
-## [0.0.14] — Renderer registry & spacer fix
-
-### Changes
-- Improved internal rendering event handlers.
-
-## [0.0.13] — Namespace migration & widget UI
+## [0.0.14] — Renderer registry
 
 ### Changes
-- Switched SDK dependency from `@mariozechner/pi-coding-agent` to `@earendil-works/pi-coding-agent`
-- Extension widget live panel: cards persist until dismissed, notifications collapse to single line
-- Widget bridge: uiContext Proxy catches missing TUI methods gracefully, logs unknown calls
-- Output Channel: quiet by default — only errors and unimplemented calls surface
-- Devcontainer: installs `@earendil-works/pi-coding-agent`
+- Improved internal tool rendering event handlers.
 
-## [0.0.12] — Widget bridge & live panel
+## [0.0.13] — Namespace migration
 
 ### Changes
-- Live panel: extension widgets (e.g. pi-tldr, pi-subagents) render as updating cards in chat
-- Unknown slash commands forwarded to pi session so extensions can respond
-- Open sessions persist across VS Code reloads
-- Package marketplace: one-click install, banner images, rate-limited search
-- Git URLs (git@, git+https) normalized before opening in browser
+- SDK dependency switched to `@earendil-works/pi-coding-agent`.
+- Extension widget live panel cards persist until dismissed.
+- Widget bridge catches missing TUI methods gracefully.
 
-## [0.0.11] — Package manager & session fixes
+## [0.0.12] — Widget bridge
 
 ### Changes
-- New Packages view: install, uninstall, search, update pi packages from npm
-- Scroll catches up on tab return after background streaming
-- Session resume restores model/thinking on VS Code restart, not just manual open
+- Live panel renders extension widgets as updating cards.
+- Unknown slash commands forwarded to pi session.
+- Open sessions persist across VS Code reloads.
 
-## [0.0.10] — Default model, thinking & context budget
+## [0.0.11] — Package manager
 
 ### Changes
-- Default model & thinking level: save from picker, persist across sessions
-- Context budget setting: control when auto-compaction triggers (100K–1M or model default)
-- Budget shown in status bar; click to change
+- Packages view for install, uninstall, search, update.
+- Scroll catches up on tab return after background streaming.
+- Session resume restores model/thinking on restart.
+
+## [0.0.10] — Defaults & context budget
+
+### Changes
+- Default model and thinking level saveable from picker.
+- Context budget setting controls auto-compaction trigger.
+- Budget shown in status bar.
 
 ## [0.0.9] — UX polish
 
 ### Changes
-- Auto-scroll stops when you scroll up; resumes when near bottom
-- Streaming cursor changed from white square to subtle vertical bar
+- Auto-scroll pauses on manual scroll up, resumes near bottom.
+- Streaming cursor changed to subtle vertical bar.
 
-## [0.0.8] — Login & Logout
+## [0.0.8] — Login & logout
 
 ### Changes
-- `/login` slash command — opens auth flow: pick OAuth or API key, choose provider
-- `/logout` slash command — removes stored credentials for a selected provider
-- OAuth providers open browser; API key providers prompt for key, saved to auth.json
-- Startup install check verifies transitive dep files exist, not just the package dir
-- Better error message when pi-ai can't find its bundled dependencies
+- `/login` opens auth flow with provider selection.
+- `/logout` removes stored credentials.
+- Startup check verifies dependency files exist.
 
 ## [0.0.7] — Initial Release
 
-First public release of Pi Code Gui — a native VS Code editor experience for the Pi coding agent.
+First public release — native VS Code chat for the Pi coding agent.
 
 ### Features
-- **Chat panel** — streaming text, collapsible thinking blocks, tool call/result rendering, markdown with syntax-highlighted code blocks
-- **17 VS Code bridge tools** — `vscode_get_editor_state`, `vscode_get_diagnostics`, `vscode_get_selection`, `vscode_get_hover`, `vscode_get_definitions`, `vscode_get_references`, `vscode_get_document_symbols`, `vscode_get_workspace_symbols`, `vscode_get_code_actions`, `vscode_get_open_editors`, `vscode_get_workspace_folders`, `vscode_open_file`, `vscode_check_document_dirty`, `vscode_save_document`, `vscode_apply_workspace_edit`, `vscode_format_document`
-- **Multi-session support** — multiple independent chat panels, each with its own model and thinking level
-- **Session tree view** — browse entries, fork from any message, reveal in chat, copy entry text
-- **Past session management** — resume, delete, filter, and delete all past sessions
-- **Tab indicator** — streaming/idle/init states with pulsing dot
-- **Bash execution blocks** — expandable command output with exit codes
-- **Code block rendering** — syntax highlighting for JS/TS, Python, Rust, HTML, CSS, Shell, JSON, Java, Go, and more, plus copy buttons
-- **Truncation with show-more** — long tool results auto-truncate with expand option
-- **User message history** — up-arrow recall for previously sent messages
-- **Settings overlay** — toggle auto-compaction, auto-retry, and image display from the UI
-- **Auto-install prompt** — prompts to install `@mariozechner/pi-coding-agent` on first launch
-- **Inline quickstart guide** — shows provider links and setup instructions when no API key is configured
-- **Keybindings** — `Ctrl+Alt+I` for chat, `Ctrl+L` for model picker, `Ctrl+P` for model cycling, and more
-- **Custom slash commands** — `/fix-diagnostics`, `/explain-code`, `/refactor`, plus all standard Pi commands
+- **Chat panel** with streaming text, thinking blocks, tool rendering, syntax-highlighted code.
+- **17 VS Code bridge tools** for editor state, diagnostics, symbols, hover, definitions, references, and edits.
+- **Multi-session** — independent panels with per-session model and thinking level.
+- **Session tree** — browse, fork, reveal, copy entries.
+- **Past sessions** — resume, delete, filter.
+- **Tab indicator** with streaming/idle/init states.
+- **Bash blocks** with command output and exit codes.
+- **Code blocks** syntax-highlighted for JS/TS, Python, Rust, HTML, CSS, Shell, JSON, Java, Go.
+- **Truncation** with show-more for long results.
+- **User message history** with up-arrow recall.
+- **Settings overlay** for auto-compaction, auto-retry, image display.
+- **Auto-install** prompt for pi-coding-agent.
+- **Quickstart guide** when no API key configured.
+- **Keybindings** and **custom slash commands**.

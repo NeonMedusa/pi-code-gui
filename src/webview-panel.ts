@@ -122,18 +122,14 @@ export class PiWebviewPanel {
     this.panel.webview.onDidReceiveMessage(
       async (message) => {
         switch (message.type) {
-          case "prompt":
-            try {
+          case "prompt": {
               const msg = message as any;
-              await this.piService.sendPrompt(msg.text, msg.images);
-            } catch (error: any) {
-              let errMsg = error.message ?? String(error);
-              if (/api.?key|login|authenticate|provider/i.test(errMsg)) {
-                errMsg += "\n\n[Set up an API key →](https://pi.dev/docs/latest/quickstart)";
-              }
-              this.postMessage({
-                type: "error",
-                data: { message: errMsg },
+              this.piService.sendPrompt(msg.text, msg.images, msg.mode).catch((error: any) => {
+                let errMsg = error.message ?? String(error);
+                if (/api.?key|login|authenticate|provider/i.test(errMsg)) {
+                  errMsg += "\n\n[Set up an API key →](https://pi.dev/docs/latest/quickstart)";
+                }
+                this.postMessage({ type: "error", data: { message: errMsg } });
               });
             }
             break;
@@ -216,6 +212,16 @@ export class PiWebviewPanel {
             if (message.text) {
               await this.piService.sendPrompt(message.text);
             }
+            break;
+
+          case "promoteToSteer":
+            if (message.text) {
+              await this.piService.promoteToSteer(message.text);
+            }
+            break;
+
+          case "clearQueue":
+            await this.piService.clearQueue();
             break;
         }
       },
@@ -690,17 +696,53 @@ export class PiWebviewPanel {
       color: var(--fg-secondary);
     }
 
-    .thinking-block summary {
-      cursor: pointer;
+    .thinking-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
       font-weight: 600;
-      margin-bottom: 4px;
       color: var(--fg-secondary);
+      cursor: default;
+    }
+
+    .thinking-label {
+      font-weight: 700;
+    }
+
+    .thinking-line-count {
+      font-weight: 400;
+      opacity: 0.6;
+      font-size: 0.85em;
     }
 
     .thinking-block .thinking-content {
       white-space: pre-wrap;
       word-break: break-word;
-      margin-top: 6px;
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.9em;
+      line-height: 1.5;
+      color: var(--fg-secondary);
+    }
+
+    .thinking-collapsed .thinking-content {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .thinking-collapsed .thinking-content.overflowing {
+      position: relative;
+    }
+
+    .thinking-collapsed .thinking-content.overflowing::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 30px;
+      background: linear-gradient(transparent, var(--thinking-bg));
+      pointer-events: none;
     }
 
     .thinking-block .thinking-spinner {
@@ -711,14 +753,26 @@ export class PiWebviewPanel {
       border-top-color: transparent;
       border-radius: 50%;
       animation: think-spin 0.8s linear infinite;
-      margin-left: 6px;
       vertical-align: middle;
     }
 
-    .thinking-block .thinking-preview {
-      font-weight: 400;
-      opacity: 0.7;
-      font-style: italic;
+    .thinking-expand-btn {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 4px;
+      margin-top: 4px;
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8em;
+      font-family: inherit;
+    }
+
+    .thinking-expand-btn:hover {
+      background: var(--vscode-button-secondaryHoverBackground);
     }
 
     @keyframes think-spin {
@@ -852,6 +906,36 @@ export class PiWebviewPanel {
       word-break: break-word;
     }
 
+    .tool-block .tool-result ul,
+    .tool-block .tool-result ol {
+      padding-left: 2em;
+      margin: 4px 0;
+    }
+
+    .tool-block .tool-result li {
+      margin-bottom: 2px;
+    }
+
+    .tool-block .tool-result h1,
+    .tool-block .tool-result h2,
+    .tool-block .tool-result h3,
+    .tool-block .tool-result h4 {
+      margin: 8px 0 4px;
+      font-weight: 600;
+    }
+
+    .tool-block .tool-result strong {
+      font-weight: 700;
+    }
+
+    .tool-block .tool-result code {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.9em;
+      background: var(--vscode-textCodeBlock-background);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
     /* ── Tool content area (write/edit inline display) ── */
 
     .tool-block .tool-content {
@@ -921,7 +1005,7 @@ export class PiWebviewPanel {
 
     .tool-block .tool-result.tool-result-collapsed {
       max-height: 200px;
-      overflow: hidden;
+      overflow-y: auto;
       position: relative;
     }
 
@@ -1169,10 +1253,10 @@ export class PiWebviewPanel {
       background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
       border: none;
-      border-radius: 8px;
-      padding: 8px 18px;
+      border-radius: 8px 0 0 8px;
+      padding: 8px 14px;
       cursor: pointer;
-      font-size: 1.2em;
+      font-size: 1em;
       font-weight: 600;
       line-height: 1;
       align-self: flex-end;
@@ -1187,6 +1271,35 @@ export class PiWebviewPanel {
       cursor: not-allowed;
     }
 
+    #steer-dropdown {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: none;
+      border-left: 1px solid rgba(255,255,255,0.2);
+      border-radius: 0 8px 8px 0;
+      padding: 8px 8px;
+      cursor: pointer;
+      font-size: 1em;
+      font-weight: 600;
+      line-height: 1;
+      align-self: flex-end;
+      opacity: 0.8;
+    }
+
+    #steer-dropdown:hover {
+      background: var(--vscode-button-hoverBackground);
+      opacity: 1;
+    }
+
+    #steer-split {
+      display: flex;
+      align-self: flex-end;
+    }
+
+    #steer-split.hidden {
+      display: none;
+    }
+
     #prompt-input:disabled {
       opacity: 0.4;
       cursor: not-allowed;
@@ -1197,13 +1310,28 @@ export class PiWebviewPanel {
       color: var(--vscode-button-secondaryForeground);
       border: none;
       border-radius: 8px;
-      padding: 8px 16px;
+      padding: 8px 14px;
       cursor: pointer;
       font-size: 0.9em;
-      align-self: flex-start;
+      align-self: flex-end;
     }
 
     #abort-button:hover {
+      background: var(--vscode-button-secondaryHoverBackground);
+    }
+
+    #queue-button {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-size: 0.9em;
+      align-self: flex-end;
+    }
+
+    #queue-button:hover {
       background: var(--vscode-button-secondaryHoverBackground);
     }
 
@@ -1638,8 +1766,11 @@ export class PiWebviewPanel {
 
   <div id="input-area">
     <textarea id="prompt-input" placeholder="Ask pi to do something..." rows="1" disabled></textarea>
-    <button id="send-button" disabled title="Submit (Enter)">↵</button>
-    <button id="abort-button" class="hidden">Stop</button>
+    <div id="steer-split">
+      <button id="send-button" disabled title="Submit (Enter)">↵</button>
+      <button id="steer-dropdown" class="hidden" title="Switch to Queue">▾</button>
+    </div>
+    <button id="abort-button" class="hidden">■ Stop</button>
   </div>
   </div>
 

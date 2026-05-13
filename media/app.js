@@ -13,6 +13,7 @@
   var promptInput = state.promptInput;
   var sendButton = state.sendButton;
   var abortButton = state.abortButton;
+  var steerDropdown = state.steerDropdown;
   var attachmentBar = state.attachmentBar;
   var userMsgOverlay = state.userMsgOverlay;
   var settingsOverlay = state.settingsOverlay;
@@ -33,6 +34,9 @@
   var debugMaxEvents = state.debugMaxEvents;
   var debugMaxDomLog = state.debugMaxDomLog;
   var debugEnabled = state.debugEnabled;
+
+  // ── Send mode when streaming: "steer" (default) or "queue" ──
+  var queueMode = "steer";
 
   // read-write primitives already replaced with state.xxx in body
 
@@ -232,6 +236,7 @@
   function handleAgentStart() {
     debugLogEvent("agent-start", { bashBlocksN: Object.keys(bashBlocks).length, toolBlocksN: Object.keys(currentToolBlocks).length });
     state.isStreaming = true;
+    queueMode = "steer";  // reset to default on new stream
     assistantToolCallIds = {};
     // Do NOT clear the live panel here — extension cards (like tldr summaries)
     // should persist across prompts and be replaced only when new output of
@@ -566,15 +571,32 @@
       // Flush accumulated text via textContent (avoids HTML parse)
       var raw = el.getAttribute("data-raw") || "";
       el.textContent = raw;
-      // Also update the preview in the summary (first line only)
+      // Update line count and expand button
       var block = el.closest(".thinking-block");
       if (block) {
-        var preview = block.querySelector(".thinking-preview");
-        if (preview) {
-          var firstLine = raw.split("\n")[0] || "";
-          if (firstLine.length > 100) firstLine = firstLine.substring(0, 100) + "\u2026";
-          preview.textContent = firstLine ? " \u2014 " + firstLine : "";
+        var lineCount = block.querySelector(".thinking-line-count");
+        var lines = raw ? raw.split("\n").length : 0;
+        if (lineCount) lineCount.textContent = lines > 0 ? "(" + lines + " lines)" : "";
+        // Toggle gradient overlay when content overflows
+        if (el.scrollHeight > el.clientHeight + 2) {
+          el.classList.add("overflowing");
+        } else {
+          el.classList.remove("overflowing");
         }
+        // Show expand button ONLY when content overflows the visible area
+        var btn = block.querySelector(".thinking-expand-btn");
+        if (btn && lines > 0) {
+          var overflowing = el.scrollHeight > el.clientHeight + 2;
+          if (block.classList.contains("thinking-collapsed")) {
+            btn.style.display = overflowing ? "" : "none";
+            btn.textContent = "Show more";
+          } else {
+            btn.style.display = "";
+            btn.textContent = "Show less";
+          }
+        }
+        // Auto-scroll to bottom of content area
+        el.scrollTop = el.scrollHeight;
       }
       scrollToBottom();
     });
@@ -596,12 +618,26 @@
   function handleThinkingDelta(data) {
     if (data.done) {
       _flushThinkingRender();
-      // Remove spinner entirely when thinking completes
+      // Remove spinner when thinking completes, finalize expand button
       if (state.currentThinkingEl) {
         var spinner = state.currentThinkingEl.querySelector(".thinking-spinner");
         if (spinner) spinner.remove();
-        var preview = state.currentThinkingEl.querySelector(".thinking-preview");
-        if (preview) preview.textContent = "";
+        var block = state.currentThinkingEl;
+        var contentEl = block.querySelector(".thinking-content");
+        var btn = block.querySelector(".thinking-expand-btn");
+        if (btn && contentEl) {
+          var overflowing = contentEl.scrollHeight > contentEl.clientHeight + 2;
+          if (overflowing) {
+            contentEl.classList.add("overflowing");
+          }
+          if (block.classList.contains("thinking-collapsed")) {
+            btn.style.display = overflowing ? "" : "none";
+            btn.textContent = "Show more";
+          } else {
+            btn.style.display = "";
+            btn.textContent = "Show less";
+          }
+        }
       }
       return;
     }
@@ -656,14 +692,50 @@
       "padding: 6px 16px; font-size: 0.8em; color: var(--vscode-descriptionForeground); " +
       "background: var(--vscode-sideBar-background); border-top: 1px solid var(--vscode-panel-border);";
 
-    var lines = [];
+    var html = "";
+
+    // Steering messages — already interrupting, show with label
     steering.forEach(function (m) {
-      lines.push("\u21E8 " + escapeHtml(m));
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">' +
+        '<span style="font-weight:600;">Steer:</span> ' +
+        '<span style="flex:1;">' + escapeHtml(m) + '</span></div>';
     });
-    followUp.forEach(function (m) {
-      lines.push("Follow-up: " + escapeHtml(m));
+
+    // Follow-up messages — queued, with promote button
+    followUp.forEach(function (m, i) {
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">' +
+        '<span style="font-weight:600;">Queue:</span> ' +
+        '<span style="flex:1;">' + escapeHtml(m) + '</span>' +
+        '<button class="queue-promote-btn" data-idx="' + i + '" title="Promote to Steer (interrupt now)" style="font-size:0.75em;padding:1px 6px;cursor:pointer;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;">Steer now</button>' +
+        '</div>';
     });
-    el.innerHTML = lines.join("<br>");
+
+    // Clear all button — always show when there are items
+    html += '<div style="margin-top:6px;text-align:right;">' +
+      '<button class="queue-clear-btn" style="font-size:0.8em;padding:3px 12px;cursor:pointer;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:4px;">✕ Clear all queued</button>' +
+      '</div>';
+
+    el.innerHTML = html;
+
+    // Wire promote buttons
+    el.querySelectorAll(".queue-promote-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var idx = parseInt(btn.getAttribute("data-idx"), 10);
+        var msg = (data.followUp || [])[idx];
+        if (msg) {
+          // Promote: clear all queues, then re-steer this message
+          vscode.postMessage({ type: "promoteToSteer", text: msg });
+        }
+      });
+    });
+
+    // Wire clear button
+    var clearBtn = el.querySelector(".queue-clear-btn");
+    if (clearBtn) {
+      clearBtn.addEventListener("click", function () {
+        vscode.postMessage({ type: "clearQueue" });
+      });
+    }
 
     var inputArea = document.getElementById("input-area");
     if (inputArea && inputArea.parentNode) {
@@ -1171,6 +1243,7 @@
       type: "prompt",
       text: text,
       images: images.length > 0 ? images : undefined,
+      mode: state.isStreaming ? queueMode : undefined,
     });
 
     promptInput.value = "";
@@ -1183,6 +1256,20 @@
 
   abortButton.addEventListener("click", function () {
     vscode.postMessage({ type: "abort" });
+  });
+
+  // Steer dropdown — toggles between Steer and Queue mode
+  steerDropdown.addEventListener("click", function () {
+    queueMode = queueMode === "steer" ? "queue" : "steer";
+    if (queueMode === "queue") {
+      sendButton.textContent = "Queue";
+      sendButton.title = "Queue (process after current turn)";
+      steerDropdown.title = "Switch to Steer";
+    } else {
+      sendButton.textContent = "Steer";
+      sendButton.title = "Steer (interrupt current request)";
+      steerDropdown.title = "Switch to Queue";
+    }
   });
 
   // Setup code block copy buttons (event delegation, CSP-safe)
@@ -1692,45 +1779,18 @@
       if (el) break;
     }
 
-    if (el) {
-      // Scroll the entry into view with a highlight flash
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.style.transition = "background 0.2s, box-shadow 0.2s";
-      el.style.background = "var(--vscode-list-hoverBackground)";
-      el.style.boxShadow = "0 0 0 2px var(--vscode-focusBorder)";
-      el.style.borderRadius = "4px";
-      setTimeout(function () {
-        el.style.background = "";
-        el.style.boxShadow = "";
-        el.style.borderRadius = "";
-      }, 2500);
-    } else {
-      // Entry element not found — try searching all elements with entry-like IDs
-      console.log("[pi-gui] revealEntry: element for id " + entryId + " not found by direct lookup");
-      // Try fuzzy ID match as last resort
-      var allChatChildren = chatContainer.querySelectorAll("[id]");
-      for (var j = 0; j < allChatChildren.length; j++) {
-        if (allChatChildren[j].id.indexOf(entryId) !== -1) {
-          el = allChatChildren[j];
-          break;
-        }
-      }
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.style.transition = "background 0.2s, box-shadow 0.2s";
-        el.style.background = "var(--vscode-list-hoverBackground)";
-        el.style.boxShadow = "0 0 0 2px var(--vscode-focusBorder)";
-        el.style.borderRadius = "4px";
-        setTimeout(function () {
-          el.style.background = "";
-          el.style.boxShadow = "";
-          el.style.borderRadius = "";
-        }, 2500);
-      } else {
-        // Last resort: scroll to bottom
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      }
-    }
+    if (!el) return;
+
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.style.transition = "background 0.2s, box-shadow 0.2s";
+    el.style.background = "var(--vscode-list-hoverBackground)";
+    el.style.boxShadow = "0 0 0 2px var(--vscode-focusBorder)";
+    el.style.borderRadius = "4px";
+    setTimeout(function () {
+      el.style.background = "";
+      el.style.boxShadow = "";
+      el.style.borderRadius = "";
+    }, 2500);
   }
 
   // ═══ #10: Bash Execution Blocks ════════════════════════════
