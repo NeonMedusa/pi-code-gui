@@ -14,8 +14,6 @@ export class PiWebviewPanel {
   // Tab indicator state
   private _tabInitialized = false;
   private _tabStreaming = false;
-  private _tabPulseOn = false;
-  private _tabPulseInterval: any = null;
   private _tabSummary: string | null = null;
 
   /** Callback invoked when the panel is disposed (VS Code tab closed) */
@@ -59,8 +57,8 @@ export class PiWebviewPanel {
     );
 
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-init-light.svg"),
-      dark: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-init-dark.svg"),
+      light: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-icon-light.svg"),
+      dark: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-icon-dark.svg"),
     };
 
     this.panel.webview.html = this.getWebviewContent(this.panel.webview);
@@ -74,7 +72,6 @@ export class PiWebviewPanel {
     });
 
     this.panel.onDidDispose(() => {
-      this.stopTabPulse();
       // Notify the owner (extension.ts) so it can save and remove from open sessions
       if (this._onDispose) {
         this._onDispose(this.piService);
@@ -236,14 +233,25 @@ export class PiWebviewPanel {
     this.piCleanup = this.piService.onEvent((event: PiServiceEvent) => {
       this.postMessage(event);
 
-      // Capture first user input for tab title summary
-      if (event.type === "chat-message" && event.data?.role === "user" && !this._tabSummary) {
+      // Capture first user input for tab title summary.
+      // Only generate if the session does NOT already have a stored name
+      // (avoids overwriting a prior AI name or manual rename on reopen).
+      if (event.type === "chat-message" && event.data?.role === "user" && !this._tabSummary && !this.piService.sessionName) {
         const text: string = event.data?.content ?? "";
         if (text.trim()) {
+          // Persist a fallback name immediately so the session survives even
+          // if the AI call times out or the tab closes before the model responds.
+          const fallback = text.replace(/\s+/g, " ").trim().slice(0, 50);
+          this._tabSummary = fallback;
+          this.updateTabIndicator();
+          this.piService.setSessionName(fallback);
+
+          // Then try to upgrade to a concise AI-generated summary
           this.piService.generateTabSummary(text).then((summary) => {
-            if (summary) {
+            if (summary && summary !== fallback) {
               this._tabSummary = summary;
               this.updateTabIndicator();
+              this.piService.setSessionName(summary);
             }
           }).catch(() => {});
         }
@@ -279,70 +287,28 @@ export class PiWebviewPanel {
     });
   }
 
-  /** Update the tab icon and title to indicate streaming / idle / init state. */
+  /** Update the tab title to indicate streaming / idle / init state.
+   *  The in-webview status bar handles the visual color indicator;
+   *  the tab uses a text suffix for streaming so it stays theme-consistent. */
   private updateTabIndicator() {
     if (!this.panel) { return; }
 
-    const media = (uri: string) =>
-      vscode.Uri.joinPath(this.context.extensionUri, "media", uri);
+    // Static icon — no colour coding (SVGs can't adapt to theme variables)
+    const piIcon = (name: string) =>
+      vscode.Uri.joinPath(this.context.extensionUri, "media", name);
+    this.panel.iconPath = {
+      light: piIcon("pi-icon-light.svg"),
+      dark: piIcon("pi-icon-dark.svg"),
+    };
 
     if (!this._tabInitialized) {
-      this.panel.iconPath = {
-        light: media("pi-dot-init-light.svg"),
-        dark: media("pi-dot-init-dark.svg"),
-      };
       this.panel.title = "Pi Code Gui";
-      this.stopTabPulse();
       return;
     }
 
     const label = this._tabSummary ?? "Pi";
-
-    if (this._tabStreaming) {
-      // Start pulsing the dot (slow flash)
-      this.startTabPulse();
-      this.panel.title = label;
-    } else {
-      this.stopTabPulse();
-      // Green dot = idle / ready
-      this.panel.iconPath = {
-        light: media("pi-dot-idle-light.svg"),
-        dark: media("pi-dot-idle-dark.svg"),
-      };
-      this.panel.title = label;
-    }
-  }
-
-  private startTabPulse() {
-    if (this._tabPulseInterval) { return; }
-    this._tabPulseOn = true;
-    // Slow ~1.2s cycle: 600ms each state
-    this._tabPulseInterval = setInterval(() => {
-      if (!this.panel) { return; }
-      this._tabPulseOn = !this._tabPulseOn;
-      const label = this._tabSummary ?? "Pi";
-      this.panel.title = label;
-      // Also toggle icon to show colored active dot while streaming
-      if (this._tabPulseOn) {
-        this.panel.iconPath = {
-          light: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-active-light.svg"),
-          dark: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-active-dark.svg"),
-        };
-      } else {
-        this.panel.iconPath = {
-          light: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-idle-light.svg"),
-          dark: vscode.Uri.joinPath(this.context.extensionUri, "media", "pi-dot-idle-dark.svg"),
-        };
-      }
-    }, 600);
-  }
-
-  private stopTabPulse() {
-    if (this._tabPulseInterval) {
-      clearInterval(this._tabPulseInterval);
-      this._tabPulseInterval = null;
-    }
-    this._tabPulseOn = false;
+    // Bullet prefix: ● busy, ○ idle — consistent with status bar
+    this.panel.title = (this._tabStreaming ? "\u25CF " : "\u25CB ") + label;
   }
 
   private cleanupPiListener() {
@@ -477,6 +443,18 @@ export class PiWebviewPanel {
     .message {
       max-width: 100%;
       animation: fadeIn 0.2s ease-in;
+    }
+
+    /* Batch replay mode: hide all chat children except welcome
+       so only the loading screen is visible while history renders. */
+    .no-animate #chat-container > :not(#welcome) {
+      opacity: 0;
+    }
+    .no-animate *,
+    .no-animate *::before,
+    .no-animate *::after {
+      animation: none !important;
+      transition: none !important;
     }
 
     @keyframes fadeIn {
@@ -986,19 +964,21 @@ export class PiWebviewPanel {
     }
 
     .tool-block .edit-change .edit-old {
-      color: var(--vscode-diffEditor-removedTextBackground, #f14c4c);
-      background: rgba(255,0,0,0.08);
+      background: var(--vscode-diffEditor-removedLineBackground, rgba(255,0,0,0.12));
       padding: 2px 8px;
       border-radius: 2px;
       margin: 1px 0;
+      max-height: 200px;
+      overflow-y: auto;
     }
 
     .tool-block .edit-change .edit-new {
-      color: var(--vscode-diffEditor-insertedTextBackground, #4ec9b0);
-      background: rgba(0,255,0,0.08);
+      background: var(--vscode-diffEditor-insertedLineBackground, rgba(0,255,0,0.10));
       padding: 2px 8px;
       border-radius: 2px;
       margin: 1px 0;
+      max-height: 200px;
+      overflow-y: auto;
     }
 
     /* ── Tool result expand/collapse ── */
@@ -1090,6 +1070,45 @@ export class PiWebviewPanel {
 
     .live-card:last-child {
       border-bottom: none;
+    }
+
+    /* ── In-webview status bar ────────────────────── */
+    #pi-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 5px 12px;
+      background: var(--bg-secondary, var(--vscode-sideBar-background));
+      border-top: 1px solid var(--border-color, var(--vscode-sideBar-border));
+      font-size: 0.8em;
+      color: var(--fg-secondary, var(--vscode-descriptionForeground));
+      min-height: 30px;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    /* Status dot: inherits bar text colour; shape (●/○) signals state */
+    #pi-sb-dot { font-size: 0.9em; flex-shrink: 0; }
+
+    #pi-status-bar .pi-sb-item {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      padding: 1px 5px;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+    #pi-status-bar .pi-sb-item:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+    #pi-status-bar .pi-sb-item.spacer {
+      flex: 1;
+      cursor: default;
+      pointer-events: none;
+    }
+    #pi-status-bar .pi-sb-item.spacer:hover {
+      background: none;
     }
 
     .live-card .live-card-close {
@@ -1520,15 +1539,15 @@ export class PiWebviewPanel {
 
 
     /* ── Diff rendering (#5) ──────────────────────── */
+    /* Text inherits normal foreground; only background signals the diff.
+       Matches how VS Code's own diff editor works. */
 
     .diff-line-removed {
-      color: var(--vscode-diffEditor-removedTextBackground, #f14c4c);
-      background: rgba(255,0,0,0.08);
+      background: var(--vscode-diffEditor-removedLineBackground, rgba(255,0,0,0.12));
     }
 
     .diff-line-added {
-      color: var(--vscode-diffEditor-insertedTextBackground, #4ec9b0);
-      background: rgba(0,255,0,0.08);
+      background: var(--vscode-diffEditor-insertedLineBackground, rgba(0,255,0,0.10));
     }
 
     .diff-line-context {
@@ -1537,13 +1556,13 @@ export class PiWebviewPanel {
     }
 
     .diff-word-removed {
-      background: rgba(255,0,0,0.25);
+      background: var(--vscode-diffEditor-removedTextBackground, rgba(255,0,0,0.25));
       border-radius: 2px;
       padding: 0 1px;
     }
 
     .diff-word-added {
-      background: rgba(0,255,0,0.2);
+      background: var(--vscode-diffEditor-insertedTextBackground, rgba(0,255,0,0.20));
       border-radius: 2px;
       padding: 0 1px;
     }
@@ -1771,6 +1790,16 @@ export class PiWebviewPanel {
       <button id="steer-dropdown" class="hidden" title="Switch to Queue">▾</button>
     </div>
     <button id="abort-button" class="hidden">■ Stop</button>
+  </div>
+
+  <div id="pi-status-bar">
+    <span id="pi-sb-dot" style="flex-shrink:0; font-weight:700;">○</span>
+    <div class="pi-sb-item" id="pi-sb-model" title="Click to change model">π Pi</div>
+    <div class="pi-sb-item" id="pi-sb-thinking" title="Click to change thinking level">thinking: off</div>
+    <div class="pi-sb-item" id="pi-sb-effort" title="Click to change effort">effort: auto</div>
+    <div class="pi-sb-item spacer"></div>
+    <div class="pi-sb-item" id="pi-sb-usage" title="Click to set context budget">0%</div>
+    <div class="pi-sb-item" id="pi-sb-settings" title="Settings">⚙</div>
   </div>
   </div>
 

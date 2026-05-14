@@ -55,6 +55,9 @@ export interface PiServiceEvent {
     | "auto-retry-start"
     | "auto-retry-end"
     | "thinking-level-changed"
+    // Initial message replay batching
+    | "batch-start"
+    | "batch-end"
     // Slash command autocomplete
     | "slash-commands-update"
     // Extension widget bridge

@@ -673,7 +673,10 @@ export class PiService {
     await this.bindExtensionUI();
 
     // ── Step 12: Send initial message history (like TUI renderInitialMessages) ──
+    const hasEntries = (this.sessionManager?.getEntries?.()?.length ?? 0) > 0;
+    this.emit({ type: "batch-start", data: { hasEntries } });
     this.sendInitialMessages();
+    this.emit({ type: "batch-end", data: { hasEntries } });
 
     this.reportStatus();
     this.emitScopedModels();
@@ -1750,6 +1753,11 @@ export class PiService {
     return this.sessionManager?.getSessionName?.();
   }
 
+  /** Persist a display name to the session file so it survives tab close. */
+  setSessionName(name: string): void {
+    this.session?.setSessionName?.(name);
+  }
+
   // ── Login / Logout ─────────────────────────────────────
 
   /**
@@ -2058,6 +2066,15 @@ export class PiService {
   // ── Cleanup ────────────────────────────────────────────
 
   dispose() {
+    // Force-flush the session file to disk before tearing down.
+    // The SDK defers all disk writes until the first assistant message
+    // arrives, so if the model is slow or the user closes the tab early,
+    // entries (including session_info with the tab name) exist only in
+    // memory and would be lost.  _rewriteFile bypasses the deferral.
+    const sm = this.sessionManager as any;
+    if (sm && !sm.flushed && typeof sm._rewriteFile === "function") {
+      try { sm._rewriteFile(); } catch (e) { /* best-effort */ }
+    }
     if (this._widgetTimer) { clearInterval(this._widgetTimer); this._widgetTimer = null; }
     this.unsubscribe?.();
     this.session?.dispose();

@@ -473,6 +473,8 @@
   }
 
   function hideWelcome() {
+    // During batch replay, keep welcome as loading screen
+    if (state._inBatch) return;
     if (welcome) { welcome.remove(); welcome = null; }
   }
 

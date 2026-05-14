@@ -1,5 +1,16 @@
 # Change Log
 
+## [0.0.19] — Status bar, stable names & restore polish
+
+### Changed
+- **In-webview status bar** Reverted to v0.0.16 statusbar.
+- **Stable Session names** They stay the same between active and historical sessions.
+- **Streaming indicator** unified across tab, Open Sessions tree, and webview bar as `●`/`○` bullets, using theme-aligned colors.
+- **Diff readability** improved.
+
+### Fixed
+- **Session restore** Reduce flashing while rendering.
+
 ## [0.0.18] — Steer/Queue & thinking block polish
 
 ### Changed
