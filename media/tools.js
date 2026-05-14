@@ -297,8 +297,8 @@
       if (edits.length > 1) {
         html += '<div class="edit-header">Edit ' + (i + 1) + ' of ' + edits.length + '</div>';
       }
-      html += '<div class="edit-old">- ' + escapeHtml(oldText.slice(0, 300)) + (oldText.length > 300 ? '\u2026' : '') + '</div>';
-      html += '<div class="edit-new">+ ' + escapeHtml(newText.slice(0, 300)) + (newText.length > 300 ? '\u2026' : '') + '</div>';
+      html += '<div class="edit-old">- ' + escapeHtml(oldText) + '</div>';
+      html += '<div class="edit-new">+ ' + escapeHtml(newText) + '</div>';
       html += '</div>';
     }
 

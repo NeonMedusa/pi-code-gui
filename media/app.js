@@ -201,6 +201,8 @@
       case "auto-retry-start":    handleAutoRetryStart(msg.data); break;
       case "auto-retry-end":      handleAutoRetryEnd(msg.data); break;
       case "thinking-level-changed": handleThinkingLevelChanged(msg.data); break;
+      case "batch-start":         handleBatchStart(msg.data); break;
+      case "batch-end":           handleBatchEnd(msg.data); break;
 
       // New features (#1, #2, #7, #9)
       case "compaction-summary-message": handleCompactionSummaryMessage(msg.data); break;
@@ -244,9 +246,11 @@
     removeWorkingIndicator();
     addWorkingIndicator();
     updateStreamingState();
+    setSbDot("streaming");
   }
 
   function handleAgentEnd() {
+    setSbDot("idle");
     // Stop thinking spinner (safety net)
     if (state.currentThinkingEl) {
       var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
@@ -661,9 +665,51 @@
 
   // ═══ Session Events ════════════════════════════════════
 
+  // ═══ In-webview status bar ═══════════════════════════
+
+  var sbDot = document.getElementById("pi-sb-dot");
+  var sbModel = document.getElementById("pi-sb-model");
+  var sbThinking = document.getElementById("pi-sb-thinking");
+  var sbEffort = document.getElementById("pi-sb-effort");
+  var sbUsage = document.getElementById("pi-sb-usage");
+
+  function setSbDot(state) {
+    if (!sbDot) return;
+    sbDot.textContent = state === "streaming" ? "\u25CF" : "\u25CB";
+  }
+
+  function sbModelText(modelId) {
+    var short = modelId || "Pi";
+    // Shorten known prefixes for compact display
+    if (short.startsWith("anthropic/")) short = short.slice(10);
+    else if (short.startsWith("openai/")) short = short.slice(7);
+    else if (short.startsWith("google/")) short = short.slice(7);
+    if (short.length > 24) short = short.slice(0, 22) + "\u2026";
+    return "\u03C0 " + short;
+  }
+
   function handleStatusUpdate(data) {
     if (data.reset) return;
-    // Status bar info now shown via VS Code native status bar (extension.ts)
+
+    if (sbModel && data.model) {
+      sbModel.textContent = sbModelText(data.model);
+    }
+    if (sbThinking) {
+      sbThinking.textContent = "thinking: " + (data.thinkingLevel || "off");
+    }
+    if (sbEffort) {
+      sbEffort.textContent = "effort: " + (data.effort || "auto");
+    }
+    if (sbUsage && data.usage) {
+      var parts = [];
+      var u = data.usage;
+      if (u.input > 0) parts.push("\u2191" + core.formatTokens(u.input));
+      if (u.output > 0) parts.push("\u2193" + core.formatTokens(u.output));
+      if (u.cost > 0) parts.push("$" + u.cost.toFixed(2));
+      if (u.contextPercent != null) parts.push(u.contextPercent.toFixed(0) + "%");
+      sbUsage.textContent = parts.length > 0 ? parts.join(" ") : "0%";
+    }
+    setSbDot(data.isStreaming ? "streaming" : "idle");
   }
 
   function handleStatus(data) {
@@ -672,10 +718,41 @@
       sendButton.disabled = false;
       promptInput.placeholder = "Ask pi to do something...";
       promptInput.focus();
+      if (sbModel && data.model) {
+        sbModel.textContent = sbModelText(data.model);
+      }
+      if (sbThinking) {
+        sbThinking.textContent = "thinking: " + (data.thinkingLevel || "off");
+      }
+      if (sbEffort) {
+        sbEffort.textContent = "effort: " + (data.effort || "auto");
+      }
+      setSbDot("idle");
     } else if (data.model === "not installed" || data.model === "init failed") {
       promptInput.disabled = true;
       sendButton.disabled = true;
     }
+  }
+
+  function handleBatchStart(data) {
+    state._inBatch = true;
+    // If restoring history, hide welcome immediately — no flash
+    if (data.hasEntries) { hideWelcome(); }
+    document.body.classList.add("no-animate");
+  }
+
+  function handleBatchEnd(data) {
+    state._inBatch = false;
+    document.body.classList.remove("no-animate");
+    // For fresh sessions, welcome was never hidden — keep it visible
+    // For restores, welcome is already hidden
+    // Force-scroll to bottom after batch replay (ignores hasScrolledUp).
+    // Use a double-rAF so layout has settled before reading scrollHeight.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      });
+    });
   }
 
   function handleQueueUpdate(data) {
@@ -689,7 +766,7 @@
     var el = document.createElement("div");
     el.id = "pending-queue-indicator";
     el.style.cssText =
-      "padding: 6px 16px; font-size: 0.8em; color: var(--vscode-descriptionForeground); " +
+      "flex-shrink: 0; padding: 6px 16px; font-size: 0.8em; color: var(--vscode-descriptionForeground); " +
       "background: var(--vscode-sideBar-background); border-top: 1px solid var(--vscode-panel-border);";
 
     var html = "";
@@ -780,7 +857,9 @@
   }
 
   function handleThinkingLevelChanged(data) {
-    // Already handled via status-update emission
+    if (sbThinking && data.level) {
+      sbThinking.textContent = "thinking: " + data.level;
+    }
   }
 
   // ═══ Error Handling ════════════════════════════════════
@@ -1272,6 +1351,34 @@
     }
   });
 
+  // ── In-webview status bar click handlers ─────────────
+  if (sbModel) {
+    sbModel.addEventListener("click", function () {
+      vscode.postMessage({ type: "pickModel" });
+    });
+  }
+  if (sbThinking) {
+    sbThinking.addEventListener("click", function () {
+      vscode.postMessage({ type: "pickThinkingLevel" });
+    });
+  }
+  if (sbEffort) {
+    sbEffort.addEventListener("click", function () {
+      vscode.postMessage({ type: "pickEffort" });
+    });
+  }
+  if (sbUsage) {
+    sbUsage.addEventListener("click", function () {
+      vscode.postMessage({ type: "pickContextBudget" });
+    });
+  }
+  var sbSettings = document.getElementById("pi-sb-settings");
+  if (sbSettings) {
+    sbSettings.addEventListener("click", function () {
+      toggleSettingsPanel();
+    });
+  }
+
   // Setup code block copy buttons (event delegation, CSP-safe)
   setupCodeBlockHandlers();
 
@@ -1282,8 +1389,8 @@
       e.preventDefault();
       vscode.postMessage({ type: "openUrl", url: target.href });
     }
-    // Close overlays when clicking outside
-    if (state.settingsOpen && !settingsOverlay.contains(target)) {
+    // Close overlays when clicking outside (except the status bar gear)
+    if (state.settingsOpen && !settingsOverlay.contains(target) && target !== sbSettings && !sbSettings.contains(target)) {
       closeAllOverlays();
     }
     if (state.userMsgSelectorOpen && !userMsgOverlay.contains(target) && target !== promptInput) {
