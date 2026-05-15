@@ -195,7 +195,7 @@
       // Session events
       case "status-update":       handleStatusUpdate(msg.data); break;
       case "status":              handleStatus(msg.data); break;
-      case "queue-update":        handleQueueUpdate(msg.data); break;
+      case "queue-update":        debugEventLog.push({ t: Date.now(), type: "queue-update", s: msg.data?.steering?.length, f: msg.data?.followUp?.length }); handleQueueUpdate(msg.data); break;
       case "compaction-start":    handleCompactionStart(msg.data); break;
       case "compaction-end":      handleCompactionEnd(msg.data); break;
       case "auto-retry-start":    handleAutoRetryStart(msg.data); break;
@@ -756,6 +756,15 @@
   }
 
   function handleQueueUpdate(data) {
+    // Track for /debug inspection
+    (window.__piDebug._queueEvents = window.__piDebug._queueEvents || []).push({
+      ts: Date.now(),
+      steering: (data.steering || []).length,
+      followUp: (data.followUp || []).length,
+      streaming: state.isStreaming,
+    });
+    if (window.__piDebug._queueEvents.length > 20) window.__piDebug._queueEvents.shift();
+
     var existing = document.getElementById("pending-queue-indicator");
     if (existing) existing.remove();
 
@@ -2026,6 +2035,14 @@
       '<h4 style="margin:12px 0 4px">Last 20 Events</h4>' +
       '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;max-height:200px;overflow-y:auto;">' +
       escapeHtml(JSON.stringify(summary.lastEvents, null, 2)) +
+      '</pre>' +
+
+      '<h4 style="margin:12px 0 4px">Queue / Steer State</h4>' +
+      '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;">' +
+      'isStreaming: ' + state.isStreaming + '\n' +
+      'queueMode: ' + queueMode + '\n' +
+      'pending-queue-indicator exists: ' + !!document.getElementById("pending-queue-indicator") + '\n' +
+      'queue events (' + ((window.__piDebug._queueEvents || []).length) + '): ' + JSON.stringify((window.__piDebug._queueEvents || []).slice(-10), null, 2) + '\n' +
       '</pre>' +
 
       '<h4 style="margin:12px 0 4px">Last 20 DOM Mutations</h4>' +

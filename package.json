@@ -4,7 +4,7 @@
   "author": "Jack Noppé",
   "displayName": "Pi Code Gui",
   "description": "Native VS Code editor experience for Pi coding agent",
-  "version": "0.0.19",
+  "version": "0.0.20",
   "license": "MIT",
   "sponsor": {
     "url": "https://github.com/sponsors/NimbleTronAI"
@@ -89,6 +89,10 @@
       {
         "command": "pi-code-gui.exportSession",
         "title": "PiGui: Export Session to HTML"
+      },
+      {
+        "command": "pi-code-gui.cloneSession",
+        "title": "PiGui: Clone Session"
       },
       {
         "command": "pi-code-gui.login",
@@ -316,6 +320,11 @@
           "type": "number",
           "default": 0,
           "description": "Per-session token budget. 0 = use model default. Increase for longer conversations before auto-compaction."
+        },
+        "pi-code-gui.sessionDir": {
+          "type": "string",
+          "default": "",
+          "description": "Custom session storage directory for session .jsonl files. Empty = use the pi SDK default (~/.pi/agent/sessions/). Equivalent to --session-dir."
         }
       }
     },
@@ -330,18 +339,43 @@
       "view/item/context": [
         {
           "command": "pi-code-gui.revealEntry",
-          "when": "view == pi-code-gui.sessions && viewItem == sessionEntry",
+          "when": "view == pi-code-gui.sessions && viewItem =~ /^sessionEntry/",
           "group": "navigation"
         },
         {
           "command": "pi-code-gui.copyEntryText",
-          "when": "view == pi-code-gui.sessions && viewItem == sessionEntry",
+          "when": "view == pi-code-gui.sessions && viewItem =~ /^sessionEntry/",
           "group": "1_copy"
         },
         {
           "command": "pi-code-gui.forkSession",
-          "when": "view == pi-code-gui.sessions && viewItem == sessionEntry",
+          "when": "view == pi-code-gui.sessions && viewItem =~ /^sessionEntry-(user|assistant|custom)$/",
           "group": "2_actions"
+        },
+        {
+          "command": "pi-code-gui.forkSession",
+          "when": "view == pi-code-gui.sessions && viewItem == pastSessionEntry",
+          "group": "2_actions"
+        },
+        {
+          "command": "pi-code-gui.compact",
+          "when": "view == pi-code-gui.sessions && viewItem == session",
+          "group": "3_sessionActions"
+        },
+        {
+          "command": "pi-code-gui.cloneSession",
+          "when": "view == pi-code-gui.sessions && viewItem == session",
+          "group": "3_sessionActions"
+        },
+        {
+          "command": "pi-code-gui.exportSession",
+          "when": "view == pi-code-gui.sessions && viewItem == session",
+          "group": "3_sessionActions"
+        },
+        {
+          "command": "pi-code-gui.reloadContext",
+          "when": "view == pi-code-gui.sessions && viewItem == session",
+          "group": "3_sessionActions"
         },
         {
           "command": "pi-code-gui.resumePastSession",
