@@ -1,0 +1,38 @@
+# Wiki Index
+
+Project knowledge, organized by topic area. Each page is a self-contained
+reference; follow the links for depth.
+
+## Discipline
+
+- [Think Before Acting](discipline/think-before-acting.md) — Full protocol, trusted turns, when to skip, anti-patterns
+- [TDD](discipline/tdd.md) — Red-Green-Refactor, project test conventions, when to stop and ask
+- [Strong Opinions, Loosely Held](discipline/strong-opinions-loosely-held.md) — Challenge founder, challenge self, know when to stop
+- [Verify, Don't Assume](discipline/verify-dont-assume.md) — Verification patterns, error handling conventions, failure modes
+- [Research, Don't Guess](discipline/research-dont-guess.md) — Research patterns, uncertainty labeling, when to stop
+- [Wiki Maintenance](discipline/wiki-maintenance.md) — Karpathy LLM Wiki pattern: ingest, update, lint; page conventions; log.md format
+
+## Architecture
+
+- [Session Window](architecture/session-window.md) — Paired PiService+WebviewPanel, multi-session, restore across reloads
+- [PiService](architecture/pi-service.md) — SDK lifecycle bridge, dynamic import, event translation, model/settings
+- [Webview Panel](architecture/webview-panel.md) — Webview creation, bidirectional messaging, tab indicators
+- [Bridge Tools](architecture/bridge-tools.md) — 17 VS Code API tools for the AI agent
+- [Event Translation](architecture/event-translation.md) — SDK agent events → PiServiceEvent types
+- [Extension UI Bridge](architecture/extension-ui-bridge.md) — TUI widgets → webview via Proxy
+- [Webview Frontend](architecture/webview-frontend.md) — Chat UI, streaming, morphdom, marked, modular JS
+- [Tree Views](architecture/tree-views.md) — Sessions and Packages sidebar trees
+
+## Operations
+
+- [SDK Resolution & Init](operations/sdk-resolution.md) — Finding Pi SDK on disk, the 11-step init sequence
+- [Build Pipeline](operations/build-pipeline.md) — esbuild, tsc, ESLint, VSIX packaging, CI publish
+
+## Meta
+
+- [Wiki Log](log.md) — Append-only chronological record of all wiki operations
+
+## Cross-reference
+
+- `AGENTS.md` — Project protocol: workflow, tool discipline, storage rules
+- `.pi/APPEND_SYSTEM.md` — The 5 golden rules (system-level, non-negotiable)
