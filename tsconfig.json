@@ -10,5 +10,6 @@
     "strict": true,
     "skipLibCheck": true,
     "moduleResolution": "Node16"
-  }
+  },
+  "exclude": ["agent-wiki"]
 }

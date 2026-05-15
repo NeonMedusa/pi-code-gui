@@ -579,10 +579,7 @@ export async function activate(context: vscode.ExtensionContext) {
         piWarn(`pickSessionModel: session not initialized (sessionId=${sessionId})`);
         return;
       }
-      // Open model picker for this specific session via its PiService
-      const pf = await pickModelForSession(sw.piService);
-      if (pf) {
-        await sw.piService.setModel(pf.provider, pf.modelId);
+      if (await sw.piService.pickModel()) {
         sessionTreeProvider?.refresh();
       }
     }),
@@ -596,9 +593,7 @@ export async function activate(context: vscode.ExtensionContext) {
         piWarn(`pickSessionThinking: session not initialized (sessionId=${sessionId})`);
         return;
       }
-      const level = await pickThinkingLevel(sw.piService.thinkingLevel);
-      if (level) {
-        await sw.piService.setThinkingLevel(level);
+      if (await sw.piService.pickThinkingLevel()) {
         sessionTreeProvider?.refresh();
       }
     }),
@@ -613,9 +608,7 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
       sw.webviewPanel.show();
-      const pf = await pickModelForSession(sw.piService);
-      if (pf) {
-        await sw.piService.setModel(pf.provider, pf.modelId);
+      if (await sw.piService.pickModel()) {
         sessionTreeProvider?.refresh();
       }
     }),
@@ -630,9 +623,7 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
       sw.webviewPanel.show();
-      const level = await pickThinkingLevel(sw.piService.thinkingLevel);
-      if (level) {
-        await sw.piService.setThinkingLevel(level);
+      if (await sw.piService.pickThinkingLevel()) {
         sessionTreeProvider?.refresh();
       }
     }),
@@ -1623,80 +1614,6 @@ function formatRelativeTime(date: Date): string {
 }
 
 // ── UI pickers for per-session model / thinking level ──────
-
-async function pickModelForSession(ps: PiService): Promise<{ provider: string; modelId: string } | null> {
-  // Use dynamic model discovery from the registry
-  let models: Array<{ label: string; provider: string; modelId: string }> = [];
-
-  try {
-    const available = await ps.getAvailableModels();
-    if (available.length > 0) {
-      models = available.map((m) => ({
-        label: m.name || m.id,
-        provider: m.provider,
-        modelId: m.id,
-      }));
-    }
-  } catch (e: any) { console.warn(`[pi-gui] pickModelForSession: getAvailableModels failed (${e.message}), using static fallback`); }
-
-  // Fallback: static list of common models
-  if (models.length === 0) {
-    models = [
-      { label: "Claude Sonnet 4.5", provider: "anthropic", modelId: "claude-sonnet-4-5" },
-      { label: "Claude Haiku 4.5", provider: "anthropic", modelId: "claude-haiku-4-5" },
-      { label: "Claude Opus 4.5", provider: "anthropic", modelId: "claude-opus-4-5" },
-      { label: "GPT 4o", provider: "openai", modelId: "gpt-4o" },
-      { label: "Gemini 2.5 Pro", provider: "google", modelId: "gemini-2.5-pro" },
-      { label: "DeepSeek V3", provider: "deepseek", modelId: "deepseek-chat" },
-    ];
-  }
-
-  const currentId = ps.model?.id;
-  const defModel = ps.getDefaultModel();
-  const items = models.map((m) => {
-    const isDefault = defModel && m.provider === defModel.provider && m.modelId === defModel.id;
-    return {
-      label: `${m.label}${m.modelId === currentId ? " $(check)" : ""}${isDefault ? " \u2605" : ""}`,
-      description: m.provider,
-      provider: m.provider,
-      modelId: m.modelId,
-      isDefault,
-    };
-  });
-  const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select model (\u2605 = default)" });
-  if (!picked || typeof picked === "string") { return null; }
-
-  // Offer to save as default
-  if (!picked.isDefault) {
-    const save = await vscode.window.showQuickPick(
-      [{ label: "\u2605 Save as default", description: "Use this model for future sessions" }],
-      { placeHolder: `Use as default?` },
-    );
-    if (save) { ps.saveDefaultModel(); }
-  }
-
-  return { provider: picked.provider, modelId: picked.modelId };
-}
-
-async function pickThinkingLevel(current: string): Promise<string | null> {
-  const levels = ["off", "minimal", "low", "medium", "high", "xhigh"];
-  const items = levels.map((l) => ({
-    label: `${l === current ? "$(check) " : ""}${l}`,
-    description: describeLevel(l),
-    level: l,
-  }));
-  const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select thinking level" });
-  if (!picked || typeof picked === "string") { return null; }
-  return picked.level;
-}
-
-function describeLevel(l: string): string {
-  const m: Record<string, string> = {
-    off: "None", minimal: "Minimal", low: "Brief",
-    medium: "Balanced", high: "Extended", xhigh: "Maximum",
-  };
-  return m[l] ?? "";
-}
 
 class SessionTreeItem extends vscode.TreeItem {
   public sessionId?: string;

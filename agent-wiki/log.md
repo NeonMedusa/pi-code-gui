@@ -8,6 +8,7 @@ pass performed), `archive` (page moved to archive).
 ## [2026-05-15] ingest | Bootstrap — wiki structure initialized from Pi template (discipline pages, index, log, archive)
 ## [2026-05-15] ingest | Architecture — Session Window (`architecture/session-window.md`)
 ## [2026-05-15] ingest | Architecture — PiService (`architecture/pi-service.md`)
+## [2026-05-15] update | PiService — added pickModel/pickThinkingLevel, de-duplicated pickers from extension.ts and webview-panel.ts, added model pricing display
 ## [2026-05-15] ingest | Architecture — Webview Panel (`architecture/webview-panel.md`)
 ## [2026-05-15] ingest | Architecture — Bridge Tools (`architecture/bridge-tools.md`)
 ## [2026-05-15] ingest | Architecture — Event Translation (`architecture/event-translation.md`)
