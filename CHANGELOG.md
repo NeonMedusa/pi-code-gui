@@ -1,5 +1,17 @@
 # Change Log
 
+## [0.0.20] — Slash commands, fork/clone, and UX hardening
+
+### Changed
+- **Fork** creates a new session window from any message entry or past session — original session untouched.
+- **Clone** creates an independent copy of the current session in a new tab.
+- **Edit blocks** show full text (no 300-char truncation) with scrollable 200px max-height.
+
+### Fixed
+- **Slash commands**: `/compact`, `/name`, `/tree`, `/export`, `/reload`, and `/clone` now route to the SDK directly instead of being sent as raw text to the LLM.
+- **Queue/steer indicator** visible again — added `flex-shrink: 0`.
+- **Context menus** added for compact, clone, export, and reload on open sessions.
+
 ## [0.0.19] — Status bar, stable names & restore polish
 
 ### Changed

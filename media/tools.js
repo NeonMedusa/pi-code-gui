@@ -103,6 +103,12 @@
         el.id = "entry-" + entryId;
       }
 
+      // Re-render to apply collapse now that streaming is done
+      renderWriteContentBlock(el);
+      // Scroll code block back to top so user sees the beginning
+      var cb = el.querySelector(".code-block");
+      if (cb) { cb.scrollTop = 0; }
+
       // Only show error output (matching TUI: result hidden on success)
       if (isError && result && result.content) {
         var errorText = result.content
@@ -148,17 +154,33 @@
     var state = el._writeState || {};
     var content = state.content || "";
     var lang = state.lang;
-    var displayContent = content;
-    var maxCollapsedLines = 10;
+    var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
     var allLines = content.split("\n");
-    var collapsed = allLines.length > maxCollapsedLines + 5;
+    var maxCollapsedLines = 10;
+    // Never collapse while streaming — always show full content and auto-scroll
+    var collapsed = !active && allLines.length > maxCollapsedLines + 5;
+    var displayContent = collapsed ? allLines.slice(0, maxCollapsedLines).join("\n") : content;
 
-    if (collapsed) {
-      displayContent = allLines.slice(0, maxCollapsedLines).join("\n");
+    // Persist the .code-block element so scroll state survives across renders
+    // (same approach thinking-blocks use with textContent on a persistent element).
+    var cb = tc.querySelector(".code-block");
+    if (!cb) {
+      tc.innerHTML = renderFileContent(displayContent, lang);
+      cb = tc.querySelector(".code-block");
+    } else {
+      // Extract just the <code> innerHTML from a fresh render, inject into existing element
+      var tmp = document.createElement("div");
+      tmp.innerHTML = renderFileContent(displayContent, lang);
+      var freshCode = tmp.querySelector(".code-block code");
+      var existingCode = cb.querySelector("code");
+      if (freshCode && existingCode) {
+        existingCode.innerHTML = freshCode.innerHTML;
+      }
     }
 
-    tc.innerHTML = renderFileContent(displayContent, lang);
-    tc.scrollTop = tc.scrollHeight;
+    if (active && cb) {
+      cb.scrollTop = cb.scrollHeight;
+    }
 
     if (collapsed) {
       var remaining = allLines.length - maxCollapsedLines;
@@ -172,7 +194,14 @@
       if (btn) {
         btn.addEventListener("click", function () {
           tc.innerHTML = renderFileContent(content, lang);
-          tc.scrollTop = tc.scrollHeight;
+          var cb = tc.querySelector(".code-block");
+          if (cb) {
+            requestAnimationFrame(function () {
+              requestAnimationFrame(function () {
+                cb.scrollTop = cb.scrollHeight;
+              });
+            });
+          }
           var collapsedBtn = tc.querySelector(".tool-expand-btn");
           if (!collapsedBtn) {
             tc.innerHTML += '<div style="text-align:center;margin-top:4px;">' +
@@ -219,6 +248,7 @@
         '<div class="tool-result"></div>';
 
       if (Array.isArray(edits) && edits.length > 0) {
+        block._editEdits = edits;
         renderEditPreviews(block, edits);
       }
 
@@ -236,6 +266,7 @@
         var args = JSON.parse(text);
         var edits = args.edits;
         if (Array.isArray(edits) && edits.length > 0) {
+          el._editEdits = edits;
           // Update edit count in header
           var editLabel = edits.length > 1 ? " (" + edits.length + " edits)" : "";
           var pathEl = el.querySelector(".tool-path");
@@ -256,6 +287,9 @@
       if (entryId && !el.id.startsWith("entry-")) {
         el.id = "entry-" + entryId;
       }
+
+      // Re-render previews to collapse to max 3 now that streaming is done
+      if (el._editEdits) { renderEditPreviews(el, el._editEdits); }
 
       var text = "";
       if (result && result.content) {
@@ -285,7 +319,10 @@
   function renderEditPreviews(el, edits) {
     var tc = el.querySelector(".tool-content");
     if (!tc) return;
-    var maxVisible = 3;  // Show at most 3 edit previews inline
+    var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
+    // While streaming, show all edits and auto-scroll to bottom.
+    // When done, limit to 3 previews max.
+    var maxVisible = active ? edits.length : Math.min(edits.length, 3);
     var html = "";
     var remaining = edits.length - maxVisible;
 
@@ -308,8 +345,26 @@
         '</div>';
     }
 
-    tc.innerHTML = html;
-    tc.scrollTop = tc.scrollHeight;
+    // Persistent scroll wrapper — same whether active or done (no morph).
+    var scrollView = tc.querySelector(".tool-scroll-view");
+    if (!scrollView) {
+      tc.innerHTML = '<div class="tool-scroll-view" style="max-height:500px;overflow-y:auto;">' + html + '</div>';
+      scrollView = tc.querySelector(".tool-scroll-view");
+    } else {
+      scrollView.innerHTML = html;
+    }
+
+    if (active && scrollView) {
+      scrollView.scrollTop = scrollView.scrollHeight;
+      requestAnimationFrame(function () {
+        var blocks = scrollView.querySelectorAll(".edit-old, .edit-new");
+        for (var b = 0; b < blocks.length; b++) {
+          if (blocks[b].scrollHeight > blocks[b].clientHeight) {
+            blocks[b].scrollTop = blocks[b].scrollHeight;
+          }
+        }
+      });
+    }
   }
 
   // ═══ Read Tool Renderer ═══════════════════════════════════
@@ -412,7 +467,7 @@
           expanded: false,
         };
 
-        tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:220px;overflow-y:auto;">' +
+        tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:500px;overflow-y:auto;">' +
           renderMarkdown(text) +
           '</div>' +
           '<button class="tool-expand-btn" type="button">' +
@@ -434,7 +489,7 @@
                 '<button class="tool-expand-btn" type="button">\u25B2 Show less</button>';
               tr.scrollTop = 0;
             } else {
-              tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:220px;overflow-y:auto;">' +
+              tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:500px;overflow-y:auto;">' +
                 renderMarkdown(st.fullText) +
                 '</div>' +
                 '<button class="tool-expand-btn" type="button">' +

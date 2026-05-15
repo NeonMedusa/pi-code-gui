@@ -68,6 +68,11 @@ Pi Code Gui loads the `@earendil-works/pi-coding-agent` SDK at runtime from your
 | `pi-code-gui.enableSkills` | boolean | `true` | Load project and global pi skills |
 | `pi-code-gui.enableContextFiles` | boolean | `true` | Inject project context files |
 | `pi-code-gui.enablePromptTemplates` | boolean | `true` | Register custom slash commands |
+| `pi-code-gui.defaultModelProvider` | string | `""` | Default model provider (e.g. `anthropic`). Empty = auto-detect |
+| `pi-code-gui.defaultModelId` | string | `""` | Default model ID (e.g. `claude-sonnet-4-5`). Requires provider set |
+| `pi-code-gui.defaultThinkingLevel` | string | `"off"` | Default thinking level for new sessions |
+| `pi-code-gui.contextBudget` | number | `0` | Per-session token budget. 0 = model default |
+| `pi-code-gui.sessionDir` | string | `""` | Custom directory for session `.jsonl` files. Empty = pi SDK default (`~/.pi/agent/sessions/`) |
 
 ## Requirements
 

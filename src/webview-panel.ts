@@ -874,7 +874,7 @@ export class PiWebviewPanel {
     }
 
     .tool-block .tool-result .code-block {
-      max-height: 360px;
+      max-height: 500px;
       overflow-y: auto;
     }
 
@@ -926,7 +926,7 @@ export class PiWebviewPanel {
     }
 
     .tool-block .tool-content .code-block {
-      max-height: 360px;
+      max-height: 500px;
       overflow-y: auto;
     }
 
@@ -968,7 +968,7 @@ export class PiWebviewPanel {
       padding: 2px 8px;
       border-radius: 2px;
       margin: 1px 0;
-      max-height: 200px;
+      max-height: 100px;
       overflow-y: auto;
     }
 
@@ -977,7 +977,14 @@ export class PiWebviewPanel {
       padding: 2px 8px;
       border-radius: 2px;
       margin: 1px 0;
-      max-height: 200px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    /* While streaming, use a taller max so edits grow then scroll, but always show the bottom */
+    .tool-block[data-status="running"] .edit-change .edit-old,
+    .tool-block[data-status="running"] .edit-change .edit-new {
+      max-height: 100px;
       overflow-y: auto;
     }
 

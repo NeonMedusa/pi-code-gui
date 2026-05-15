@@ -353,7 +353,9 @@ export class PiService {
     try {
       const piRoot = resolvePiPackagePath();
       const SDK = await import(path.join(piRoot, "dist/index.js"));
-      const sessions = await SDK.SessionManager.list(cwd);
+      const cfg = vscode.workspace.getConfiguration("pi-code-gui");
+      const sessionDir = cfg.get<string>("sessionDir")?.trim() || undefined;
+      const sessions = await SDK.SessionManager.list(cwd, sessionDir);
       piLog(`listSessions: found ${sessions.length} past sessions in ${cwd}`);
       return sessions;
     } catch (e: any) {
@@ -555,19 +557,17 @@ export class PiService {
 
     // ── Step 7: Session manager ─────────────────────
     try {
+      const cfg = vscode.workspace.getConfiguration("pi-code-gui");
+      const sessionDir = cfg.get<string>("sessionDir")?.trim() || undefined;
       if (openPath) {
-        // Open a specific saved session file
-        this.sessionManager = SDK.SessionManager.open(openPath);
+        this.sessionManager = SDK.SessionManager.open(openPath, sessionDir);
       } else if (fresh) {
-        // Explicit new session — always a fresh file
-        this.sessionManager = SDK.SessionManager.create(cwd);
+        this.sessionManager = SDK.SessionManager.create(cwd, sessionDir);
       } else {
-        // First load: try to continue the most recent session (persists across VS Code restarts)
-        // If none exists, create a new one.
         try {
           this.sessionManager = await SDK.SessionManager.continueRecent(cwd);
         } catch {
-          this.sessionManager = SDK.SessionManager.create(cwd);
+          this.sessionManager = SDK.SessionManager.create(cwd, sessionDir);
         }
       }
     } catch (e: any) {
@@ -888,12 +888,13 @@ export class PiService {
     }
   }
 
-  /** Send existing session messages to the webview on initial load */
-  private sendInitialMessages() {
+  /** Send existing session messages to the webview on initial load (or after reload). */
+  sendInitialMessages() {
     // Build session context from the session manager
     let entries: any[];
     try {
       entries = this.sessionManager.getEntries();
+      piLog(`sendInitialMessages: ${entries?.length ?? 0} entries`);
     } catch (e: any) {
       piWarn(`sendInitialMessages: getEntries failed: ${e.message}`);
       return;
@@ -1174,6 +1175,7 @@ export class PiService {
         break;
 
       case "queue_update":
+        piLog(`queue_update: steering=${event.steering?.length ?? 0}, followUp=${event.followUp?.length ?? 0}`);
         this.emit({ type: "queue-update", data: { steering: Array.from(event.steering ?? []), followUp: Array.from(event.followUp ?? []) } });
         break;
 
@@ -1233,7 +1235,7 @@ export class PiService {
       if (handled) { return; }
     }
 
-    if (this._isStreaming) {
+    if (mode === "steer" || mode === "queue") {
       if (images && images.length > 0) {
         throw new Error("Cannot attach images while agent is streaming");
       }
@@ -1305,18 +1307,54 @@ export class PiService {
       case "login":  await this.login(); return true;
       case "logout": await this.logout(); return true;
 
-      // Builtin commands forwarded to the session for extension handling
-      case "compact":
-      case "settings":
-      case "export":
-      case "fork":
-      case "sessions":
-      case "resume":
-      case "reload":
-      case "name":
+      // Builtin commands intercepted before session.prompt (like the CLI does).
+      // NOTE: /settings, /sessions, /model, /thinking are intercepted by
+      // the webview's localSlashCommands and handled via handleSlashCommand.
+
+      case "name": {
+        const name = text.slice(6).trim();
+        if (name) { this.session.setSessionName(name); }
+        return true;
+      }
+
       case "tree":
+        await vscode.commands.executeCommand("pi-code-gui.sessions.focus");
+        return true;
+
+      case "compact": {
+        const compactArgs = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
+        await this.session.compact(compactArgs);
+        return true;
+      }
+
+      case "export": {
+        // Parse optional output path from text
+        const exportArgs = text.startsWith("/export ") ? text.slice(8).trim() : undefined;
+        const outputPath = exportArgs || vscode.Uri.joinPath(
+          vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(process.cwd()),
+          `pi-session-${this.sessionId?.slice(0, 8) ?? "export"}.html`
+        ).fsPath;
+        const result = await this.session.exportToHtml(outputPath);
+        vscode.window.showInformationMessage(`Session exported to: ${result}`);
+        return true;
+      }
+
+      case "reload": {
+        await this.session.reload();
+        // Re-send initial messages so the webview reflects updated extensions/skills
+        this.sendInitialMessages();
+        return true;
+      }
+
+      // Commands that delegate to VS Code commands:
       case "clone":
-        await this.session.prompt(text);
+        await vscode.commands.executeCommand("pi-code-gui.cloneSession");
+        return true;
+
+      case "fork":
+      case "resume":
+        // These are no-ops via text since they require interactive selection.
+        // The UX is available via the Sessions tree context menus.
         return true;
 
       default:

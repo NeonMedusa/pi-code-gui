@@ -190,7 +190,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const selection = sessionTreeView?.selection;
         if (selection && selection.length > 0) {
           const item = selection[0] as SessionTreeItem;
-          if (item.contextValue === "sessionEntry") {
+          if (item.contextValue === "sessionEntry" || item.contextValue?.startsWith("sessionEntry")) {
             const cmdArgs = item.command?.arguments;
             if (cmdArgs && cmdArgs.length >= 2) {
               sw = sessions.find((s) => s.id === cmdArgs[0])!;
@@ -212,13 +212,13 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("pi-code-gui.copyEntryText", async (treeItem?: SessionTreeItem) => {
       var item: SessionTreeItem | undefined = treeItem;
       // Fallback: read from tree view selection
-      if (!item || item.contextValue !== "sessionEntry") {
+      if (!item || (item.contextValue !== "sessionEntry" && !item.contextValue?.startsWith("sessionEntry"))) {
         const selection = sessionTreeView?.selection;
         if (selection && selection.length > 0) {
           item = selection[0] as SessionTreeItem;
         }
       }
-      if (!item || item.contextValue !== "sessionEntry") { return; }
+      if (!item || (item.contextValue !== "sessionEntry" && !item.contextValue?.startsWith("sessionEntry"))) { return; }
 
       var text = (item as any)._fullText;
       if (!text) {
@@ -233,83 +233,226 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  // Fork session from a selected entry — branches the session manager to that entry
-  // and replaces the agent's messages so further prompts continue from the fork point.
-  // Accepts (sessionId, entryId) from TreeItem.command / context-menu auto-arg passing,
-  // or reads from tree view selection as fallback.
+  // ── Fork helpers ─────────────────────────────────────
+
+  /** Fork at a specific entry within an already-open session. */
+  async function doForkFromOpenEntry(sessionId: string, entryId: string) {
+    const srcSw = sessions.find((s) => s.id === sessionId);
+    if (!srcSw || !srcSw.piService.sessionManagerInstance) {
+      throw new Error(`Source session not found (id=${sessionId}).`);
+    }
+
+    // Get the source file path — we open a fresh SessionManager to branch
+    // so the source session is not mutated.
+    const sourcePath = srcSw.piService.sessionFilePath;
+    if (!sourcePath) {
+      throw new Error("Source session has no persisted file.");
+    }
+
+    // Open a temporary PiService to get an isolated SessionManager for branching
+    const tempPi = new PiService();
+    let forkedPath: string;
+    try {
+      const result = await tempPi.initialize({ openPath: sourcePath });
+      if (!result.success) {
+        throw new Error(`Cannot open source session: ${result.error}`);
+      }
+      const srcSm = tempPi.sessionManagerInstance;
+      if (!srcSm) { throw new Error("Source session has no session manager."); }
+
+      const entry = srcSm.getEntry(entryId);
+      if (!entry) { throw new Error("Entry not found in source session."); }
+
+      const isUserMsg = entry.type === "message" && entry.message?.role === "user";
+      const isAssistantMsg = entry.type === "message" && entry.message?.role === "assistant";
+      const isCustomMsg = entry.type === "custom_message";
+      if (!isUserMsg && !isAssistantMsg && !isCustomMsg) {
+        throw new Error("Fork only works on user, assistant, or custom messages. Selected entry type: " + (entry.type ?? "unknown"));
+      }
+
+      // Fork at the selected entry (include it in the branch)
+      const targetLeafId = entryId;
+      forkedPath = srcSm.createBranchedSession(targetLeafId);
+      if (!forkedPath) {
+        throw new Error("Failed to create forked session file.");
+      }
+    } finally {
+      tempPi.dispose();
+    }
+
+    piLog(`doForkFromOpenEntry: forked to ${forkedPath}`);
+    await openForkedSession(forkedPath);
+  }
+
+  /** Fork a past session at its current leaf (opens the session, then forks). */
+  async function doForkFromPastSession(sessionPath: string) {
+    // Initialize a new PiService to load the session and get leaf ID
+    const tempPi = new PiService();
+    const result = await tempPi.initialize({ openPath: sessionPath });
+    if (!result.success) {
+      throw new Error(`Cannot open past session: ${result.error}`);
+    }
+    const sm = tempPi.sessionManagerInstance;
+    if (!sm) {
+      tempPi.dispose();
+      throw new Error("Past session has no session manager.");
+    }
+    const leafId = sm.getLeafId();
+    if (!leafId) {
+      tempPi.dispose();
+      throw new Error("Past session has no entries to fork from.");
+    }
+
+    // Fork at the leaf (clone the session at its current tip)
+    let forkedPath: string | null = null;
+    try {
+      forkedPath = sm.createBranchedSession(leafId);
+    } catch {
+      // If branching fails, just use the original file
+    }
+    tempPi.dispose();
+
+    await openForkedSession(forkedPath ?? sessionPath);
+  }
+
+  /** Create a new session window initialized from a forked session file. */
+  async function openForkedSession(forkedPath: string) {
+    const newSw = createSessionWindow(context);
+    setActiveSession(newSw);
+    newSw.webviewPanel.show();
+    sessionTreeProvider?.refresh();
+
+    await initSessionInBackground(context, newSw, { openPath: forkedPath });
+
+    if (!newSw.initialized) {
+      removeSession(newSw);
+      throw new Error("Failed to initialize forked session.");
+    }
+
+    // sendInitialMessages() is already called during initialize() inside the
+    // batch-start/batch-end wrapper — no need for a second call here.
+    sessionTreeProvider?.refresh();
+    vscode.window.showInformationMessage("Session forked to new tab.");
+  }
+
+  // Fork session from a selected entry — creates a NEW session window branched
+  // from the fork point. The original session is untouched.
+  // Supports two entry points:
+  //   1. sessionEntry inside an open session → fork at that entry
+  //   2. pastSessionEntry → resume the session, pick a message, fork there
   context.subscriptions.push(
-    vscode.commands.registerCommand("pi-code-gui.forkSession", async (forkSessionId?: string, forkEntryId?: string) => {
-      let resolvedSessionId = forkSessionId;
-      let resolvedEntryId = forkEntryId;
-
-      // Fallback: read from tree view selection (right-click context menu)
-      if (!resolvedSessionId || !resolvedEntryId) {
-        const selection = sessionTreeView?.selection;
-        if (selection && selection.length > 0) {
-          const item = selection[0] as SessionTreeItem;
-          if (item.contextValue === "sessionEntry" && item.command?.arguments) {
-            const cmdArgs = item.command.arguments;
-            if (cmdArgs.length >= 2) {
-              resolvedSessionId = cmdArgs[0] as string;
-              resolvedEntryId = cmdArgs[1] as string;
-            }
-          }
-        }
+    vscode.commands.registerCommand("pi-code-gui.forkSession", async (...rawArgs: any[]) => {
+      // VS Code passes the TreeItem as the first argument when invoked from
+      // a context menu. The tree item's command.arguments contain the actual
+      // payload: [sessionId, entryId] for sessionEntry, [path] for pastSessionEntry.
+      let cmdArgs = rawArgs;
+      if (cmdArgs.length > 0 && cmdArgs[0] instanceof SessionTreeItem) {
+        cmdArgs = cmdArgs[0].command?.arguments ?? [];
       }
 
-      if (!resolvedSessionId || !resolvedEntryId) {
-        vscode.window.showErrorMessage("Cannot fork: missing entry information.");
-        return;
-      }
-
-      const sw = sessions.find((s) => s.id === resolvedSessionId);
-      if (!sw || !sw.piService.sessionManagerInstance) {
-        vscode.window.showErrorMessage("Cannot fork: session not found.");
+      if (!cmdArgs || cmdArgs.length === 0) {
+        vscode.window.showErrorMessage("Cannot fork: no entry selected.");
         return;
       }
 
       try {
-        // Wait for any running agent to finish
-        if (sw.piService.isStreaming) {
-          vscode.window.showInformationMessage("Waiting for current operation to complete before forking...");
-          await sw.piService.abort();
+        if (cmdArgs.length >= 2) {
+          await doForkFromOpenEntry(cmdArgs[0] as string, cmdArgs[1] as string);
+        } else {
+          await doForkFromPastSession(cmdArgs[0] as string);
         }
-
-        const sm = sw.piService.sessionManagerInstance;
-
-        // Branch the session manager to this entry — discards subsequent messages
-        sm.branch(resolvedEntryId!);
-
-        // Get the path entries from root to the fork point
-        const path = sm.getPath();
-
-        // Extract messages from path entries for the agent state
-        const messages: any[] = [];
-        for (const entry of path) {
-          if (entry.type === "message" && entry.message) {
-            if (entry.message.role === "user" || entry.message.role === "assistant" || entry.message.role === "custom") {
-              messages.push(entry.message);
-            }
-          }
-        }
-
-        // Replace the agent's message state with the branched history
-        const rawSession = sw.piService.rawSession;
-        if (rawSession?.agent?.state) {
-          rawSession.agent.state.messages = messages;
-        }
-
-        // Clear the webview and re-render from the branched session
-        sw.webviewPanel.postMessage({ type: "sessionReset" });
-        sw.webviewPanel.show();
-
-        // Re-emit the branched messages to the webview
-        // (PiService's sendInitialMessages logic replayed via a helper)
-        sw.piService.replayBranchEntries(path);
-
-        sessionTreeProvider?.refresh();
       } catch (e: any) {
         vscode.window.showErrorMessage(`Fork failed: ${e.message ?? e}`);
+      }
+    }),
+  );
+
+  // ── Clone session (fork at current leaf) ────────────
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.cloneSession", async () => {
+      const sw = activeSessionWindow ?? primarySession();
+      if (!sw || !sw.initialized) {
+        vscode.window.showErrorMessage("Cannot clone: no active Pi session.");
+        return;
+      }
+      const sm = sw.piService.sessionManagerInstance;
+      if (!sm) {
+        vscode.window.showErrorMessage("Cannot clone: session has no manager.");
+        return;
+      }
+      const leafId = sm.getLeafId();
+      if (!leafId) {
+        vscode.window.showErrorMessage("Cannot clone: session has no entries.");
+        return;
+      }
+      try {
+        await doForkFromOpenEntry(sw.id, leafId);
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Clone failed: ${e.message ?? e}`);
+      }
+    }),
+  );
+
+  // ── Compact session context ────────────────────────
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.compact", async () => {
+      const sw = activeSessionWindow ?? primarySession();
+      if (!sw || !sw.initialized) {
+        vscode.window.showWarningMessage("No active Pi session.");
+        return;
+      }
+      try {
+        if (sw.piService.isStreaming) { await sw.piService.abort(); }
+        vscode.window.showInformationMessage("Compacting context...");
+        await sw.piService.rawSession.compact();
+        vscode.window.showInformationMessage("Context compacted.");
+        sessionTreeProvider?.refresh();
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Compact failed: ${e.message ?? e}`);
+      }
+    }),
+  );
+
+  // ── Export session to HTML ─────────────────────────
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.exportSession", async () => {
+      const sw = activeSessionWindow ?? primarySession();
+      if (!sw || !sw.initialized) {
+        vscode.window.showWarningMessage("No active Pi session.");
+        return;
+      }
+      try {
+        const defaultPath = vscode.Uri.joinPath(
+          vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(process.cwd()),
+          `pi-session-${sw.id}.html`
+        );
+        const uri = await vscode.window.showSaveDialog({
+          defaultUri: defaultPath,
+          filters: { "HTML": ["html"] },
+        });
+        if (!uri) { return; }
+        const result = await sw.piService.rawSession.exportToHtml(uri.fsPath);
+        vscode.window.showInformationMessage(`Session exported to: ${result}`);
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Export failed: ${e.message ?? e}`);
+      }
+    }),
+  );
+
+  // ── Reload context (extensions, keybindings, skills) ─
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.reloadContext", async () => {
+      const sw = activeSessionWindow ?? primarySession();
+      if (!sw || !sw.initialized) {
+        vscode.window.showWarningMessage("No active Pi session.");
+        return;
+      }
+      try {
+        await sw.piService.rawSession.reload();
+        sw.piService.sendInitialMessages();
+        vscode.window.showInformationMessage("Extensions, skills, and keybindings reloaded.");
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Reload failed: ${e.message ?? e}`);
       }
     }),
   );
@@ -1303,7 +1446,16 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
         arguments: [sw.id, entry.id],
       });
       item.tooltip = tooltip;
-      item.contextValue = "sessionEntry";
+      // Tag message entries so we can restrict fork/clone context menus
+      if (entry.type === "message" && entry.message?.role === "user") {
+        item.contextValue = "sessionEntry-user";
+      } else if (entry.type === "message" && entry.message?.role === "assistant") {
+        item.contextValue = "sessionEntry-assistant";
+      } else if (entry.type === "custom_message") {
+        item.contextValue = "sessionEntry-custom";
+      } else {
+        item.contextValue = "sessionEntry";
+      }
       (item as any)._fullText = fullText;
       return item;
     });
