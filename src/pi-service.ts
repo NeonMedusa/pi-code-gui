@@ -1599,15 +1599,135 @@ export class PiService {
   get showImages(): boolean { return this._showImages; }
   get userMessages(): Array<{ id: string; text: string; timestamp?: number }> { return this._userMessages; }
 
-  /** Get available models from the model registry (for dynamic model pickers) */
-  async getAvailableModels(): Promise<Array<{ provider: string; id: string; name?: string }>> {
+  /** Get available models from the model registry (for dynamic model pickers). */
+  async getAvailableModels(): Promise<Array<{ provider: string; id: string; name?: string; cost?: { input: number; output: number }; contextWindow?: number }>> {
     if (!this.modelRegistry) { return []; }
     try {
       const available = await this.modelRegistry.getAvailable();
-      return available.map((m: any) => ({ provider: m.provider, id: m.id, name: m.name }));
+      return available.map((m: any) => ({
+        provider: m.provider,
+        id: m.id,
+        name: m.name,
+        cost: m.cost ? { input: m.cost.input, output: m.cost.output } : undefined,
+        contextWindow: m.contextWindow ?? undefined,
+      }));
     } catch {
       return [];
     }
+  }
+
+  /** Format model specs (pricing + context window) for QuickPick detail. Returns empty string if no data. */
+  static formatModelDetail(cost?: { input: number; output: number }, contextWindow?: number): string {
+    const parts: string[] = [];
+    if (cost) {
+      parts.push(`$${cost.input}/$${cost.output} per M tokens`);
+    }
+    if (contextWindow) {
+      parts.push(`${Math.round(contextWindow / 1000)}K context`);
+    }
+    return parts.join(" · ");
+  }
+
+  /** Open a QuickPick to choose a model, set it on this session, and optionally save as default. */
+  async pickModel(): Promise<boolean> {
+    interface ModelItem { label: string; provider: string; modelId: string; cost?: { input: number; output: number }; contextWindow?: number }
+    let models: ModelItem[] = [];
+
+    try {
+      const available = await this.getAvailableModels();
+      if (available.length > 0) {
+        models = available.map((m) => ({
+          label: m.name || m.id,
+          provider: m.provider,
+          modelId: m.id,
+          cost: m.cost,
+          contextWindow: m.contextWindow,
+        }));
+      }
+    } catch (e: any) {
+      piWarn(`pickModel: getAvailableModels failed (${e.message}), using static fallback`);
+    }
+
+    // Fallback: static list of common models (no pricing — only SDK-reported pricing is shown)
+    if (models.length === 0) {
+      models = [
+        { label: "Claude Sonnet 4.5", provider: "anthropic", modelId: "claude-sonnet-4-5" },
+        { label: "Claude Haiku 4.5", provider: "anthropic", modelId: "claude-haiku-4-5" },
+        { label: "Claude Opus 4.5", provider: "anthropic", modelId: "claude-opus-4-5" },
+        { label: "GPT 4o", provider: "openai", modelId: "gpt-4o" },
+        { label: "Gemini 2.5 Pro", provider: "google", modelId: "gemini-2.5-pro" },
+        { label: "DeepSeek V3", provider: "deepseek", modelId: "deepseek-chat" },
+      ];
+    }
+
+    const currentId = this.model?.id;
+    const defModel = this.getDefaultModel();
+    const items = models.map((m) => {
+      const isDefault = defModel && m.provider === defModel.provider && m.modelId === defModel.id;
+      return {
+        label: `${m.label}${m.modelId === currentId ? " $(check)" : ""}${isDefault ? " \u2605" : ""}`,
+        description: m.provider,
+        detail: PiService.formatModelDetail(m.cost, m.contextWindow),
+        provider: m.provider,
+        modelId: m.modelId,
+        isDefault,
+      };
+    });
+
+    const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select model (\u2605 = default)", matchOnDetail: true });
+    if (!picked) { return false; }
+
+    await this.setModel(picked.provider, picked.modelId);
+
+    // Offer to save as default if not already
+    if (!picked.isDefault) {
+      const save = await vscode.window.showQuickPick(
+        [{ label: "\u2605 Save as default", description: "Use this model for future sessions" }],
+        { placeHolder: `Use as default?` },
+      );
+      if (save) { this.saveDefaultModel(); }
+    }
+
+    return true;
+  }
+
+  /** Open a QuickPick to choose a thinking level, set it on this session, and optionally save as default. */
+  async pickThinkingLevel(): Promise<boolean> {
+    const levels = [
+      { label: "off", description: "No thinking" },
+      { label: "minimal", description: "Minimal thinking" },
+      { label: "low", description: "Brief thinking" },
+      { label: "medium", description: "Balanced thinking" },
+      { label: "high", description: "Extended thinking" },
+      { label: "xhigh", description: "Maximum thinking" },
+    ];
+    const current = this.thinkingLevel;
+    const defLevel = this.getDefaultThinking();
+    const items = levels.map((l) => {
+      const isDefault = l.label === defLevel;
+      return {
+        label: `${l.label === current ? "$(check) " : ""}${l.label}${isDefault ? " \u2605" : ""}`,
+        description: l.description,
+        level: l.label,
+        isDefault,
+      };
+    });
+
+    const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select thinking level (\u2605 = default)" });
+    if (!picked) { return false; }
+
+    await this.setThinkingLevel(picked.level);
+
+    // Offer to save as default if not already
+    if (!picked.isDefault) {
+      const save = await vscode.window.showQuickPick(
+        [{ label: "\u2605 Save as default", description: "Use this thinking level for future sessions" }],
+        { placeHolder: `Use "${picked.level}" thinking as the default?` },
+      );
+      if (save) { this.saveDefaultThinking(); }
+    }
+
+    return true;
   }
 
   /** Get scoped models from the session */

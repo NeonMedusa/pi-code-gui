@@ -35,6 +35,12 @@ independently, leading to duplicated init logic and inconsistent error handling.
   panel, extension commands) subscribe to typed `PiServiceEvent` emissions.
 - **User actions** — `sendPrompt`, `abort`, `cycleModel`, `setThinkingLevel`,
   `setEffort`, `login`, `logout`, `toggleAutoCompaction`, `toggleAutoRetry`.
+- **Interactive pickers** — `pickModel()` and `pickThinkingLevel()` provide
+  unified QuickPick dialogs (with ★ default / ✓ current indicators and
+  save-as-default prompts). These replaced duplicated implementations that
+  previously lived in `extension.ts` and `webview-panel.ts`. `pickModel()`
+  also surfaces SDK-reported pricing and context window in the `detail` field via
+  `PiService.formatModelDetail()`.
 - **Session listing** (`PiService.listSessions`, `PiService.deleteSessionFile`) —
   static methods for the Past Sessions tree view.
 
@@ -44,4 +50,4 @@ independently, leading to duplicated init logic and inconsistent error handling.
 - [Event Translation](event-translation.md) — how SDK events become PiServiceEvent types
 - [SDK Resolution & Init](../operations/sdk-resolution.md) — detailed walkthrough of the init sequence
 
-> **Last updated:** 2026-05-15 — initial documentation
+> **Last updated:** 2025-05-15 — added pickModel/pickThinkingLevel, de-duplicated pickers, added model pricing

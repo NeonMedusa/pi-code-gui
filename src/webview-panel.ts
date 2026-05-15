@@ -1826,98 +1826,12 @@ export class PiWebviewPanel {
 
   /** Open VS Code quick pick to pick a model for the current session */
   private async triggerModelPicker() {
-    const ps = this.piService;
-    let modelItems: Array<{ label: string; description: string; provider: string; modelId: string }> = [];
-
-    // Use the PiService's getAvailableModels for dynamic registry discovery
-    try {
-      const available = await ps.getAvailableModels();
-      if (available.length > 0) {
-        modelItems = available.map((m) => ({
-          label: m.name || m.id,
-          description: m.provider,
-          provider: m.provider,
-          modelId: m.id,
-        }));
-      }
-    } catch (e: any) { console.warn(`[pi-gui] getAvailableModels failed, using static fallback: ${e.message}`); }
-
-    // Fallback: static list of common models
-    if (modelItems.length === 0) {
-      const fallbackModels = [
-        { label: "Claude Sonnet 4.5", description: "anthropic", provider: "anthropic", modelId: "claude-sonnet-4-5" },
-        { label: "Claude Haiku 4.5", description: "anthropic", provider: "anthropic", modelId: "claude-haiku-4-5" },
-        { label: "Claude Opus 4.5", description: "anthropic", provider: "anthropic", modelId: "claude-opus-4-5" },
-        { label: "GPT 4o", description: "openai", provider: "openai", modelId: "gpt-4o" },
-        { label: "Gemini 2.5 Pro", description: "google", provider: "google", modelId: "gemini-2.5-pro" },
-        { label: "DeepSeek V3", description: "deepseek", provider: "deepseek", modelId: "deepseek-chat" },
-      ];
-      modelItems = fallbackModels;
-    }
-
-    const currentId = ps.model?.id;
-    const defModel = ps.getDefaultModel();
-    const items = modelItems.map((m) => {
-      const isDefault = defModel && m.provider === defModel.provider && m.modelId === defModel.id;
-      const isCurrent = m.modelId === currentId;
-      return {
-        label: `${m.label}${isDefault ? " \u2605" : ""}${isCurrent ? " $(check)" : ""}`,
-        description: m.description || m.provider,
-        provider: m.provider,
-        modelId: m.modelId,
-        isDefault,
-      };
-    });
-
-    const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select model (\u2605 = default)" });
-    if (!picked) { return; }
-
-    await ps.setModel(picked.provider, picked.modelId);
-
-    // Offer to save as default if not already
-    if (!picked.isDefault) {
-      const save = await vscode.window.showQuickPick(
-        [{ label: "\u2605 Save as default", description: "Use this model for future sessions" }],
-        { placeHolder: `Use ${picked.label.replace(/ \u2605| \$\(check\)/g, "")} as the default?` },
-      );
-      if (save) { ps.saveDefaultModel(); }
-    }
+    await this.piService.pickModel();
   }
 
   /** Open VS Code quick pick to pick thinking level */
   private async triggerThinkingPicker() {
-    const ps = this.piService;
-    const levels = [
-      { label: "off", description: "No thinking" },
-      { label: "minimal", description: "Minimal thinking" },
-      { label: "low", description: "Brief thinking" },
-      { label: "medium", description: "Balanced thinking" },
-      { label: "high", description: "Extended thinking" },
-      { label: "xhigh", description: "Maximum thinking" },
-    ];
-    const current = ps.thinkingLevel;
-    const defLevel = ps.getDefaultThinking();
-    const items = levels.map((l) => {
-      const isDefault = l.label === defLevel;
-      return {
-        label: `${l.label === current ? "$(check) " : ""}${l.label}${isDefault ? " \u2605" : ""}`,
-        description: l.description,
-        level: l.label,
-        isDefault,
-      };
-    });
-    const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select thinking level (\u2605 = default)" });
-    if (!picked) { return; }
-    await ps.setThinkingLevel(picked.level);
-
-    // Offer to save as default if not already
-    if (!picked.isDefault) {
-      const save = await vscode.window.showQuickPick(
-        [{ label: "\u2605 Save as default", description: "Use this thinking level for future sessions" }],
-        { placeHolder: `Use "${picked.level}" thinking as the default?` },
-      );
-      if (save) { ps.saveDefaultThinking(); }
-    }
+    await this.piService.pickThinkingLevel();
   }
 
   /** Open VS Code quick pick to set context budget */

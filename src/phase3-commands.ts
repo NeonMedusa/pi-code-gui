@@ -29,20 +29,7 @@ export function registerPhase3Commands(
   });
 
   safeRegister(context, "pi-code-gui.pickThinkingLevel", async () => {
-    const levels = ["off", "minimal", "low", "medium", "high", "xhigh"];
-    const cur = piService.thinkingLevel;
-    const items = levels.map(l => ({
-      label: `${l === cur ? "$(check) " : ""}${l}`,
-      description: describeLevel(l),
-      level: l,
-    }));
-    const picked = await vscode.window.showQuickPick(items, {
-      placeHolder: "Select thinking level (Shift+Tab)",
-    });
-    if (picked && typeof picked !== "string") {
-      await piService.setThinkingLevel(picked.level);
-      vscode.window.showInformationMessage(`Thinking: ${picked.level}`);
-    }
+    await piService.pickThinkingLevel();
   });
 
   safeRegister(context, "pi-code-gui.cycleThinkingLevel", async () => {
@@ -93,14 +80,6 @@ export function registerPhase3Commands(
   safeRegister(context, "pi-code-gui.exportSession", async () => {
     vscode.window.showInformationMessage("Export via /export command in chat.");
   });
-}
-
-function describeLevel(l: string): string {
-  const m: Record<string, string> = {
-    off: "None", minimal: "Minimal", low: "Brief",
-    medium: "Balanced", high: "Extended", xhigh: "Maximum",
-  };
-  return m[l] ?? "";
 }
 
 function nextLevel(cur: string): string {

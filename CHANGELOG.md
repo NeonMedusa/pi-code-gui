@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.0.21] — Model picker pricing & picker de-duplication
+
+### Added
+- **Model picker** shows SDK-reported pricing and context window in the detail line (e.g. `$3/$15 per M tokens · 200K context`). No pricing shown when the SDK isn't available.
+
+
 ## [0.0.20] — Slash commands, fork/clone, and UX hardening
 
 ### Changed
