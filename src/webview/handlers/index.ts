@@ -1,106 +1,50 @@
-(function () {
-  "use strict";
+import { state } from "../state.js";
+import { logEvent, logDom, summary as debugSummary, debugEventLog } from "../debug.js";
+import {
+  renderMarkdown, renderBlock, renderInline, patchBlockList,
+  escapeHtml, createMessageEl, createThinkingBlock, morphRender,
+  truncate, formatTokens, renderToolResult, renderFileContent,
+  renderDiffMarkup, formatToolError, getLangFromPath,
+  getCompactReadLabel, registerToolRenderer, getToolRenderer,
+  hideWelcome, resetChat, scrollToBottom, updateStreamingState,
+  renderToolResultTruncated, renderBlockToHTML,
+  syntaxHighlightLine, shortenPath, renderCodeBlockHTML,
+  setupCodeBlockHandlers,
+} from "../render/engine.js";
+import {
+  handleToolStart, handleToolUpdate, handleToolEnd,
+  writeToolRenderer, editToolRenderer, readToolRenderer,
+  bashToolRenderer, defaultToolRenderer,
+} from "../tools/index.js";
 
-  // ── Dependencies ────────────────────────────────────────
-  var state = window.__pi.state;
-  var core = window.__pi.core;
-  var tools = window.__pi.tools;
-  var app = window.__pi.app = {};
 
-  // ── Local aliases (state — objects/DOM refs) ────────────
-  var vscode = state.vscode;
-  var chatContainer = state.chatContainer;
-  var promptInput = state.promptInput;
-  var sendButton = state.sendButton;
-  var abortButton = state.abortButton;
-  var steerDropdown = state.steerDropdown;
-  var attachmentBar = state.attachmentBar;
-  var userMsgOverlay = state.userMsgOverlay;
-  var settingsOverlay = state.settingsOverlay;
-  var slashAutocomplete = state.slashAutocomplete;
-  var livePanel = state.livePanel;
-  var liveCards = state.liveCards;
-  var currentToolBlocks = state.currentToolBlocks;
-  var assistantToolCallIds = state.assistantToolCallIds;
-  var attachments = state.attachments;
-  var userMessageHistory = state.userMessageHistory;
-  var bashBlocks = state.bashBlocks;
-  var bashOutputs = state.bashOutputs;
-  var settingsState = state.settingsState;
-  var scopedModels = state.scopedModels;
-  var toolRenderers = state.toolRenderers;
-  var debugEventLog = state.debugEventLog;
-  var debugDomLog = state.debugDomLog;
-  var debugMaxEvents = state.debugMaxEvents;
-  var debugMaxDomLog = state.debugMaxDomLog;
-  var debugEnabled = state.debugEnabled;
+
 
   // ── Send mode when streaming: "steer" (default) or "queue" ──
-  var queueMode = "steer";
 
   // read-write primitives already replaced with state.xxx in body
 
-  // ── Local aliases (core functions — NOT defined in app.js) ──
-  var renderMarkdown = core.renderMarkdown;
-  var renderBlock = core.renderBlock;
-  var renderInline = core.renderInline;
-  var patchBlockList = core.patchBlockList;
-  var escapeHtml = core.escapeHtml;
-  var createMessageEl = core.createMessageEl;
-  var createThinkingBlock = core.createThinkingBlock;
-  var morphRender = core.morphRender;
-  var truncate = core.truncate;
-  var debugLogEvent = core.debugLogEvent;
-  var debugLogDom = core.debugLogDom;
-  var debugDumpChatStructure = core.debugDumpChatStructure;
-  var formatTokens = core.formatTokens;
-  var renderToolResult = core.renderToolResult;
-  var renderFileContent = core.renderFileContent;
-  var renderDiffMarkup = core.renderDiffMarkup;
-  var formatToolError = core.formatToolError;
-  var getLangFromPath = core.getLangFromPath;
-  var getCompactReadLabel = core.getCompactReadLabel;
-  var registerToolRenderer = core.registerToolRenderer;
-  var getToolRenderer = core.getToolRenderer;
-  var hideWelcome = core.hideWelcome;
-  var resetChat = core.resetChat;
-  var scrollToBottom = core.scrollToBottom;
-  var updateStreamingState = core.updateStreamingState;
-  var renderToolResultTruncated = core.renderToolResultTruncated;
-  var renderBlockToHTML = core.renderBlockToHTML;
-  var syntaxHighlightLine = core.syntaxHighlightLine;
-  var shortenPath = core.shortenPath;
-  var renderCodeBlockHTML = core.renderCodeBlockHTML;
-  var postProcessMarkedHTML = core.postProcessMarkedHTML;
-  var renderTableBlock = core.renderTableBlock;
-  var setupCodeBlockHandlers = core.setupCodeBlockHandlers;
 
-  // ── Local aliases (tools functions) ─────────────────────
-  var handleToolStart = tools.handleToolStart;
-  var handleToolUpdate = tools.handleToolUpdate;
-  var handleToolEnd = tools.handleToolEnd;
-  var bashToolRenderer = tools.bashToolRenderer;
 
   // ═══ Message Renderer Registry ════════════════════════════
   //
   // Custom message types (from pi extensions) can register
   // renderers that produce DOM for the live panel.
 
-  var messageRenderers = {};
 
-  function registerMessageRenderer(customType, rendererFn) {
-    messageRenderers[customType] = rendererFn;
+export function registerMessageRenderer(customType, rendererFn) {
+    state.messageRenderers[customType] = rendererFn;
   }
 
-  function getMessageRenderer(customType) {
-    return messageRenderers[customType];
+export function getMessageRenderer(customType) {
+    return state.messageRenderers[customType];
   }
 
   // Expose for pi extensions to register custom message renderers
   window.__piRegisterMessageRenderer = registerMessageRenderer;
 
   // Default message renderer: creates a collapsible live-panel card
-  function defaultMessageRenderer(data) {
+export function defaultMessageRenderer(data) {
     var customType = data.customType || "custom";
     var content = "";
     if (typeof data.content === "string") {
@@ -113,11 +57,11 @@
     }
 
     // Live-updating card: replace content in-place
-    if (liveCards[customType]) {
-      liveCards[customType].querySelector(".live-card-content").innerHTML = renderMarkdown(content);
-      liveCards[customType].classList.add("live-card-collapsed");
-      liveCards[customType].querySelector(".live-card-content").style.display = "none";
-      var exp = liveCards[customType].querySelector(".live-card-expando");
+    if (state.liveCards[customType]) {
+      state.liveCards[customType].querySelector(".live-card-content").innerHTML = renderMarkdown(content);
+      state.liveCards[customType].classList.add("live-card-collapsed");
+      state.liveCards[customType].querySelector(".live-card-content").style.display = "none";
+      var exp = state.liveCards[customType].querySelector(".live-card-expando");
       if (exp) { exp.textContent = "\u25B8"; }
       return;
     }
@@ -132,33 +76,33 @@
   }
 
   /** Create a collapsible live-panel card. Returns the card element. */
-  function createLiveCard(customType, label, content) {
+export function createLiveCard(customType, label, content) {
     var card = document.createElement("div");
     card.className = "live-card live-card-collapsed";
     card.setAttribute("data-type", customType);
     card.innerHTML =
       '<div class="live-card-label"><span class="live-card-expando">\u25B8</span> ' + escapeHtml(label) + '</div>' +
       '<button class="live-card-close" title="Dismiss">&times;</button>' +
-      '<div class="live-card-content" style="display:none">' + renderMarkdown(content) + '</div>';
+      '<div class="live-card-content">' + renderMarkdown(content) + '</div>';
     card.querySelector(".live-card-label").addEventListener("click", function () {
       var wasCollapsed = card.classList.contains("live-card-collapsed");
       if (wasCollapsed) {
         card.classList.remove("live-card-collapsed");
-        card.querySelector(".live-card-expando").textContent = "\u25BE";
-        card.querySelector(".live-card-content").style.display = "";
+        (card.querySelector(".live-card-expando") as HTMLElement).textContent = "\u25BE";
+        (card.querySelector(".live-card-content") as HTMLElement).style.display = "";
       } else {
         card.classList.add("live-card-collapsed");
-        card.querySelector(".live-card-expando").textContent = "\u25B8";
-        card.querySelector(".live-card-content").style.display = "none";
+        (card.querySelector(".live-card-expando") as HTMLElement).textContent = "\u25B8";
+        (card.querySelector(".live-card-content") as HTMLElement).style.display = "none";
       }
     });
     card.querySelector(".live-card-close").addEventListener("click", function (e) {
       e.stopPropagation();
       dismissLiveCard(customType);
     });
-    livePanel.appendChild(card);
-    liveCards[customType] = card;
-    livePanel.classList.add("visible");
+    state.livePanel.appendChild(card);
+    state.liveCards[customType] = card;
+    state.livePanel.classList.add("visible");
     return card;
   }
 
@@ -169,7 +113,7 @@
     var msg = event.data;
     // Debug: log every incoming extension message (skip high-frequency stream deltas)
     if (msg.type !== "stream-delta" && msg.type !== "thinking-delta" && msg.type !== "tool-update" && msg.type !== "bash-output") {
-      debugLogEvent("recv:" + msg.type, msg.data || msg);
+      logEvent("recv:" + msg.type, msg.data || msg);
     }
     switch (msg.type) {
       // Agent lifecycle
@@ -195,7 +139,7 @@
       // Session events
       case "status-update":       handleStatusUpdate(msg.data); break;
       case "status":              handleStatus(msg.data); break;
-      case "queue-update":        debugEventLog.push({ t: Date.now(), type: "queue-update", s: msg.data?.steering?.length, f: msg.data?.followUp?.length }); handleQueueUpdate(msg.data); break;
+      case "queue-update":        logEvent("queue-update", { s: msg.data?.steering?.length, f: msg.data?.followUp?.length }); handleQueueUpdate(msg.data); break;
       case "compaction-start":    handleCompactionStart(msg.data); break;
       case "compaction-end":      handleCompactionEnd(msg.data); break;
       case "auto-retry-start":    handleAutoRetryStart(msg.data); break;
@@ -235,11 +179,11 @@
   // ═══ Agent Lifecycle ═══════════════════════════════════
   // ═══ Agent Lifecycle ═══════════════════════════════════
 
-  function handleAgentStart() {
-    debugLogEvent("agent-start", { bashBlocksN: Object.keys(bashBlocks).length, toolBlocksN: Object.keys(currentToolBlocks).length });
+export function handleAgentStart() {
+    logEvent("agent-start", { bashBlocksN: Object.keys(state.bashBlocks).length, toolBlocksN: Object.keys(state.currentToolBlocks).length });
     state.isStreaming = true;
-    queueMode = "steer";  // reset to default on new stream
-    assistantToolCallIds = {};
+    state.queueMode = "steer";  // reset to default on new stream
+    state.assistantToolCallIds = {};
     // Do NOT clear the live panel here — extension cards (like tldr summaries)
     // should persist across prompts and be replaced only when new output of
     // the same type arrives, or when the extension explicitly removes them.
@@ -249,23 +193,23 @@
     setSbDot("streaming");
   }
 
-  function handleAgentEnd() {
+export function handleAgentEnd() {
     setSbDot("idle");
     // Stop thinking spinner (safety net)
     if (state.currentThinkingEl) {
       var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
-      if (thSpinner) thSpinner.remove();
+      if (thSpinner) {thSpinner.remove();}
     }
 
-    debugLogEvent("agent-end:BEFORE", {
-      bashBlocksN: Object.keys(bashBlocks).length,
-      toolBlocksN: Object.keys(currentToolBlocks).length,
-      bashKeys: Object.keys(bashBlocks),
-      toolKeys: Object.keys(currentToolBlocks),
+    logEvent("agent-end:BEFORE", {
+      bashBlocksN: Object.keys(state.bashBlocks).length,
+      toolBlocksN: Object.keys(state.currentToolBlocks).length,
+      bashKeys: Object.keys(state.bashBlocks),
+      toolKeys: Object.keys(state.currentToolBlocks),
     });
     state.isStreaming = false;
     state.isRetrying = false;
-    assistantToolCallIds = {};
+    state.assistantToolCallIds = {};
     removeWorkingIndicator();
     removeCompactionIndicator();
     removeRetryIndicator();
@@ -301,8 +245,8 @@
     }
 
     // Finalize any pending tool blocks
-    Object.keys(currentToolBlocks).forEach(function (id) {
-      var entry = currentToolBlocks[id];
+    Object.keys(state.currentToolBlocks).forEach(function (id) {
+      var entry = state.currentToolBlocks[id];
       var block = entry.el || entry;
       if (block && block.getAttribute("data-status") === "running") {
         var statusEl = block.querySelector(".tool-status");
@@ -313,18 +257,18 @@
         block.setAttribute("data-status", "done");
       }
     });
-    currentToolBlocks = {};
+    state.currentToolBlocks = {};
 
     // Also finalize any dangling bash blocks that were never closed
-    Object.keys(bashBlocks).forEach(function (id) {
-      var block = bashBlocks[id];
+    Object.keys(state.bashBlocks).forEach(function (id) {
+      var block = state.bashBlocks[id];
       if (block && block.getAttribute && block.getAttribute("data-status") === "running") {
-        debugLogEvent("agent-end:ORPHAN-BASH", { toolCallId: id, inDOM: !!block.parentElement });
+        logEvent("agent-end:ORPHAN-BASH", { toolCallId: id, inDOM: !!block.parentElement });
         block.setAttribute("data-status", "done");
         var footer = block.querySelector(".bash-footer");
         if (footer) { footer.innerHTML = '<span class="exit-code">exit: -</span> <span>(ended)</span>'; }
-        delete bashBlocks[id];
-        delete bashOutputs[id];
+        delete state.bashBlocks[id];
+        delete state.bashOutputs[id];
       }
     });
 
@@ -334,11 +278,11 @@
   // ═══ Turn Lifecycle ════════════════════════════════════
   // ═══ Turn Lifecycle ════════════════════════════════════
 
-  function handleTurnStart(data) {
+export function handleTurnStart(data) {
     hideWelcome();
   }
 
-  function handleTurnEnd(data) {
+export function handleTurnEnd(data) {
     if (data && data.message && data.message.role === "assistant" && data.message.errorMessage) {
       if (state.currentAssistantEl) {
         addErrorToElement(state.currentAssistantEl, data.message.errorMessage);
@@ -349,14 +293,14 @@
   // ═══ Message Lifecycle ═════════════════════════════════
   // ═══ Message Lifecycle ═════════════════════════════════
 
-  function handleChatMessage(data) {
+export function handleChatMessage(data) {
     // Dedup: skip if same role+content as last user message
-    if (data.role === "user" && data.content === state.lastUserMessageContent) return;
+    if (data.role === "user" && data.content === state.lastUserMessageContent) {return;}
     if (data.role === "user") {
       state.lastUserMessageContent = data.content;
-      // Populate userMessageHistory for up-arrow recall (#2)
-      userMessageHistory.unshift({ text: data.content });
-      if (userMessageHistory.length > 50) userMessageHistory.pop();
+      // Populate state.userMessageHistory for up-arrow recall (#2)
+      state.userMessageHistory.unshift({ text: data.content });
+      if (state.userMessageHistory.length > 50) {state.userMessageHistory.pop();}
     }
 
     hideWelcome();
@@ -364,7 +308,7 @@
 
     var el = createMessageEl(data.role);
     // #9: Entry ID for scroll-to
-    if (data.entryId) el.id = "entry-" + data.entryId;
+    if (data.entryId) {el.id = "entry-" + data.entryId;}
     var mc = el.querySelector(".message-content");
     if (mc) {
       // Use block rendering for user messages (one-shot, no streaming)
@@ -377,26 +321,26 @@
         mc.innerHTML = renderMarkdown(data.content);
       }
     }
-    chatContainer.appendChild(el);
+    state.chatContainer.appendChild(el);
     scrollToBottom();
   }
 
-  function handleAssistantStart(data) {
+export function handleAssistantStart(data) {
     hideWelcome();
     removeWorkingIndicator();
 
     // Create the assistant container eagerly before any content arrives
     state.currentAssistantEl = createMessageEl("assistant");
     // #9: Entry ID for scroll-to
-    if (data.entryId) state.currentAssistantEl.id = "entry-" + data.entryId;
+    if (data.entryId) {state.currentAssistantEl.id = "entry-" + data.entryId;}
     state.currentThinkingEl = null;
     state._streamPrevTokens = [];  // Reset token tracker for new message
-    assistantToolCallIds = {};
-    chatContainer.appendChild(state.currentAssistantEl);
+    state.assistantToolCallIds = {};
+    state.chatContainer.appendChild(state.currentAssistantEl);
     scrollToBottom();
   }
 
-  function handleAssistantEnd(data) {
+export function handleAssistantEnd(data) {
     // Finalize the assistant message
     if (state.currentAssistantEl) {
       // Flush any pending batched renders before finalizing
@@ -431,7 +375,7 @@
           // Mark any pending tool blocks as errored
           if (data.toolCalls) {
             data.toolCalls.forEach(function (tcId) {
-              var entry = currentToolBlocks[tcId];
+              var entry = state.currentToolBlocks[tcId];
               var block = entry ? (entry.el || entry) : null;
               if (block) {
                 var statusEl = block.querySelector(".tool-status");
@@ -440,7 +384,7 @@
                   statusEl.className = "tool-status error";
                 }
                 block.setAttribute("data-status", "error");
-                delete currentToolBlocks[tcId];
+                delete state.currentToolBlocks[tcId];
               }
             });
           }
@@ -460,17 +404,15 @@
   // the token lists: only the last (in-progress) block is morphed;
   // all prior completed blocks are untouched. This avoids O(n²)
   // full-content re-renders during streaming.
-  var _streamRafId = null;
-  var _streamContentEl = null;
 
-  function _scheduleStreamRender(contentEl) {
-    if (_streamRafId) return;
-    _streamContentEl = contentEl;
-    _streamRafId = requestAnimationFrame(function () {
-      _streamRafId = null;
-      if (!_streamContentEl) return;
-      var el = _streamContentEl;
-      _streamContentEl = null;
+export function _scheduleStreamRender(contentEl) {
+    if (state._streamRafId) {return;}
+    state._streamContentEl = contentEl;
+    state._streamRafId = requestAnimationFrame(function () {
+      state._streamRafId = null;
+      if (!state._streamContentEl) {return;}
+      var el = state._streamContentEl;
+      state._streamContentEl = null;
 
       // Save thinking block before patching (it's prepended, not part of blocks)
       var savedThinkingBlock = state.currentThinkingEl || el.querySelector(".thinking-block");
@@ -500,15 +442,15 @@
   }
 
   /** Flush any pending rAF render immediately (called before finalize). */
-  function _flushStreamRender() {
+export function _flushStreamRender() {
     // Flush thinking text first so it's visible in the final render
     _flushThinkingRender();
-    if (_streamRafId) {
-      cancelAnimationFrame(_streamRafId);
-      _streamRafId = null;
-      if (_streamContentEl) {
-        var el = _streamContentEl;
-        _streamContentEl = null;
+    if (state._streamRafId) {
+      cancelAnimationFrame(state._streamRafId);
+      state._streamRafId = null;
+      if (state._streamContentEl) {
+        var el = state._streamContentEl;
+        state._streamContentEl = null;
 
         var savedThinkingBlock = state.currentThinkingEl || el.querySelector(".thinking-block");
         // Temporarily detach thinking block so patchBlockList only sees token children
@@ -535,14 +477,14 @@
     }
   }
 
-  function handleStreamDelta(data) {
+export function handleStreamDelta(data) {
     hideWelcome();
     if (!state.currentAssistantEl) {
       // Safety: create container if assistant-start was missed
       state.currentAssistantEl = createMessageEl("assistant");
       state.currentThinkingEl = null;
       state._streamPrevTokens = [];
-      chatContainer.appendChild(state.currentAssistantEl);
+      state.chatContainer.appendChild(state.currentAssistantEl);
     }
     var contentEl = state.currentAssistantEl.querySelector(".message-content");
     if (contentEl) {
@@ -561,17 +503,15 @@
   // ── rAF-batched thinking delta ───────────────────────
   // Uses textContent (no HTML parse) for efficiency, batched
   // per animation frame like stream deltas.
-  var _thinkingRafId = null;
-  var _thinkingEl = null;   // the .thinking-content element
 
-  function _scheduleThinkingRender(tc) {
-    if (_thinkingRafId) return;
-    _thinkingEl = tc;
-    _thinkingRafId = requestAnimationFrame(function () {
-      _thinkingRafId = null;
-      if (!_thinkingEl) return;
-      var el = _thinkingEl;
-      _thinkingEl = null;
+export function _scheduleThinkingRender(tc) {
+    if (state._thinkingRafId) {return;}
+    state._thinkingEl = tc;
+    state._thinkingRafId = requestAnimationFrame(function () {
+      state._thinkingRafId = null;
+      if (!state._thinkingEl) {return;}
+      var el = state._thinkingEl;
+      state._thinkingEl = null;
       // Flush accumulated text via textContent (avoids HTML parse)
       var raw = el.getAttribute("data-raw") || "";
       el.textContent = raw;
@@ -580,7 +520,7 @@
       if (block) {
         var lineCount = block.querySelector(".thinking-line-count");
         var lines = raw ? raw.split("\n").length : 0;
-        if (lineCount) lineCount.textContent = lines > 0 ? "(" + lines + " lines)" : "";
+        if (lineCount) {lineCount.textContent = lines > 0 ? "(" + lines + " lines)" : "";}
         // Toggle gradient overlay when content overflows
         if (el.scrollHeight > el.clientHeight + 2) {
           el.classList.add("overflowing");
@@ -606,26 +546,26 @@
     });
   }
 
-  function _flushThinkingRender() {
-    if (_thinkingRafId) {
-      cancelAnimationFrame(_thinkingRafId);
-      _thinkingRafId = null;
-      if (_thinkingEl) {
-        var el = _thinkingEl;
-        _thinkingEl = null;
+export function _flushThinkingRender() {
+    if (state._thinkingRafId) {
+      cancelAnimationFrame(state._thinkingRafId);
+      state._thinkingRafId = null;
+      if (state._thinkingEl) {
+        var el = state._thinkingEl;
+        state._thinkingEl = null;
         var raw = el.getAttribute("data-raw") || "";
         el.textContent = raw;
       }
     }
   }
 
-  function handleThinkingDelta(data) {
+export function handleThinkingDelta(data) {
     if (data.done) {
       _flushThinkingRender();
       // Remove spinner when thinking completes, finalize expand button
       if (state.currentThinkingEl) {
         var spinner = state.currentThinkingEl.querySelector(".thinking-spinner");
-        if (spinner) spinner.remove();
+        if (spinner) {spinner.remove();}
         var block = state.currentThinkingEl;
         var contentEl = block.querySelector(".thinking-content");
         var btn = block.querySelector(".thinking-expand-btn");
@@ -649,7 +589,7 @@
       state.currentThinkingEl = createThinkingBlock("");
       if (state.currentAssistantEl) {
         var mc = state.currentAssistantEl.querySelector(".message-content");
-        if (mc) mc.prepend(state.currentThinkingEl);
+        if (mc) {mc.prepend(state.currentThinkingEl);}
       }
     }
     var tc = state.currentThinkingEl.querySelector(".thinking-content");
@@ -667,29 +607,29 @@
 
   // ═══ In-webview status bar ═══════════════════════════
 
-  var sbDot = document.getElementById("pi-sb-dot");
-  var sbModel = document.getElementById("pi-sb-model");
-  var sbThinking = document.getElementById("pi-sb-thinking");
-  var sbEffort = document.getElementById("pi-sb-effort");
-  var sbUsage = document.getElementById("pi-sb-usage");
+let sbDot = document.getElementById("pi-sb-dot");
+let sbModel = document.getElementById("pi-sb-model");
+let sbThinking = document.getElementById("pi-sb-thinking");
+let sbEffort = document.getElementById("pi-sb-effort");
+let sbUsage = document.getElementById("pi-sb-usage");
 
-  function setSbDot(state) {
-    if (!sbDot) return;
+export function setSbDot(state) {
+    if (!sbDot) {return;}
     sbDot.textContent = state === "streaming" ? "\u25CF" : "\u25CB";
   }
 
-  function sbModelText(modelId) {
+export function sbModelText(modelId) {
     var short = modelId || "Pi";
     // Shorten known prefixes for compact display
-    if (short.startsWith("anthropic/")) short = short.slice(10);
-    else if (short.startsWith("openai/")) short = short.slice(7);
-    else if (short.startsWith("google/")) short = short.slice(7);
-    if (short.length > 24) short = short.slice(0, 22) + "\u2026";
+    if (short.startsWith("anthropic/")) {short = short.slice(10);}
+    else if (short.startsWith("openai/")) {short = short.slice(7);}
+    else if (short.startsWith("google/")) {short = short.slice(7);}
+    if (short.length > 24) {short = short.slice(0, 22) + "\u2026";}
     return "\u03C0 " + short;
   }
 
-  function handleStatusUpdate(data) {
-    if (data.reset) return;
+export function handleStatusUpdate(data) {
+    if (data.reset) {return;}
 
     if (sbModel && data.model) {
       sbModel.textContent = sbModelText(data.model);
@@ -703,21 +643,21 @@
     if (sbUsage && data.usage) {
       var parts = [];
       var u = data.usage;
-      if (u.input > 0) parts.push("\u2191" + core.formatTokens(u.input));
-      if (u.output > 0) parts.push("\u2193" + core.formatTokens(u.output));
-      if (u.cost > 0) parts.push("$" + u.cost.toFixed(2));
-      if (u.contextPercent != null) parts.push(u.contextPercent.toFixed(0) + "%");
+      if (u.input > 0) {parts.push("\u2191" + formatTokens(u.input));}
+      if (u.output > 0) {parts.push("\u2193" + formatTokens(u.output));}
+      if (u.cost > 0) {parts.push("$" + u.cost.toFixed(2));}
+      if (u.contextPercent !== undefined) {parts.push(u.contextPercent.toFixed(0) + "%");}
       sbUsage.textContent = parts.length > 0 ? parts.join(" ") : "0%";
     }
-    setSbDot(data.isStreaming ? "streaming" : "idle");
+    setSbDot(data.state.isStreaming ? "streaming" : "idle");
   }
 
-  function handleStatus(data) {
+export function handleStatus(data) {
     if (data.ready) {
-      promptInput.disabled = false;
-      sendButton.disabled = false;
-      promptInput.placeholder = "Ask pi to do something...";
-      promptInput.focus();
+      state.promptInput.disabled = false;
+      state.sendButton.disabled = false;
+      state.promptInput.placeholder = "Ask pi to do something...";
+      state.promptInput.focus();
       if (sbModel && data.model) {
         sbModel.textContent = sbModelText(data.model);
       }
@@ -729,33 +669,33 @@
       }
       setSbDot("idle");
     } else if (data.model === "not installed" || data.model === "init failed") {
-      promptInput.disabled = true;
-      sendButton.disabled = true;
+      state.promptInput.disabled = true;
+      state.sendButton.disabled = true;
     }
   }
 
-  function handleBatchStart(data) {
+export function handleBatchStart(data) {
     state._inBatch = true;
-    // If restoring history, hide welcome immediately — no flash
+    // If restoring history, hide state.welcome immediately — no flash
     if (data.hasEntries) { hideWelcome(); }
     document.body.classList.add("no-animate");
   }
 
-  function handleBatchEnd(data) {
+export function handleBatchEnd(data) {
     state._inBatch = false;
     document.body.classList.remove("no-animate");
-    // For fresh sessions, welcome was never hidden — keep it visible
-    // For restores, welcome is already hidden
-    // Force-scroll to bottom after batch replay (ignores hasScrolledUp).
+    // For fresh sessions, state.welcome was never hidden — keep it visible
+    // For restores, state.welcome is already hidden
+    // Force-scroll to bottom after batch replay (ignores state.hasScrolledUp).
     // Use a double-rAF so layout has settled before reading scrollHeight.
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+        state.chatContainer.scrollTop = state.chatContainer.scrollHeight;
       });
     });
   }
 
-  function handleQueueUpdate(data) {
+export function handleQueueUpdate(data) {
     // Track for /debug inspection
     (window.__piDebug._queueEvents = window.__piDebug._queueEvents || []).push({
       ts: Date.now(),
@@ -763,42 +703,40 @@
       followUp: (data.followUp || []).length,
       streaming: state.isStreaming,
     });
-    if (window.__piDebug._queueEvents.length > 20) window.__piDebug._queueEvents.shift();
+    if (window.__piDebug._queueEvents.length > 20) {window.__piDebug._queueEvents.shift();}
 
     var existing = document.getElementById("pending-queue-indicator");
-    if (existing) existing.remove();
+    if (existing) {existing.remove();}
 
     var steering = data.steering || [];
     var followUp = data.followUp || [];
-    if (steering.length === 0 && followUp.length === 0) return;
+    if (steering.length === 0 && followUp.length === 0) {return;}
 
     var el = document.createElement("div");
     el.id = "pending-queue-indicator";
-    el.style.cssText =
-      "flex-shrink: 0; padding: 6px 16px; font-size: 0.8em; color: var(--vscode-descriptionForeground); " +
-      "background: var(--vscode-sideBar-background); border-top: 1px solid var(--vscode-panel-border);";
+    el.className = "queue-indicator";
 
     var html = "";
 
     // Steering messages — already interrupting, show with label
     steering.forEach(function (m) {
-      html += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">' +
-        '<span style="font-weight:600;">Steer:</span> ' +
-        '<span style="flex:1;">' + escapeHtml(m) + '</span></div>';
+      html += '<div class="queue-row">' +
+        '<span class="queue-label">Steer:</span> ' +
+        '<span class="queue-text">' + escapeHtml(m) + '</span></div>';
     });
 
     // Follow-up messages — queued, with promote button
     followUp.forEach(function (m, i) {
-      html += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">' +
-        '<span style="font-weight:600;">Queue:</span> ' +
-        '<span style="flex:1;">' + escapeHtml(m) + '</span>' +
-        '<button class="queue-promote-btn" data-idx="' + i + '" title="Promote to Steer (interrupt now)" style="font-size:0.75em;padding:1px 6px;cursor:pointer;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:3px;">Steer now</button>' +
+      html += '<div class="queue-row">' +
+        '<span class="queue-label">Queue:</span> ' +
+        '<span class="queue-text">' + escapeHtml(m) + '</span>' +
+        '<button class="queue-promote-btn" data-idx="' + i + '" title="Promote to Steer (interrupt now)">Steer now</button>' +
         '</div>';
     });
 
     // Clear all button — always show when there are items
-    html += '<div style="margin-top:6px;text-align:right;">' +
-      '<button class="queue-clear-btn" style="font-size:0.8em;padding:3px 12px;cursor:pointer;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;border-radius:4px;">✕ Clear all queued</button>' +
+    html += '<div class="queue-actions">' +
+      '<button class="queue-clear-btn">✕ Clear all queued</button>' +
       '</div>';
 
     el.innerHTML = html;
@@ -810,7 +748,7 @@
         var msg = (data.followUp || [])[idx];
         if (msg) {
           // Promote: clear all queues, then re-steer this message
-          vscode.postMessage({ type: "promoteToSteer", text: msg });
+          window.__vscode.postMessage({ type: "promoteToSteer", text: msg });
         }
       });
     });
@@ -819,7 +757,7 @@
     var clearBtn = el.querySelector(".queue-clear-btn");
     if (clearBtn) {
       clearBtn.addEventListener("click", function () {
-        vscode.postMessage({ type: "clearQueue" });
+        window.__vscode.postMessage({ type: "clearQueue" });
       });
     }
 
@@ -829,14 +767,14 @@
     }
   }
 
-  function handleCompactionStart(data) {
+export function handleCompactionStart(data) {
     state.isCompacting = true;
     removeCompactionIndicator();
     addCompactionIndicator(data.reason === "manual" ? "Compacting..." : "Auto-compacting...");
     updateStreamingState();
   }
 
-  function handleCompactionEnd(data) {
+export function handleCompactionEnd(data) {
     state.isCompacting = false;
     removeCompactionIndicator();
     if (data.aborted) {
@@ -849,14 +787,14 @@
     updateStreamingState();
   }
 
-  function handleAutoRetryStart(data) {
+export function handleAutoRetryStart(data) {
     state.isRetrying = true;
     removeRetryIndicator();
     addRetryIndicator(data.attempt, data.maxAttempts, data.delayMs);
     updateStreamingState();
   }
 
-  function handleAutoRetryEnd(data) {
+export function handleAutoRetryEnd(data) {
     state.isRetrying = false;
     removeRetryIndicator();
     if (!data.success) {
@@ -865,7 +803,7 @@
     updateStreamingState();
   }
 
-  function handleThinkingLevelChanged(data) {
+export function handleThinkingLevelChanged(data) {
     if (sbThinking && data.level) {
       sbThinking.textContent = "thinking: " + data.level;
     }
@@ -873,7 +811,7 @@
 
   // ═══ Error Handling ════════════════════════════════════
 
-  function handleError(data) {
+export function handleError(data) {
     hideWelcome();
     removeWorkingIndicator();
     removeCompactionIndicator();
@@ -883,7 +821,7 @@
     state.isStreaming = false;
     if (state.currentAssistantEl) {
       var mc = state.currentAssistantEl.querySelector(".message-content");
-      if (mc) mc.classList.remove("streaming-cursor");
+      if (mc) {mc.classList.remove("streaming-cursor");}
       state.currentAssistantEl = null;
       state.currentThinkingEl = null;
     }
@@ -894,15 +832,15 @@
   // ═══ UI Helpers — Indicators ═══════════════════════════
   // ═══ UI Helpers — Indicators ═══════════════════════════
 
-  function addWorkingIndicator() {
+export function addWorkingIndicator() {
     var existing = document.getElementById("working-indicator");
-    if (existing) return;
+    if (existing) {return;}
     var el = document.createElement("div");
     el.id = "working-indicator";
     el.className = "message assistant";
     el.innerHTML =
       '<div class="message-content"><span class="working-spinner">○</span> Working...</div>';
-    chatContainer.appendChild(el);
+    state.chatContainer.appendChild(el);
     scrollToBottom();
 
     // Animate spinner
@@ -911,28 +849,28 @@
     el._spinnerInterval = setInterval(function () {
       frame = (frame + 1) % frames.length;
       var s = el.querySelector(".working-spinner");
-      if (s) s.textContent = frames[frame];
+      if (s) {s.textContent = frames[frame];}
     }, 300);
   }
 
-  function removeWorkingIndicator() {
+export function removeWorkingIndicator() {
     var el = document.getElementById("working-indicator");
     if (el) {
-      if (el._spinnerInterval) clearInterval(el._spinnerInterval);
+      if (el._spinnerInterval) {clearInterval(el._spinnerInterval);}
       el.remove();
     }
   }
 
-  function addCompactionIndicator(message) {
+export function addCompactionIndicator(message) {
     var existing = document.getElementById("compaction-indicator");
-    if (existing) existing.remove();
+    if (existing) {existing.remove();}
     var el = document.createElement("div");
     el.id = "compaction-indicator";
     el.className = "message assistant";
     el.innerHTML =
-      '<div class="message-content" style="color: var(--vscode-editorWarning-foreground);">' +
+      '<div class="message-content warning">' +
       '<span class="working-spinner">◆</span> ' + escapeHtml(message) + '</div>';
-    chatContainer.appendChild(el);
+    state.chatContainer.appendChild(el);
     scrollToBottom();
 
     var frames = ["◇", "◆", "◇", "◆"];
@@ -940,29 +878,29 @@
     el._spinnerInterval = setInterval(function () {
       frame = (frame + 1) % frames.length;
       var s = el.querySelector(".working-spinner");
-      if (s) s.textContent = frames[frame];
+      if (s) {s.textContent = frames[frame];}
     }, 400);
   }
 
-  function removeCompactionIndicator() {
+export function removeCompactionIndicator() {
     var el = document.getElementById("compaction-indicator");
     if (el) {
-      if (el._spinnerInterval) clearInterval(el._spinnerInterval);
+      if (el._spinnerInterval) {clearInterval(el._spinnerInterval);}
       el.remove();
     }
   }
 
-  function addRetryIndicator(attempt, maxAttempts, delayMs) {
+export function addRetryIndicator(attempt, maxAttempts, delayMs) {
     var existing = document.getElementById("retry-indicator");
-    if (existing) existing.remove();
+    if (existing) {existing.remove();}
     var el = document.createElement("div");
     el.id = "retry-indicator";
     el.className = "message assistant";
     el.innerHTML =
-      '<div class="message-content" style="color: var(--vscode-editorWarning-foreground);">' +
+      '<div class="message-content warning">' +
       '<span class="working-spinner">↻</span> Retrying (' + attempt + '/' + maxAttempts +
       ') in ' + Math.ceil(delayMs / 1000) + 's...</div>';
-    chatContainer.appendChild(el);
+    state.chatContainer.appendChild(el);
     scrollToBottom();
 
     // Countdown
@@ -971,7 +909,7 @@
       remaining -= 1000;
       if (remaining <= 0) {
         var span = el.querySelector(".retry-countdown");
-        if (span) span.textContent = "0s";
+        if (span) {span.textContent = "0s";}
         clearInterval(el._countdownInterval);
       } else {
         var spans = el.querySelectorAll("span");
@@ -985,10 +923,10 @@
     }, 1000);
   }
 
-  function removeRetryIndicator() {
+export function removeRetryIndicator() {
     var el = document.getElementById("retry-indicator");
     if (el) {
-      if (el._countdownInterval) clearInterval(el._countdownInterval);
+      if (el._countdownInterval) {clearInterval(el._countdownInterval);}
       el.remove();
     }
   }
@@ -996,19 +934,19 @@
   // ═══ UI Helpers — Chat additions ═══════════════════════
   // ═══ UI Helpers — Chat additions ═══════════════════════
 
-  function addStatusMessage(message) {
+export function addStatusMessage(message) {
     var el = document.createElement("div");
     el.className = "message assistant";
-    el.innerHTML = '<div class="message-content" style="color: var(--vscode-descriptionForeground);">' +
+    el.innerHTML = '<div class="message-content muted">' +
       escapeHtml(message) + '</div>';
-    chatContainer.appendChild(el);
+    state.chatContainer.appendChild(el);
     scrollToBottom();
   }
 
-  function showQuickstartGuide() {
+export function showQuickstartGuide() {
     // Remove any previous guide
     var existing = document.getElementById("quickstart-guide");
-    if (existing) existing.remove();
+    if (existing) {existing.remove();}
 
     var el = document.createElement("div");
     el.id = "quickstart-guide";
@@ -1043,15 +981,15 @@
       '<p>Once your key is set, type a request and press Enter:</p>' +
       '<pre><code>Summarize this project and tell me how to run its checks.</code></pre>' +
 
-      '<p style="margin-top:12px;"><a href="https://pi.dev/docs/latest/quickstart">📚 Full quickstart guide →</a>  ·  ' +
+      '<p style="margin-top:12px"><a href="https://pi.dev/docs/latest/quickstart">📚 Full quickstart guide →</a>  ·  ' +
       '<a href="https://pi.dev/docs/latest/providers">🔑 All supported providers →</a></p>' +
 
       '</div>' +
       '</details>';
-    chatContainer.appendChild(el);
+    state.chatContainer.appendChild(el);
   }
 
-  function addErrorMessage(message) {
+export function addErrorMessage(message) {
     var el = document.createElement("div");
     el.className = "message assistant";
 
@@ -1076,12 +1014,12 @@
     }
 
     el.innerHTML =
-      '<div class="message-content" style="color: var(--vscode-errorForeground);">' +
+      '<div class="message-content error">' +
       '⚠ ' + heading + '<br><br>' +
       renderMarkdown(msg) +
       '<br><br>' + help +
       '</div>';
-    chatContainer.appendChild(el);
+    state.chatContainer.appendChild(el);
 
     // Show inline quickstart guide for API key errors
     if (isApiKeyError) {
@@ -1091,10 +1029,10 @@
     scrollToBottom();
   }
 
-  function addErrorToElement(parentEl, message) {
-    if (!parentEl) return;
+export function addErrorToElement(parentEl, message) {
+    if (!parentEl) {return;}
     var errorEl = document.createElement("div");
-    errorEl.style.cssText = "color: var(--vscode-errorForeground); margin-top: 8px; padding: 4px 0;";
+    errorEl.className = 'message-content error'; errorEl.style.cssText = 'margin-top: 8px; padding: 4px 0;';
     errorEl.textContent = "\u26A0 " + message;
     parentEl.appendChild(errorEl);
   }
@@ -1104,42 +1042,42 @@
 
   // ═══ Attachment Handling ═══════════════════════════════
 
-  function generateAttId() {
+export function generateAttId() {
     return "att_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
   }
 
-  function clearAttachments() {
+export function clearAttachments() {
     // Revoke blob URLs to free memory
-    attachments.forEach(function (a) {
-      if (a.blobUrl) URL.revokeObjectURL(a.blobUrl);
+    state.attachments.forEach(function (a) {
+      if (a.blobUrl) {URL.revokeObjectURL(a.blobUrl);}
     });
-    attachments = [];
+    state.attachments = [];
     renderAttachments();
   }
 
-  function removeAttachment(id) {
-    var idx = attachments.findIndex(function (a) { return a.id === id; });
-    if (idx === -1) return;
-    var att = attachments[idx];
-    if (att.blobUrl) URL.revokeObjectURL(att.blobUrl);
-    attachments.splice(idx, 1);
+export function removeAttachment(id) {
+    var idx = state.attachments.findIndex(function (a) { return a.id === id; });
+    if (idx === -1) {return;}
+    var att = state.attachments[idx];
+    if (att.blobUrl) {URL.revokeObjectURL(att.blobUrl);}
+    state.attachments.splice(idx, 1);
     renderAttachments();
   }
 
-  function renderAttachments() {
-    if (!attachmentBar) return;
+export function renderAttachments() {
+    if (!state.attachmentBar) {return;}
 
-    if (attachments.length === 0) {
-      attachmentBar.classList.remove("visible");
-      attachmentBar.innerHTML = "";
+    if (state.attachments.length === 0) {
+      state.attachmentBar.classList.remove("visible");
+      state.attachmentBar.innerHTML = "";
       return;
     }
 
-    attachmentBar.classList.add("visible");
+    state.attachmentBar.classList.add("visible");
     var html = "";
 
-    for (var i = 0; i < attachments.length; i++) {
-      var a = attachments[i];
+    for (var i = 0; i < state.attachments.length; i++) {
+      var a = state.attachments[i];
 
       if (a.type === "image") {
         var src = a.blobUrl || "";
@@ -1159,22 +1097,22 @@
       }
     }
 
-    attachmentBar.innerHTML = html;
+    state.attachmentBar.innerHTML = html;
 
     // Delegate click events for remove buttons
-    attachmentBar.querySelectorAll(".att-remove").forEach(function (btn) {
+    state.attachmentBar.querySelectorAll(".att-remove").forEach(function (btn) {
       btn.addEventListener("click", function (e) {
         var id = e.target.getAttribute("data-att-id");
-        if (id) removeAttachment(id);
+        if (id) {removeAttachment(id);}
       });
     });
   }
 
   // ── Paste handler ──────────────────────────────────────
 
-  promptInput.addEventListener("paste", function (e) {
+  state.promptInput.addEventListener("paste", function (e) {
     var items = e.clipboardData.items;
-    if (!items) return;
+    if (!items) {return;}
 
     var imageItems = [];
     var fileItems = [];
@@ -1187,7 +1125,7 @@
       }
     }
 
-    if (imageItems.length === 0 && fileItems.length === 0) return;
+    if (imageItems.length === 0 && fileItems.length === 0) {return;}
 
     e.preventDefault();
 
@@ -1198,12 +1136,12 @@
     for (var j = 0; j < imageItems.length; j++) {
       (function (item) {
         var file = item.getAsFile();
-        if (!file) return;
+        if (!file) {return;}
 
         var attId = generateAttId();
         var blobUrl = URL.createObjectURL(file);
 
-        attachments.push({
+        state.attachments.push({
           id: attId,
           type: "image",
           name: file.name || "pasted-image.png",
@@ -1212,10 +1150,8 @@
           blobUrl: blobUrl, // immediate preview
         });
 
-        var reader = new FileReader();
-        reader.onload = function () {
-          var result = reader.result; // "data:image/png;base64,..."
-          var att = attachments.find(function (a) { return a.id === attId; });
+        var reader = new FileReader(); reader.onload = function () { var result = reader.result as string; // "data:image/png;base64,..."
+          var att = state.attachments.find(function (a) { return a.id === attId; });
           if (att) {
             att.data = result.split(",")[1]; // just the base64 payload
           }
@@ -1231,11 +1167,11 @@
     for (var k = 0; k < fileItems.length; k++) {
       (function (item) {
         var file = item.getAsFile();
-        if (!file) return;
+        if (!file) {return;}
 
         var attId = generateAttId();
 
-        attachments.push({
+        state.attachments.push({
           id: attId,
           type: "file",
           name: file.name || "unknown-file",
@@ -1248,7 +1184,7 @@
         if (item.type.startsWith("text/") || !item.type) {
           var reader = new FileReader();
           reader.onload = function () {
-            var att = attachments.find(function (a) { return a.id === attId; });
+            var att = state.attachments.find(function (a) { return a.id === attId; });
             if (att) {
               att.data = reader.result;
             }
@@ -1256,7 +1192,7 @@
           };
           reader.readAsText(file);
         } else {
-          var att = attachments.find(function (a) { return a.id === attId; });
+          var att = state.attachments.find(function (a) { return a.id === attId; });
           if (att) {
             att.data = "[Binary file: " + file.name + "]";
           }
@@ -1269,52 +1205,53 @@
 
     // Insert clipboard text at cursor position
     if (pastedText) {
-      var start = promptInput.selectionStart;
-      var end = promptInput.selectionEnd;
-      var val = promptInput.value;
-      promptInput.value = val.slice(0, start) + pastedText + val.slice(end);
-      promptInput.selectionStart = promptInput.selectionEnd = start + pastedText.length;
-      promptInput.dispatchEvent(new Event("input"));
+      var start = state.promptInput.selectionStart;
+      var end = state.promptInput.selectionEnd;
+      var val = state.promptInput.value;
+      state.promptInput.value = val.slice(0, start) + pastedText + val.slice(end);
+      state.promptInput.selectionStart = state.promptInput.selectionEnd = start + pastedText.length;
+      state.promptInput.dispatchEvent(new Event("input"));
     }
   });
 
   // ── Send prompt ───────────────────────────────────────
 
-  function sendPrompt() {
-    var text = promptInput.value.trim();
-    if (!text && attachments.length === 0) return;
+export function sendPrompt() {
+    console.log("[pi-gui] sendPrompt called");
+    var text = state.promptInput.value.trim();
+    if (!text && state.attachments.length === 0) {return;}
 
     // Reset scroll tracking — user clearly wants to follow the new response
     state.hasScrolledUp = false;
 
     // Intercept local slash commands before sending to LLM
-    if (text && localSlashCommands.indexOf(text) !== -1) {
+    if (text && state.localSlashCommands.indexOf(text) !== -1) {
       var cmd = text.slice(1); // strip leading "/"
 
       // /debug: dump webview state as a structured message in chat, plus
       // log to console so it can be inspected from DevTools without copy-paste.
       if (cmd === "debug") {
         handleDebugCommand();
-        promptInput.value = "";
-        promptInput.style.height = "auto";
-        promptInput.style.overflowY = "hidden";
+        state.promptInput.value = "";
+        state.promptInput.style.height = "auto";
+        state.promptInput.style.overflowY = "hidden";
         clearAttachments();
         return;
       }
 
-      vscode.postMessage({
+      window.__vscode.postMessage({
         type: "slashCommand",
         command: cmd,
       });
-      promptInput.value = "";
-      promptInput.style.height = "auto";
-      promptInput.style.overflowY = "hidden";
+      state.promptInput.value = "";
+      state.promptInput.style.height = "auto";
+      state.promptInput.style.overflowY = "hidden";
       clearAttachments();
       return;
     }
 
-    // Build images array from image attachments with loaded data
-    var images = attachments
+    // Build images array from image state.attachments with loaded data
+    var images = state.attachments
       .filter(function (a) { return a.type === "image" && a.data; })
       .map(function (a) {
         return {
@@ -1327,61 +1264,61 @@
         };
       });
 
-    vscode.postMessage({
+    window.__vscode.postMessage({
       type: "prompt",
       text: text,
       images: images.length > 0 ? images : undefined,
-      mode: state.isStreaming ? queueMode : undefined,
+      mode: state.isStreaming ? state.queueMode : undefined,
     });
 
-    promptInput.value = "";
-    promptInput.style.height = "auto";
-    promptInput.style.overflowY = "hidden";
+    state.promptInput.value = "";
+    state.promptInput.style.height = "auto";
+    state.promptInput.style.overflowY = "hidden";
     clearAttachments();
   }
 
-  sendButton.addEventListener("click", sendPrompt);
+  state.sendButton.addEventListener("click", sendPrompt);
 
-  abortButton.addEventListener("click", function () {
-    vscode.postMessage({ type: "abort" });
+  state.abortButton.addEventListener("click", function () {
+    window.__vscode.postMessage({ type: "abort" });
   });
 
   // Steer dropdown — toggles between Steer and Queue mode
-  steerDropdown.addEventListener("click", function () {
-    queueMode = queueMode === "steer" ? "queue" : "steer";
-    if (queueMode === "queue") {
-      sendButton.textContent = "Queue";
-      sendButton.title = "Queue (process after current turn)";
-      steerDropdown.title = "Switch to Steer";
+  state.steerDropdown.addEventListener("click", function () {
+    state.queueMode = state.queueMode === "steer" ? "queue" : "steer";
+    if (state.queueMode === "queue") {
+      state.sendButton.textContent = "Queue";
+      state.sendButton.title = "Queue (process after current turn)";
+      state.steerDropdown.title = "Switch to Steer";
     } else {
-      sendButton.textContent = "Steer";
-      sendButton.title = "Steer (interrupt current request)";
-      steerDropdown.title = "Switch to Queue";
+      state.sendButton.textContent = "Steer";
+      state.sendButton.title = "Steer (interrupt current request)";
+      state.steerDropdown.title = "Switch to Queue";
     }
   });
 
   // ── In-webview status bar click handlers ─────────────
   if (sbModel) {
     sbModel.addEventListener("click", function () {
-      vscode.postMessage({ type: "pickModel" });
+      window.__vscode.postMessage({ type: "pickModel" });
     });
   }
   if (sbThinking) {
     sbThinking.addEventListener("click", function () {
-      vscode.postMessage({ type: "pickThinkingLevel" });
+      window.__vscode.postMessage({ type: "pickThinkingLevel" });
     });
   }
   if (sbEffort) {
     sbEffort.addEventListener("click", function () {
-      vscode.postMessage({ type: "pickEffort" });
+      window.__vscode.postMessage({ type: "pickEffort" });
     });
   }
   if (sbUsage) {
     sbUsage.addEventListener("click", function () {
-      vscode.postMessage({ type: "pickContextBudget" });
+      window.__vscode.postMessage({ type: "pickContextBudget" });
     });
   }
-  var sbSettings = document.getElementById("pi-sb-settings");
+let sbSettings = document.getElementById("pi-sb-settings");
   if (sbSettings) {
     sbSettings.addEventListener("click", function () {
       toggleSettingsPanel();
@@ -1393,48 +1330,48 @@
 
   // Handle external links and close overlays on outside clicks
   document.addEventListener("click", function (e) {
-    var target = e.target;
-    if (target && target.tagName === "A" && target.href) {
+    var target = e.target as HTMLElement;
+    if (target && target.tagName === "A" && (target as HTMLAnchorElement).href) {
       e.preventDefault();
-      vscode.postMessage({ type: "openUrl", url: target.href });
+      window.__vscode.postMessage({ type: "openUrl", url: (target as HTMLAnchorElement).href });
     }
     // Close overlays when clicking outside (except the status bar gear)
-    if (state.settingsOpen && !settingsOverlay.contains(target) && target !== sbSettings && !sbSettings.contains(target)) {
+    if (state.settingsOpen && !state.settingsOverlay.contains(target) && target !== sbSettings && !sbSettings.contains(target)) {
       closeAllOverlays();
     }
-    if (state.userMsgSelectorOpen && !userMsgOverlay.contains(target) && target !== promptInput) {
+    if (state.userMsgSelectorOpen && !state.userMsgOverlay.contains(target) && target !== state.promptInput) {
       closeAllOverlays();
     }
-    if (state.slashAutocompleteOpen && !slashAutocomplete.contains(target) && target !== promptInput) {
+    if (state.slashAutocompleteOpen && !state.slashAutocomplete.contains(target) && target !== state.promptInput) {
       closeAllOverlays();
     }
   });
 
-  promptInput.addEventListener("keydown", function (e) {
+  state.promptInput.addEventListener("keydown", function (e) {
     // #8: Tab to accept slash autocomplete
     if (state.slashAutocompleteOpen && e.key === "Tab") {
       e.preventDefault();
-      var sel = slashAutocomplete.querySelector(".slash-item.selected");
+      var sel = state.slashAutocomplete.querySelector(".slash-item.selected");
       if (sel) {
-        promptInput.value = sel.getAttribute("data-cmd") + " ";
-        promptInput.focus();
+        state.promptInput.value = sel.getAttribute("data-cmd") + " ";
+        state.promptInput.focus();
       }
-      slashAutocomplete.classList.remove("visible");
+      state.slashAutocomplete.classList.remove("visible");
       state.slashAutocompleteOpen = false;
       return;
     }
     // #8: Arrow keys in slash autocomplete
     if (state.slashAutocompleteOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       e.preventDefault();
-      if (e.key === "ArrowDown") state.slashSelectedIdx++;
-      else state.slashSelectedIdx = Math.max(0, state.slashSelectedIdx - 1);
+      if (e.key === "ArrowDown") {state.slashSelectedIdx++;}
+      else {state.slashSelectedIdx = Math.max(0, state.slashSelectedIdx - 1);}
       updateSlashAutocomplete(state.slashFilter);
       return;
     }
     // #2: Up arrow in empty input → show user message history
     // Move this BEFORE the slash-autocomplete arrow handling so it takes
     // priority when the input is empty (no slash typed yet)
-    if (e.key === "ArrowUp" && promptInput.value === "" && userMessageHistory.length > 0) {
+    if (e.key === "ArrowUp" && state.promptInput.value === "" && state.userMessageHistory.length > 0) {
       e.preventDefault();
       showUserMessageSelector();
       return;
@@ -1454,62 +1391,62 @@
     }
   });
 
-  promptInput.addEventListener("input", function () {
+  state.promptInput.addEventListener("input", function () {
     // Cap at ~5 lines (approx 20px per line = 100px).
     // Only show scrollbar when the content actually exceeds the cap.
     var maxHeight = 100; // 5 lines ~ 100px
-    promptInput.style.height = "auto";
-    var newHeight = Math.min(promptInput.scrollHeight, maxHeight);
-    promptInput.style.height = newHeight + "px";
+    state.promptInput.style.height = "auto";
+    var newHeight = Math.min(state.promptInput.scrollHeight, maxHeight);
+    state.promptInput.style.height = newHeight + "px";
     // Only enable overflow scrollbar when content is truncated
-    if (promptInput.scrollHeight > maxHeight) {
-      promptInput.style.overflowY = "auto";
+    if (state.promptInput.scrollHeight > maxHeight) {
+      state.promptInput.style.overflowY = "auto";
     } else {
-      promptInput.style.overflowY = "hidden";
+      state.promptInput.style.overflowY = "hidden";
     }
 
     // #8: Detect slash commands for autocomplete
-    var val = promptInput.value;
+    var val = state.promptInput.value;
     var slashMatch = val.match(/^\/(\w*)$/);
     if (slashMatch) {
       state.slashFilter = val;
       state.slashSelectedIdx = 0;
       updateSlashAutocomplete(val);
     } else {
-      slashAutocomplete.classList.remove("visible");
+      state.slashAutocomplete.classList.remove("visible");
       state.slashAutocompleteOpen = false;
     }
   });
 
-  function resizePromptInput() {
+export function resizePromptInput() {
     var maxHeight = 100;
-    promptInput.style.height = "auto";
-    var newHeight = Math.min(promptInput.scrollHeight, maxHeight);
-    promptInput.style.height = newHeight + "px";
-    promptInput.style.overflowY = promptInput.scrollHeight > maxHeight ? "auto" : "hidden";
+    state.promptInput.style.height = "auto";
+    var newHeight = Math.min(state.promptInput.scrollHeight, maxHeight);
+    state.promptInput.style.height = newHeight + "px";
+    state.promptInput.style.overflowY = state.promptInput.scrollHeight > maxHeight ? "auto" : "hidden";
   }
 
-  function handleInsertCommand(command) {
-    promptInput.value = command + " ";
-    promptInput.focus();
+export function handleInsertCommand(command) {
+    state.promptInput.value = command + " ";
+    state.promptInput.focus();
     resizePromptInput();
   }
 
   // ═══ #1: Compaction Summary Message ═══════════════════════
   // ═══ #1: Compaction Summary Message ═══════════════════════
 
-  function handleCompactionSummaryMessage(data) {
+export function handleCompactionSummaryMessage(data) {
     hideWelcome();
     var el = document.createElement("div");
     el.className = "compaction-summary";
-    if (data.entryId) el.id = "entry-" + data.entryId;
+    if (data.entryId) {el.id = "entry-" + data.entryId;}
     var tokenStr = (data.tokensBefore || 0).toLocaleString();
     var summaryId = "cs-" + Math.random().toString(36).slice(2, 8);
     el.innerHTML =
       '<div class="cs-header">[compaction]</div>' +
       '<div class="cs-preview" id="' + summaryId + '-toggle">Compacted from ' + tokenStr + ' tokens (click to expand)</div>' +
       '<div class="cs-content" id="' + summaryId + '-content" style="display:none">' + escapeHtml(data.summary || "") + '</div>';
-    chatContainer.appendChild(el);
+    state.chatContainer.appendChild(el);
 
     // Wire toggle
     var toggle = document.getElementById(summaryId + "-toggle");
@@ -1526,33 +1463,33 @@
 
   // ═══ #2: User Message Selector ════════════════════════════
 
-  function handleUserMessagesList(data) {
-    userMessageHistory = (data.messages || []).reverse();
+export function handleUserMessagesList(data) {
+    state.userMessageHistory = (data.messages || []).reverse();
   }
 
-  function showUserMessageSelector() {
-    if (userMessageHistory.length === 0) return;
+export function showUserMessageSelector() {
+    if (state.userMessageHistory.length === 0) {return;}
     closeAllOverlays();
     state.userMsgSelectorOpen = true;
-    userMsgOverlay.classList.add("visible");
+    state.userMsgOverlay.classList.add("visible");
     var html = "";
-    for (var i = 0; i < userMessageHistory.length; i++) {
-      var msg = userMessageHistory[i];
+    for (var i = 0; i < state.userMessageHistory.length; i++) {
+      var msg = state.userMessageHistory[i];
       var text = msg.text || "";
-      if (text.length > 100) text = text.slice(0, 100) + "\u2026";
+      if (text.length > 100) {text = text.slice(0, 100) + "\u2026";}
       html += '<div class="user-msg-item" data-idx="' + i + '"><span class="msg-idx">' + (i + 1) + '</span>' + escapeHtml(text) + '</div>';
     }
-    userMsgOverlay.innerHTML = html;
+    state.userMsgOverlay.innerHTML = html;
 
     // Click handlers
-    var items = userMsgOverlay.querySelectorAll(".user-msg-item");
+    var items = state.userMsgOverlay.querySelectorAll(".user-msg-item");
     items.forEach(function (item) {
       item.addEventListener("click", function () {
         var idx = parseInt(this.getAttribute("data-idx"), 10);
-        if (idx >= 0 && idx < userMessageHistory.length) {
-          var text = userMessageHistory[idx].text;
-          promptInput.value = text;
-          promptInput.focus();
+        if (idx >= 0 && idx < state.userMessageHistory.length) {
+          var text = state.userMessageHistory[idx].text;
+          state.promptInput.value = text;
+          state.promptInput.focus();
           resizePromptInput();
         }
         closeUserMsgSelector();
@@ -1560,34 +1497,34 @@
     });
   }
 
-  function closeUserMsgSelector() {
+export function closeUserMsgSelector() {
     state.userMsgSelectorOpen = false;
-    userMsgOverlay.classList.remove("visible");
+    state.userMsgOverlay.classList.remove("visible");
   }
 
   // ═══ #3: Settings Panel ═══════════════════════════════════
 
-  function handleSettingsUpdate(data) {
+export function handleSettingsUpdate(data) {
     if (data) {
-      settingsState = data;
+      state.settingsState = data;
       renderSettingsPanel();
     }
   }
 
-  function handleScopedModelsUpdate(data) {
+export function handleScopedModelsUpdate(data) {
     if (data && data.models) {
-      scopedModels = data.models;
+      state.scopedModels = data.models;
       renderScopedModels();
       renderSettingsPanel();
     }
   }
 
-  function renderScopedModels() {
+export function renderScopedModels() {
     // Scoped models removed from UI
   }
 
-  function renderSettingsPanel() {
-    if (!settingsOverlay || !state.settingsOpen) return;
+export function renderSettingsPanel() {
+    if (!state.settingsOverlay || !state.settingsOpen) {return;}
     var html = '<div class="settings-title">Settings</div>';
 
     var toggles = [
@@ -1598,7 +1535,7 @@
 
     for (var i = 0; i < toggles.length; i++) {
       var t = toggles[i];
-      var on = settingsState[t.key];
+      var on = state.settingsState[t.key];
       html +=
         '<div class="settings-row">' +
         '<span>' + t.label + '</span>' +
@@ -1608,45 +1545,45 @@
 
 
 
-    settingsOverlay.innerHTML = html;
+    state.settingsOverlay.innerHTML = html;
 
     // Wire toggle clicks
-    var togglesEls = settingsOverlay.querySelectorAll(".settings-toggle");
+    var togglesEls = state.settingsOverlay.querySelectorAll(".settings-toggle");
     togglesEls.forEach(function (el) {
       el.addEventListener("click", function (e) {
         e.stopPropagation();
         var key = el.getAttribute("data-key");
-        if (key === "autoCompaction") { vscode.postMessage({ type: "toggleAutoCompaction" }); }
-        else if (key === "autoRetry") { vscode.postMessage({ type: "toggleAutoRetry" }); }
-        else if (key === "showImages") { vscode.postMessage({ type: "toggleShowImages" }); }
+        if (key === "autoCompaction") { window.__vscode.postMessage({ type: "toggleAutoCompaction" }); }
+        else if (key === "autoRetry") { window.__vscode.postMessage({ type: "toggleAutoRetry" }); }
+        else if (key === "showImages") { window.__vscode.postMessage({ type: "toggleShowImages" }); }
       });
     });
   }
 
-  function toggleSettingsPanel() {
+export function toggleSettingsPanel() {
     if (state.settingsOpen) {
       closeAllOverlays();
     } else {
       closeAllOverlays();
       state.settingsOpen = true;
-      settingsOverlay.classList.add("visible");
-      vscode.postMessage({ type: "getSettings" });
+      state.settingsOverlay.classList.add("visible");
+      window.__vscode.postMessage({ type: "getSettings" });
     }
   }
 
-  function closeAllOverlays() {
+export function closeAllOverlays() {
     state.settingsOpen = false;
     state.userMsgSelectorOpen = false;
     state.slashAutocompleteOpen = false;
-    settingsOverlay.classList.remove("visible");
-    userMsgOverlay.classList.remove("visible");
-    slashAutocomplete.classList.remove("visible");
+    state.settingsOverlay.classList.remove("visible");
+    state.userMsgOverlay.classList.remove("visible");
+    state.slashAutocomplete.classList.remove("visible");
   }
 
   // ═══ #5: Diff Rendering for edit tool results ════════════
   // ═══ #7: Custom Message Rendering ═════════════════════════
 
-  function handleCustomMessage(data) {
+export function handleCustomMessage(data) {
     hideWelcome();
     var customType = data.customType || "custom";
 
@@ -1661,8 +1598,8 @@
       if (infoContent) {
         var infoEl = document.createElement("div");
         infoEl.className = "message assistant";
-        infoEl.innerHTML = '<div class="message-content" style="color: var(--vscode-descriptionForeground);">' + escapeHtml(infoContent) + '</div>';
-        chatContainer.appendChild(infoEl);
+        infoEl.innerHTML = '<div class="message-content muted">' + escapeHtml(infoContent) + '</div>';
+        state.chatContainer.appendChild(infoEl);
         scrollToBottom();
       }
       return;
@@ -1671,7 +1608,7 @@
     // Try the registry first — extensions can register custom renderers
     var renderer = getMessageRenderer(customType);
     if (renderer) {
-      renderer(data, livePanel, liveCards, createLiveCard, dismissLiveCard);
+      renderer(data, state.livePanel, state.liveCards, createLiveCard, dismissLiveCard);
       return;
     }
 
@@ -1679,78 +1616,77 @@
     defaultMessageRenderer(data);
   }
 
-  function dismissLiveCard(key) {
-    var card = liveCards[key];
+export function dismissLiveCard(key) {
+    var card = state.liveCards[key];
     if (card) {
       card.remove();
-      delete liveCards[key];
+      delete state.liveCards[key];
     }
-    var widgetCard = widgetCards[key];
+    var widgetCard = state.widgetCards[key];
     if (widgetCard) {
       widgetCard.remove();
-      delete widgetCards[key];
+      delete state.widgetCards[key];
     }
     // Hide panel if empty
-    var remaining = livePanel.querySelectorAll(".live-card");
+    var remaining = state.livePanel.querySelectorAll(".live-card");
     if (remaining.length === 0) {
-      livePanel.classList.remove("visible");
+      state.livePanel.classList.remove("visible");
     }
   }
 
-  function clearLivePanel() {
+export function clearLivePanel() {
     // Only clear transient cards (non-widget cards).
     // Widget cards persist until the extension explicitly clears them.
     var toRemove = [];
-    for (var key in liveCards) {
-      if (liveCards.hasOwnProperty(key)) {
-        var card = liveCards[key];
+    for (var key in state.liveCards) {
+      if (state.liveCards.hasOwnProperty(key)) {
+        var card = state.liveCards[key];
         if (card && card.getAttribute("data-widget") !== "true") {
           toRemove.push(key);
         }
       }
     }
     for (var i = 0; i < toRemove.length; i++) {
-      var c = liveCards[toRemove[i]];
-      if (c) c.remove();
-      delete liveCards[toRemove[i]];
+      var c = state.liveCards[toRemove[i]];
+      if (c) {c.remove();}
+      delete state.liveCards[toRemove[i]];
     }
     // Hide the panel if nothing remains
-    var remaining = livePanel.querySelectorAll(".live-card");
+    var remaining = state.livePanel.querySelectorAll(".live-card");
     if (remaining.length === 0) {
-      livePanel.classList.remove("visible");
+      state.livePanel.classList.remove("visible");
     }
   }
 
   // ── Widget Bridge ─────────────────────────────────────
   // ── Widget Bridge ─────────────────────────────────────
 
-  var widgetCards = {};  // widget key -> DOM element
 
-  function handleWidgetUpdate(data) {
-    if (!data || !data.key) return;
+export function handleWidgetUpdate(data) {
+    if (!data || !data.key) {return;}
 
     var key = data.key;
     var content = data.content;
 
     if (content === null || content === undefined) {
       // Remove widget card
-      var existing = widgetCards[key];
+      var existing = state.widgetCards[key];
       if (existing) {
         existing.remove();
-        delete widgetCards[key];
+        delete state.widgetCards[key];
       }
-      // Also remove from liveCards
-      delete liveCards[key];
+      // Also remove from state.liveCards
+      delete state.liveCards[key];
       // Hide panel if empty
-      var remaining = livePanel.querySelectorAll(".live-card");
+      var remaining = state.livePanel.querySelectorAll(".live-card");
       if (remaining.length === 0) {
-        livePanel.classList.remove("visible");
+        state.livePanel.classList.remove("visible");
       }
       return;
     }
 
     // Create or update widget card
-    var card = widgetCards[key];
+    var card = state.widgetCards[key];
     if (card) {
       card.querySelector(".live-card-content").innerHTML = renderMarkdown(content);
     } else {
@@ -1765,54 +1701,39 @@
       card.querySelector(".live-card-close").addEventListener("click", function () {
         dismissLiveCard(key);
       });
-      livePanel.appendChild(card);
-      widgetCards[key] = card;
-      liveCards[key] = card;
+      state.livePanel.appendChild(card);
+      state.widgetCards[key] = card;
+      state.liveCards[key] = card;
     }
-    livePanel.classList.add("visible");
+    state.livePanel.classList.add("visible");
   }
 
-  function clearWidgetCards() {
-    for (var key in widgetCards) {
-      if (widgetCards.hasOwnProperty(key)) {
-        widgetCards[key].remove();
+export function clearWidgetCards() {
+    for (var key in state.widgetCards) {
+      if (state.widgetCards.hasOwnProperty(key)) {
+        state.widgetCards[key].remove();
       }
     }
-    widgetCards = {};
+    state.widgetCards = {};
   }
 
   // ═══ #8: Slash Command Autocomplete ═══════════════════════
   // ═══ #8: Slash Command Autocomplete ═══════════════════════
 
   // Built-in slash commands (always available)
-  var builtinSlashCommands = [
-    { cmd: "/compact", desc: "Compact context" },
-    { cmd: "/resume", desc: "Resume a previous session" },
-    { cmd: "/export", desc: "Export session to HTML" },
-    { cmd: "/fork", desc: "Fork session from message" },
-    { cmd: "/sessions", desc: "List sessions" },
-    { cmd: "/model", desc: "Change model" },
-    { cmd: "/thinking", desc: "Set thinking level" },
-    { cmd: "/new", desc: "Start new session" },
-    { cmd: "/settings", desc: "Open settings" },
-    { cmd: "/login", desc: "Configure provider authentication" },
-    { cmd: "/logout", desc: "Remove provider authentication" },
-    { cmd: "/debug", desc: "Dump webview state for troubleshooting" },
-  ];
 
   // Dynamic slash commands populated from installed extensions (e.g. /tldr)
-  var extensionSlashCommands = [];
 
   // Full slash command list (builtins + extensions, with extensions first for dedup)
-  function getSlashCommands() {
+export function getSlashCommands() {
     var all = [];
     var seen = {};
     // Extensions come first so they take precedence
-    extensionSlashCommands.forEach(function (sc) {
+    state.extensionSlashCommands.forEach(function (sc) {
       seen[sc.cmd] = true;
       all.push(sc);
     });
-    builtinSlashCommands.forEach(function (sc) {
+    state.builtinSlashCommands.forEach(function (sc) {
       if (!seen[sc.cmd]) {
         all.push(sc);
       }
@@ -1821,11 +1742,10 @@
   }
 
   // Slash commands that should be handled locally (not sent to LLM)
-  var localSlashCommands = ["/login", "/logout", "/debug", "/model", "/thinking", "/sessions", "/settings"];
 
-  function handleSlashCommandsUpdate(data) {
+export function handleSlashCommandsUpdate(data) {
     if (data && data.commands && Array.isArray(data.commands)) {
-      extensionSlashCommands = data.commands;
+      state.extensionSlashCommands = data.commands;
       // Re-filter autocomplete if it's currently open
       if (state.slashAutocompleteOpen) {
         updateSlashAutocomplete(state.slashFilter);
@@ -1833,20 +1753,20 @@
     }
   }
 
-  function updateSlashAutocomplete(filter) {
+export function updateSlashAutocomplete(filter) {
     if (!filter || filter.length === 0) {
-      slashAutocomplete.classList.remove("visible");
+      state.slashAutocomplete.classList.remove("visible");
       state.slashAutocompleteOpen = false;
       return;
     }
     var f = filter.toLowerCase();
     var matches = getSlashCommands().filter(function (sc) { return sc.cmd.toLowerCase().indexOf(f) === 0; });
     if (matches.length === 0) {
-      slashAutocomplete.classList.remove("visible");
+      state.slashAutocomplete.classList.remove("visible");
       state.slashAutocompleteOpen = false;
       return;
     }
-    slashAutocomplete.classList.add("visible");
+    state.slashAutocomplete.classList.add("visible");
     state.slashAutocompleteOpen = true;
     state.slashSelectedIdx = Math.min(state.slashSelectedIdx, matches.length - 1);
 
@@ -1859,19 +1779,19 @@
         '<span class="slash-desc">' + escapeHtml(sc.desc) + '</span>' +
         '</div>';
     }
-    slashAutocomplete.innerHTML = html;
+    state.slashAutocomplete.innerHTML = html;
 
     // Wire click handlers
-    var items = slashAutocomplete.querySelectorAll(".slash-item");
+    var items = state.slashAutocomplete.querySelectorAll(".slash-item");
     items.forEach(function (item) {
       item.addEventListener("click", function () {
         var cmd = item.getAttribute("data-cmd");
         if (cmd) {
-          promptInput.value = cmd + " ";
-          promptInput.focus();
+          state.promptInput.value = cmd + " ";
+          state.promptInput.focus();
           resizePromptInput();
         }
-        slashAutocomplete.classList.remove("visible");
+        state.slashAutocomplete.classList.remove("visible");
         state.slashAutocompleteOpen = false;
       });
     });
@@ -1880,8 +1800,8 @@
   // ═══ #9: Scroll-to-entry ═══════════════════════════════════
   // ═══ #9: Scroll-to-entry ═══════════════════════════════════
 
-  function handleRevealEntry(entryId) {
-    if (!entryId) return;
+export function handleRevealEntry(entryId) {
+    if (!entryId) {return;}
 
     // Try multiple ID formats: entry-<id>, tool-<id>, bash-<id>
     var selectors = [
@@ -1892,10 +1812,10 @@
     var el = null;
     for (var i = 0; i < selectors.length; i++) {
       el = document.getElementById(selectors[i]);
-      if (el) break;
+      if (el) {break;}
     }
 
-    if (!el) return;
+    if (!el) {return;}
 
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     el.style.transition = "background 0.2s, box-shadow 0.2s";
@@ -1916,23 +1836,23 @@
   // with the extension host's bash-* event stream.  They delegate
   // to the bash tool renderer registered in the tool renderer registry.
 
-  function handleBashStart(data) {
+export function handleBashStart(data) {
     // Stop thinking spinner — bash execution means thinking is done
     if (state.currentThinkingEl) {
       var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
-      if (thSpinner) thSpinner.remove();
+      if (thSpinner) {thSpinner.remove();}
     }
 
     var callId = data.toolCallId;
 
     // DEDUP: If tool-start already created a block for this callId, don't create a second.
-    if (currentToolBlocks[callId]) {
-      var entry = currentToolBlocks[callId];
-      bashBlocks[callId] = entry.el || entry;
-      bashOutputs[callId] = bashOutputs[callId] || "";
+    if (state.currentToolBlocks[callId]) {
+      var entry = state.currentToolBlocks[callId];
+      state.bashBlocks[callId] = entry.el || entry;
+      state.bashOutputs[callId] = state.bashOutputs[callId] || "";
       return;
     }
-    if (bashBlocks[callId]) return;
+    if (state.bashBlocks[callId]) {return;}
 
     var block = bashToolRenderer.create({
       toolName: "bash",
@@ -1941,43 +1861,43 @@
       entryId: data.entryId,
       fromMessage: false,
     });
-    chatContainer.appendChild(block);
-    bashBlocks[callId] = block;
-    bashOutputs[callId] = "";
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    state.chatContainer.appendChild(block);
+    state.bashBlocks[callId] = block;
+    state.bashOutputs[callId] = "";
+    state.chatContainer.scrollTop = state.chatContainer.scrollHeight;
     scrollToBottom();
   }
 
-  function handleBashOutput(data) {
+export function handleBashOutput(data) {
     var callId = data.toolCallId;
-    var block = bashBlocks[callId];
+    var block = state.bashBlocks[callId];
     if (!block) {
-      var entry = currentToolBlocks[callId];
+      var entry = state.currentToolBlocks[callId];
       block = entry ? (entry.el || entry) : null;
-      if (!block) return;
+      if (!block) {return;}
     }
-    bashOutputs[callId] = (bashOutputs[callId] || "") + (data.output || "");
+    state.bashOutputs[callId] = (state.bashOutputs[callId] || "") + (data.output || "");
     var outEl = block.querySelector(".bash-output");
-    if (outEl) morphRender(outEl, escapeHtml(bashOutputs[callId]));
+    if (outEl) {morphRender(outEl, escapeHtml(state.bashOutputs[callId]));}
     scrollToBottom();
   }
 
-  function handleBashEnd(data) {
+export function handleBashEnd(data) {
     var callId = data.toolCallId;
-    var block = bashBlocks[callId];
+    var block = state.bashBlocks[callId];
     if (!block) {
-      var entry = currentToolBlocks[callId];
+      var entry = state.currentToolBlocks[callId];
       block = entry ? (entry.el || entry) : null;
-      if (!block) return;
+      if (!block) {return;}
     }
     var result = {
       content: data.output ? [{ type: "text", text: data.output }] : [],
       details: { exitCode: data.exitCode, cancelled: data.cancelled },
     };
     bashToolRenderer.finalize(block, result, data.isError, data.entryId);
-    delete currentToolBlocks[callId];
-    delete bashBlocks[callId];
-    delete bashOutputs[callId];
+    delete state.currentToolBlocks[callId];
+    delete state.bashBlocks[callId];
+    delete state.bashOutputs[callId];
     scrollToBottom();
   }
 
@@ -1995,15 +1915,15 @@
   //
   // Also dumps the same data to console.log for DevTools inspection.
 
-  function handleDebugCommand() {
+export function handleDebugCommand() {
     hideWelcome();
-    var summary = window.__piDebug.summary();
+    var summary = window.__piDebug.summary() as { chat: any; dupes: string[]; orphanBash: string[]; orphanTool: string[]; lastEvents: any[]; lastDomChanges: any[] };
 
     // Also log to console so DevTools users can inspect without copy-paste
     console.log("[pi-debug] === Webview State Dump ===");
     console.log("[pi-debug] Chat structure:", JSON.stringify(summary.chat, null, 2));
     console.log("[pi-debug] Dupes (in both trackers):", summary.dupes);
-    console.log("[pi-debug] Orphan bashBlocks:", summary.orphanBash);
+    console.log("[pi-debug] Orphan state.bashBlocks:", summary.orphanBash);
     console.log("[pi-debug] Orphan toolBlocks:", summary.orphanTool);
     console.log("[pi-debug] Last events:", JSON.stringify(summary.lastEvents, null, 2));
     console.log("[pi-debug] Last DOM changes:", JSON.stringify(summary.lastDomChanges, null, 2));
@@ -2015,79 +1935,48 @@
       '<div class="message-content">' +
       '<details class="thinking-block" open>' +
       '<summary>🔍 Debug: Webview State</summary>' +
-      '<div style="font-family:var(--vscode-editor-font-family);font-size:0.85em;line-height:1.5;max-height:500px;overflow-y:auto;">' +
+      '<div class="debug-output">' +
 
-      '<h4 style="margin:8px 0 4px">Chat Container</h4>' +
-      '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;">' +
+      '<h4>Chat Container</h4>' +
+      '<pre>' +
       escapeHtml(JSON.stringify(summary.chat, null, 2)) +
       '</pre>' +
 
-      '<h4 style="margin:12px 0 4px">Tracker State</h4>' +
-      '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;">' +
-      'bashBlocks: ' + JSON.stringify(Object.keys(bashBlocks)) + '\n' +
-      'currentToolBlocks: ' + JSON.stringify(Object.keys(currentToolBlocks)) + '\n' +
-      'bashOutputs: ' + JSON.stringify(Object.keys(bashOutputs)) + '\n' +
+      '<h4>Tracker State</h4>' +
+      '<pre>' +
+      'state.bashBlocks: ' + JSON.stringify(Object.keys(state.bashBlocks)) + '\n' +
+      'state.currentToolBlocks: ' + JSON.stringify(Object.keys(state.currentToolBlocks)) + '\n' +
+      'state.bashOutputs: ' + JSON.stringify(Object.keys(state.bashOutputs)) + '\n' +
       'Duplicates: ' + JSON.stringify(summary.dupes) + '\n' +
       'Orphan bash: ' + JSON.stringify(summary.orphanBash) + '\n' +
       'Orphan tool: ' + JSON.stringify(summary.orphanTool) +
       '</pre>' +
 
-      '<h4 style="margin:12px 0 4px">Last 20 Events</h4>' +
-      '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;max-height:200px;overflow-y:auto;">' +
+      '<h4>Last 20 Events</h4>' +
+      '<pre class="scrollable">' +
       escapeHtml(JSON.stringify(summary.lastEvents, null, 2)) +
       '</pre>' +
 
-      '<h4 style="margin:12px 0 4px">Queue / Steer State</h4>' +
-      '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;">' +
-      'isStreaming: ' + state.isStreaming + '\n' +
-      'queueMode: ' + queueMode + '\n' +
+      '<h4>Queue / Steer State</h4>' +
+      '<pre>' +
+      'state.isStreaming: ' + state.isStreaming + '\n' +
+      'state.queueMode: ' + state.queueMode + '\n' +
       'pending-queue-indicator exists: ' + !!document.getElementById("pending-queue-indicator") + '\n' +
       'queue events (' + ((window.__piDebug._queueEvents || []).length) + '): ' + JSON.stringify((window.__piDebug._queueEvents || []).slice(-10), null, 2) + '\n' +
       '</pre>' +
 
-      '<h4 style="margin:12px 0 4px">Last 20 DOM Mutations</h4>' +
-      '<pre style="white-space:pre-wrap;font-size:0.8em;margin:0;max-height:200px;overflow-y:auto;">' +
+      '<h4>Last 20 DOM Mutations</h4>' +
+      '<pre class="scrollable">' +
       escapeHtml(JSON.stringify(summary.lastDomChanges, null, 2)) +
       '</pre>' +
 
-      '<p style="margin-top:8px;color:var(--vscode-descriptionForeground);font-size:0.8em;">' +
+      '<p class=\"debug-tip\">' +
       'Tip: <code>window.__piDebug.summary()</code> in DevTools, or <code>/debug</code> again.' +
       '</p>' +
 
       '</div>' +
       '</details>' +
       '</div>';
-    chatContainer.appendChild(el);
+    state.chatContainer.appendChild(el);
     scrollToBottom();
   }
-
-  // ── Export app handlers ──────────────────────────────────
-  app.handleAgentStart = typeof handleAgentStart !== "undefined" ? handleAgentStart : null;
-  app.handleAgentEnd = typeof handleAgentEnd !== "undefined" ? handleAgentEnd : null;
-  app.handleTurnStart = typeof handleTurnStart !== "undefined" ? handleTurnStart : null;
-  app.handleTurnEnd = typeof handleTurnEnd !== "undefined" ? handleTurnEnd : null;
-  app.handleChatMessage = typeof handleChatMessage !== "undefined" ? handleChatMessage : null;
-  app.handleAssistantStart = typeof handleAssistantStart !== "undefined" ? handleAssistantStart : null;
-  app.handleAssistantEnd = typeof handleAssistantEnd !== "undefined" ? handleAssistantEnd : null;
-  app.handleStreamDelta = typeof handleStreamDelta !== "undefined" ? handleStreamDelta : null;
-  app.handleThinkingDelta = typeof handleThinkingDelta !== "undefined" ? handleThinkingDelta : null;
-  app.handleStatusUpdate = typeof handleStatusUpdate !== "undefined" ? handleStatusUpdate : null;
-  app.handleStatus = typeof handleStatus !== "undefined" ? handleStatus : null;
-  app.handleQueueUpdate = typeof handleQueueUpdate !== "undefined" ? handleQueueUpdate : null;
-  app.handleCompactionStart = typeof handleCompactionStart !== "undefined" ? handleCompactionStart : null;
-  app.handleCompactionEnd = typeof handleCompactionEnd !== "undefined" ? handleCompactionEnd : null;
-  app.handleAutoRetryStart = typeof handleAutoRetryStart !== "undefined" ? handleAutoRetryStart : null;
-  app.handleAutoRetryEnd = typeof handleAutoRetryEnd !== "undefined" ? handleAutoRetryEnd : null;
-  app.handleThinkingLevelChanged = typeof handleThinkingLevelChanged !== "undefined" ? handleThinkingLevelChanged : null;
-  app.handleCompactionSummaryMessage = typeof handleCompactionSummaryMessage !== "undefined" ? handleCompactionSummaryMessage : null;
-  app.handleCustomMessage = typeof handleCustomMessage !== "undefined" ? handleCustomMessage : null;
-  app.handleUserMessagesList = typeof handleUserMessagesList !== "undefined" ? handleUserMessagesList : null;
-  app.handleScopedModelsUpdate = typeof handleScopedModelsUpdate !== "undefined" ? handleScopedModelsUpdate : null;
-  app.handleSettingsUpdate = typeof handleSettingsUpdate !== "undefined" ? handleSettingsUpdate : null;
-  app.handleRevealEntry = typeof handleRevealEntry !== "undefined" ? handleRevealEntry : null;
-  app.handleError = typeof handleError !== "undefined" ? handleError : null;
-  app.handleInsertCommand = typeof handleInsertCommand !== "undefined" ? handleInsertCommand : null;
-  app.handleSlashCommandsUpdate = typeof handleSlashCommandsUpdate !== "undefined" ? handleSlashCommandsUpdate : null;
-  app.handleWidgetUpdate = typeof handleWidgetUpdate !== "undefined" ? handleWidgetUpdate : null;
-
-})();

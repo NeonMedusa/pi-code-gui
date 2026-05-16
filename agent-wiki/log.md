@@ -5,6 +5,14 @@ starts with `## [YYYY-MM-DD] <action> | <description>`. Actions:
 `ingest` (new page), `update` (existing page changed), `lint` (quality
 pass performed), `archive` (page moved to archive).
 
+## [2026-05-16] archive | Webview Rewrite Plan moved to archive/ (all 5 steps completed)
+## [2026-05-16] stale | Removed WEBVIEW_REWRITE_TODO.md (tracking complete)
+## [2026-05-16] lint | Fixed all 65 ESLint warnings in src/webview — 0 warnings remain
+## [2026-05-16] update | Webview Panel + Frontend — CSS extracted to media/style.css, @layer organization, native nesting
+## [2026-05-16] update | Webview Panel — updated for single-bundle loading via esbuild, typed postMessage bridge
+## [2026-05-16] update | Webview Rewrite Plan — marked all 5 steps complete, final architecture documented
+## [2026-05-16] stale | Removed media/app.js, media/core.js, media/tools.js (migrated to src/webview/)
+## [2026-05-16] ingest | Webview Rewrite Plan — 5-step modularization + TS migration, TODO tracking file
 ## [2026-05-15] ingest | Bootstrap — wiki structure initialized from Pi template (discipline pages, index, log, archive)
 ## [2026-05-15] ingest | Architecture — Session Window (`architecture/session-window.md`)
 ## [2026-05-15] ingest | Architecture — PiService (`architecture/pi-service.md`)

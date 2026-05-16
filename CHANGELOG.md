@@ -1,5 +1,17 @@
 # Change Log
 
+## [0.0.22] — Webview rewrite: TypeScript modules, typed protocol, modern CSS
+
+### Changed
+- **Webview rewritten** from 3 monolithic vanilla-JS files into 6 TypeScript ES modules
+- **CSS extracted** from inline `<style>` block to `media/style.css`, organized in
+  `@layer tokens, base, components` with native CSS nesting.
+- **Build pipeline** now bundles the webview via esbuild alongside the extension,
+  with source maps in dev and minification in production.
+
+### Removed
+- `media/app.js`, `media/core.js`, `media/tools.js` — replaced by `src/webview/` modules.
+
 ## [0.0.21] — Model picker pricing & picker de-duplication
 
 ### Added
