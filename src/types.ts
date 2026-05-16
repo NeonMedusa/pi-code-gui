@@ -15,6 +15,14 @@ export interface PromptMessage {
   images?: ImageContent[];
 }
 
+// Re-export shared protocol types for internal use.
+// PiServiceEvent will be replaced by ExtensionToWebview (Step 5 follow-up)
+// when all emit() calls are aligned with the discriminated union.
+export type {
+  ExtensionToWebview,
+  WebviewToExtension,
+} from "./shared/protocol.js";
+
 export interface PiServiceEvent {
   type:
     // Core lifecycle

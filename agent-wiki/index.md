@@ -20,7 +20,7 @@ reference; follow the links for depth.
 - [Bridge Tools](architecture/bridge-tools.md) — 17 VS Code API tools for the AI agent
 - [Event Translation](architecture/event-translation.md) — SDK agent events → PiServiceEvent types
 - [Extension UI Bridge](architecture/extension-ui-bridge.md) — TUI widgets → webview via Proxy
-- [Webview Frontend](architecture/webview-frontend.md) — Chat UI, streaming, morphdom, marked, modular JS
+- [Webview Frontend](architecture/webview-frontend.md) — Chat UI, streaming, TypeScript modules, typed protocol
 - [Tree Views](architecture/tree-views.md) — Sessions and Packages sidebar trees
 
 ## Operations

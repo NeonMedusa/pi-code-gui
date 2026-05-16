@@ -6,3 +6,5 @@ node_modules
 env/
 .pnpm-store/
 .pi/
+media/bundle.js
+media/bundle.js.map

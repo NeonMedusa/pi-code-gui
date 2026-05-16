@@ -6,8 +6,10 @@ src/**
 .gitignore
 .yarnrc
 esbuild.js
+esbuild.webview.js
 vsc-extension-quickstart.md
 **/tsconfig.json
+tsconfig.webview.json
 **/eslint.config.mjs
 **/*.map
 **/*.ts
@@ -24,3 +26,6 @@ env/**
 .npmrc
 .devcontainer/**
 .eslintcache
+media/entry.js
+agent-wiki/**
+WEBVIEW_REWRITE_TODO.md

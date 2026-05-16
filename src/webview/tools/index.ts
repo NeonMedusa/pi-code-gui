@@ -1,34 +1,16 @@
-(function () {
-  "use strict";
+import { state } from "../state.js";
+import { logEvent } from "../debug.js";
+import {
+  createToolBlock, morphRender, escapeHtml, renderToolResult,
+  renderFileContent, renderDiffMarkup, renderDiffIfApplicable,
+  formatToolError, getLangFromPath, getCompactReadLabel,
+  renderMarkdown, hideWelcome, scrollToBottom, renderToolResultTruncated,
+  registerToolRenderer, getToolRenderer,
+} from "../render/engine.js";
 
-  // ── Dependencies ────────────────────────────────────────
-  var state = window.__pi.state;
-  var core = window.__pi.core;
-  var tools = window.__pi.tools = {};
 
-  // ── Local aliases (state) ───────────────────────────────
-  var chatContainer = state.chatContainer;
-  var currentToolBlocks = state.currentToolBlocks;
-  var bashBlocks = state.bashBlocks;
-  var bashOutputs = state.bashOutputs;
 
-  // ── Local aliases (core functions) ──────────────────────
-  var createToolBlock = core.createToolBlock;
-  var morphRender = core.morphRender;
-  var escapeHtml = core.escapeHtml;
-  var renderToolResult = core.renderToolResult;
-  var renderFileContent = core.renderFileContent;
-  var renderDiffMarkup = core.renderDiffMarkup;
-  var renderDiffIfApplicable = core.renderDiffIfApplicable;
-  var formatToolError = core.formatToolError;
-  var getLangFromPath = core.getLangFromPath;
-  var getCompactReadLabel = core.getCompactReadLabel;
-  var renderMarkdown = core.renderMarkdown;
-  var debugLogEvent = core.debugLogEvent;
-  var hideWelcome = core.hideWelcome;
-  var scrollToBottom = core.scrollToBottom;
-  var registerToolRenderer = core.registerToolRenderer;
-  var getToolRenderer = core.getToolRenderer;
+
 
   // ═══ Write Tool Renderer ══════════════════════════════════
   //
@@ -36,7 +18,7 @@
   // model streams the write call.  The result area only shows
   // error output (matching the pi TUI behaviour).
 
-  var writeToolRenderer = {
+export const writeToolRenderer = {
     create: function (data) {
       hideWelcome();
       var block = document.createElement("div");
@@ -68,12 +50,12 @@
       return block;
     },
     update: function (el, partialResult) {
-      if (!partialResult || !partialResult.content) return;
+      if (!partialResult || !partialResult.content) {return;}
       var text = partialResult.content
         .filter(function (c) { return c.type === "text"; })
         .map(function (c) { return c.text; })
         .join("\n");
-      if (!text) return;
+      if (!text) {return;}
 
       // rAF-batched: accumulate latest args JSON, flush once per frame.
       // Prevents bursty re-renders when write-tool args stream token by token.
@@ -124,7 +106,7 @@
   };
 
   /** Process a write tool update from streaming JSON args. */
-  function processWriteUpdate(el, text) {
+export function processWriteUpdate(el, text) {
     try {
       var args = JSON.parse(text);
       if (args.content && typeof args.content === "string") {
@@ -135,7 +117,7 @@
         el._writeState.rawPath = args.path;
         el._writeState.lang = getLangFromPath(args.path);
         var pathEl = el.querySelector(".tool-path");
-        if (pathEl) pathEl.textContent = args.path;
+        if (pathEl) {pathEl.textContent = args.path;}
       }
     } catch (e) {
       // JSON incomplete (mid-stream) — try heuristic extraction of content
@@ -148,12 +130,12 @@
   }
 
   /** Update the .tool-content area of a write block with highlighted file content. */
-  function renderWriteContentBlock(el) {
+export function renderWriteContentBlock(el) {
     var tc = el.querySelector(".tool-content");
-    if (!tc) return;
-    var state = el._writeState || {};
-    var content = state.content || "";
-    var lang = state.lang;
+    if (!tc) {return;}
+    var writeState = el._writeState || {};
+    var content = writeState.content || "";
+    var lang = writeState.lang;
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
     var allLines = content.split("\n");
     var maxCollapsedLines = 10;
@@ -224,7 +206,7 @@
   // highlighting in the call block.  The result area shows the
   // actual computed diff when execution finishes.
 
-  var editToolRenderer = {
+export const editToolRenderer = {
     create: function (data) {
       hideWelcome();
       var block = document.createElement("div");
@@ -255,12 +237,12 @@
       return block;
     },
     update: function (el, partialResult) {
-      if (!partialResult || !partialResult.content) return;
+      if (!partialResult || !partialResult.content) {return;}
       var text = partialResult.content
         .filter(function (c) { return c.type === "text"; })
         .map(function (c) { return c.text; })
         .join("\n");
-      if (!text) return;
+      if (!text) {return;}
 
       try {
         var args = JSON.parse(text);
@@ -270,7 +252,7 @@
           // Update edit count in header
           var editLabel = edits.length > 1 ? " (" + edits.length + " edits)" : "";
           var pathEl = el.querySelector(".tool-path");
-          if (pathEl) pathEl.textContent = (args.path || "...") + editLabel;
+          if (pathEl) {pathEl.textContent = (args.path || "...") + editLabel;}
           renderEditPreviews(el, edits);
         }
       } catch (e) {
@@ -298,8 +280,8 @@
           .map(function (c) { return c.text; })
           .join("\n");
       }
-      if (!text && result && typeof result.text === "string") text = result.text;
-      if (!text && result && typeof result === "string") text = result;
+      if (!text && result && typeof result.text === "string") {text = result.text;}
+      if (!text && result && typeof result === "string") {text = result;}
       if (!text && result && result.content && result.content.length > 0) {
         try { text = JSON.stringify(result.content, null, 2); } catch (e) {}
       }
@@ -316,9 +298,9 @@
   };
 
   /** Render per-edit mini-diffs into the .tool-content of an edit block. */
-  function renderEditPreviews(el, edits) {
+export function renderEditPreviews(el, edits) {
     var tc = el.querySelector(".tool-content");
-    if (!tc) return;
+    if (!tc) {return;}
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
     // While streaming, show all edits and auto-scroll to bottom.
     // When done, limit to 3 previews max.
@@ -374,7 +356,7 @@
   // expand / collapse for long content.  Compact labels are used
   // for SKILL.md, AGENTS.md, and other resource files.
 
-  var readToolRenderer = {
+export const readToolRenderer = {
     create: function (data) {
       hideWelcome();
       var block = document.createElement("div");
@@ -389,7 +371,7 @@
       var rangeLabel = "";
       if (offset !== undefined) {
         rangeLabel = ":" + offset;
-        if (limit !== undefined) rangeLabel += "-" + (offset + limit - 1);
+        if (limit !== undefined) {rangeLabel += "-" + (offset + limit - 1);}
       }
 
       var compact = getCompactReadLabel(rawPath);
@@ -432,7 +414,7 @@
       }
 
       var tr = el.querySelector(".tool-result");
-      if (!tr) return;
+      if (!tr) {return;}
 
       if (isError) {
         tr.innerHTML = '<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(text, "read")) + '</div>';
@@ -444,8 +426,8 @@
         return;
       }
 
-      var state = el._readState || {};
-      var lang = state.lang;
+      var readState = el._readState || {};
+      var lang = readState.lang;
 
       // For read results, render with syntax highlighting inline (not as markdown code block)
       var lines = text.split("\n");
@@ -478,7 +460,7 @@
         if (btn) {
           function toggleReadCollapse() {
             var st = el._readCollapseState;
-            if (!st) return;
+            if (!st) {return;}
             st.expanded = !st.expanded;
             if (st.expanded) {
               // For markdown files, render instead of showing code
@@ -497,7 +479,7 @@
                 '</button>';
             }
             var newBtn = tr.querySelector(".tool-expand-btn");
-            if (newBtn) newBtn.addEventListener("click", toggleReadCollapse);
+            if (newBtn) {newBtn.addEventListener("click", toggleReadCollapse);}
             if (!st.expanded) {
               tr.scrollTop = 0;
               el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -529,18 +511,18 @@
   // ── Default (generic) tool renderer ──────────────────────
   // ── Default (generic) tool renderer ──────────────────────
 
-  var defaultToolRenderer = {
+export const defaultToolRenderer = {
     create: function (data) {
       return createToolBlock(data.toolName, data.toolCallId, "pending", data.args);
     },
     update: function (el, partialResult) {
       var tr = el.querySelector(".tool-result");
-      if (!tr || !partialResult || !partialResult.content) return;
+      if (!tr || !partialResult || !partialResult.content) {return;}
       var text = partialResult.content
         .filter(function (c) { return c.type === "text"; })
         .map(function (c) { return c.text; })
         .join("\n");
-      if (!text) return;
+      if (!text) {return;}
       var lines = text.split("\n");
       var displayText = lines.length > 60 ? "...\n" + lines.slice(-60).join("\n") : text;
       morphRender(tr, renderToolResult(displayText));
@@ -577,7 +559,7 @@
 
   // ── Bash tool renderer ───────────────────────────────────
 
-  var bashToolRenderer = {
+export const bashToolRenderer = {
     create: function (data) {
       hideWelcome();
       var block = document.createElement("div");
@@ -585,13 +567,13 @@
       block.id = data.entryId ? "entry-" + data.entryId : "bash-" + data.toolCallId;
       block.setAttribute("data-status", "running");
       var cmd = data.args && data.args.command ? data.args.command : "";
-      if (cmd.length > 120) cmd = cmd.slice(0, 120) + "\u2026";
+      if (cmd.length > 120) {cmd = cmd.slice(0, 120) + "\u2026";}
       block.innerHTML =
         '<div class="bash-header">$ ' + escapeHtml(cmd) + '</div>' +
         '<div class="bash-output"></div>' +
         '<div class="bash-footer"><span class="cancel-hint">running\u2026</span></div>';
-      bashBlocks[data.toolCallId] = block;
-      bashOutputs[data.toolCallId] = "";
+      state.bashBlocks[data.toolCallId] = block;
+      state.bashOutputs[data.toolCallId] = "";
       return block;
     },
     update: function (el, partialResult) {
@@ -610,10 +592,10 @@
           .join("\n");
       }
       var outEl = el.querySelector(".bash-output");
-      if (outEl && text) morphRender(outEl, escapeHtml(text));
+      if (outEl && text) {morphRender(outEl, escapeHtml(text));}
       var footer = el.querySelector(".bash-footer");
       var details = result && result.details ? result.details : {};
-      var exitCode = details.exitCode != null ? details.exitCode : 0;
+      var exitCode = details.exitCode !== undefined ? details.exitCode : 0;
       if (footer) {
         footer.innerHTML =
           '<span class="exit-code' + (isError ? " error" : "") + '">exit: ' + exitCode + '</span>' +
@@ -623,8 +605,8 @@
         el.id = "entry-" + entryId;
       }
       el.setAttribute("data-status", isError ? "error" : "complete");
-      delete bashBlocks[toolCallId];
-      delete bashOutputs[toolCallId];
+      delete state.bashBlocks[toolCallId];
+      delete state.bashOutputs[toolCallId];
     },
   };
 
@@ -636,33 +618,33 @@
   // ═══ Message Renderer Registry ════════════════════════════
   // ═══ Tool Lifecycle ════════════════════════════════════
 
-  function handleToolStart(data) {
+export function handleToolStart(data) {
     hideWelcome();
 
     // Stop thinking spinner — tool execution means thinking is done
     if (state.currentThinkingEl) {
       var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
-      if (thSpinner) thSpinner.remove();
+      if (thSpinner) {thSpinner.remove();}
     }
 
     var callId = data.toolCallId;
-    debugLogEvent("tool-start", {
+    logEvent("tool-start", {
       callId: callId,
       toolName: data.toolName,
       entryId: data.entryId,
       fromMessage: data.fromMessage,
-      inToolBlocks: !!currentToolBlocks[callId],
-      inBashBlocks: !!bashBlocks[callId],
+      inToolBlocks: !!state.currentToolBlocks[callId],
+      inBashBlocks: !!state.bashBlocks[callId],
     });
 
     // Guard against duplicates — check BOTH trackers (#fix: bash blocks
     // created by handleBashStart were invisible to this dedup, causing
     // orphaned duplicate DOM nodes that never finalize).
-    var existingTool = currentToolBlocks[callId];
-    var existingBash = bashBlocks[callId];
+    var existingTool = state.currentToolBlocks[callId];
+    var existingBash = state.bashBlocks[callId];
 
     if (existingTool || existingBash) {
-      debugLogEvent("tool-start:DEDUP", {
+      logEvent("tool-start:DEDUP", {
         callId: callId,
         inTool: !!existingTool,
         inBash: !!existingBash,
@@ -671,7 +653,7 @@
       // If we have a bash block, promote it into currentToolBlocks so the
       // tool-end handler can finalize it through the normal path.
       if (existingBash && !existingTool) {
-        currentToolBlocks[callId] = { el: existingBash, renderer: bashToolRenderer };
+        state.currentToolBlocks[callId] = { el: existingBash, renderer: bashToolRenderer };
       }
       // Update status on whichever block we have
       var block = existingTool ? (existingTool.el || existingTool) : existingBash;
@@ -706,10 +688,10 @@
     if (data.entryId && !block.id.startsWith("entry-")) {
       block.id = "entry-" + data.entryId;
     }
-    chatContainer.appendChild(block);
+    state.chatContainer.appendChild(block);
 
     // Store both the element and its renderer for update/finalize
-    currentToolBlocks[callId] = { el: block, renderer: renderer };
+    state.currentToolBlocks[callId] = { el: block, renderer: renderer };
 
     // If fromMessage=false (actual execution), mark as running
     if (!data.fromMessage && renderer === defaultToolRenderer) {
@@ -723,104 +705,45 @@
     scrollToBottom();
   }
 
-  /** Render tool result content as markdown so code blocks, diffs, etc.
-   *  get syntax highlighting, line numbers, and copy buttons. */
-  function renderToolResult(text) {
-    if (!text) return "";
-    // First try: if text already starts with ```, it's already markdown
-    if (/^```/.test(text.trim())) {
-      return renderMarkdown(text);
-    }
-
-    // #5: Check if this is a diff result (e.g. from edit tool)
-    if (/(?:^|\n)[+\-@]/.test(text) || /(?:^|\n)---\s/.test(text) || /(?:^|\n)\+\+\+\s/.test(text)) {
-      return renderDiffMarkup(text);
-    }
-
-    // For multi-line tool results, wrap in a generic code block so the
-    // rich rendering (line numbers, copy button, syntax highlighting) applies.
-    var trimmed = text.trim();
-    if (trimmed.indexOf("\n") !== -1 || trimmed.length > 120) {
-      // Detect common structured data formats
-      var lang = detectToolResultLang(trimmed);
-      return renderMarkdown("```" + lang + "\n" + trimmed + "\n```");
-    }
-
-    // Short single-line results: render as inline markdown
-    return renderMarkdown(text);
-  }
-
-  /** Guess the language of a tool result blob. */
-  function detectToolResultLang(text) {
-    // JSON objects/arrays
-    if (/^[\[\{]\s*["\w]/.test(text) && /[\]\}]\s*$/.test(text)) return "json";
-    // XML/HTML
-    if (/<[a-z][\s\S]*>/i.test(text)) return "html";
-    // Shell output (lines starting with $)
-    if (/^\$ /.test(text)) return "bash";
-    // Diff
-    if (/^[@@]/.test(text) && /^[+-]/.test(text)) return "diff";
-    // Log files
-    if (text.length < 500 && /\[\d{4}-\d{2}-\d{2}|ERROR|WARN|INFO|TRACE/.test(text)) return "log";
-    // TypeScript/JavaScript: import/export, const/let, function, =>, interfaces, types, etc.
-    if (/(?:^|\n)\s*(?:import\s|export\s|const\s|let\s|var\s|function\s|interface\s|type\s|class\s|async\s)/.test(text)) return "typescript";
-    // Python: def, import, class, if __name__, decorators, etc.
-    if (/(?:^|\n)\s*(?:def\s|import\s|from\s|class\s|@\w+|if\s+__name__)/.test(text)) return "python";
-    // Go: package, func, import, := etc.
-    if (/(?:^|\n)\s*(?:package\s|func\s|import\s|type\s\w+\sstruct)/.test(text)) return "go";
-    // Rust: fn, let mut, impl, pub, etc.
-    if (/(?:^|\n)\s*(?:fn\s|let\s+mut|impl\s|pub\s|use\s|mod\s|unsafe\s)/.test(text)) return "rust";
-    // Java: public class, private, package, etc.
-    if (/(?:^|\n)\s*(?:public\s+(?:class|void|static)|private\s|package\s|import\s+java)/.test(text)) return "java";
-    // C/C++: #include, int main, void, struct, #define, etc.
-    if (/(?:^|\n)\s*(?:#include|int\s+main|void\s+|struct\s|class\s+|#define|#ifndef)/.test(text)) return "cpp";
-    // YAML/TOML: key: value patterns, ---, etc.
-    if (/(?:^|\n)\s*---\s*$/.test(text) || /(?:^|\n)[a-zA-Z_][\w]*:\s+"|(?:^|\n)[a-zA-Z_][\w]*\s*=\s*"|^\w+\s*:\s+[\w\.]/.test(text)) return "yaml";
-    // Markdown: # headers, ---, ```, | tables, etc.
-    if (/(?:^|\n)\s*#{1,6}\s+/.test(text) || text.indexOf('```') !== -1) return "markdown";
-    // Default: no specific lang (plain text / unknown)
-    return "typescript";
-  }
-
-  function handleToolUpdate(data) {
+export function handleToolUpdate(data) {
     // Ensure thinking spinner stays hidden during tool execution
     if (state.currentThinkingEl) {
       var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
-      if (thSpinner) thSpinner.remove();
+      if (thSpinner) {thSpinner.remove();}
     }
 
-    var entry = currentToolBlocks[data.toolCallId];
-    if (!entry) return;
+    var entry = state.currentToolBlocks[data.toolCallId];
+    if (!entry) {return;}
     var block = entry.el || entry;
     var renderer = entry.renderer || defaultToolRenderer;
     renderer.update(block, data.partialResult);
     scrollToBottom();
   }
 
-  function handleToolEnd(data) {
+export function handleToolEnd(data) {
     var callId = data.toolCallId;
-    var entry = currentToolBlocks[callId];
-    debugLogEvent("tool-end", {
+    var entry = state.currentToolBlocks[callId];
+    logEvent("tool-end", {
       callId: callId,
       found: !!entry,
       isError: !!data.isError,
-      inBashBlocks: !!bashBlocks[callId],
+      inBashBlocks: !!state.bashBlocks[callId],
       entryId: data.entryId,
     });
     if (!entry) {
       // Fallback: check bashBlocks for blocks created via the legacy path
-      var bashBlock = bashBlocks[callId];
+      var bashBlock = state.bashBlocks[callId];
       if (bashBlock) {
-        debugLogEvent("tool-end:FALLBACK-BASH", { callId: callId });
+        logEvent("tool-end:FALLBACK-BASH", { callId: callId });
         bashToolRenderer.finalize(bashBlock, data.result, data.isError, data.entryId);
-        delete bashBlocks[callId];
-        delete bashOutputs[callId];
+        delete state.bashBlocks[callId];
+        delete state.bashOutputs[callId];
         return;
       }
       // Second fallback: find block by DOM ID (tool-{callId} or entry-{entryId})
       var domBlock = document.getElementById("tool-" + callId) || (data.entryId ? document.getElementById("entry-" + data.entryId) : null);
       if (domBlock) {
-        debugLogEvent("tool-end:FALLBACK-DOM", { callId: callId, tag: domBlock.tagName, classes: domBlock.className });
+        logEvent("tool-end:FALLBACK-DOM", { callId: callId, tag: domBlock.tagName, classes: domBlock.className });
         // Use defaultToolRenderer to finalize
         defaultToolRenderer.finalize(domBlock, data.result, data.isError, data.entryId);
       }
@@ -829,23 +752,10 @@
     var block = entry.el || entry;
     var renderer = entry.renderer || defaultToolRenderer;
     renderer.finalize(block, data.result, data.isError, data.entryId);
-    delete currentToolBlocks[callId];
+    delete state.currentToolBlocks[callId];
     scrollToBottom();
   }
 
   // ═══ Session Events ════════════════════════════════════
 
-  // ── Export tool renderers ────────────────────────────────
-  tools.defaultToolRenderer = typeof defaultToolRenderer !== "undefined" ? defaultToolRenderer : null;
-  tools.bashToolRenderer = typeof bashToolRenderer !== "undefined" ? bashToolRenderer : null;
-  tools.writeToolRenderer = typeof writeToolRenderer !== "undefined" ? writeToolRenderer : null;
-  tools.editToolRenderer = typeof editToolRenderer !== "undefined" ? editToolRenderer : null;
-  tools.readToolRenderer = typeof readToolRenderer !== "undefined" ? readToolRenderer : null;
-  tools.handleToolStart = typeof handleToolStart !== "undefined" ? handleToolStart : null;
-  tools.handleToolUpdate = typeof handleToolUpdate !== "undefined" ? handleToolUpdate : null;
-  tools.handleToolEnd = typeof handleToolEnd !== "undefined" ? handleToolEnd : null;
-  tools.handleBashStart = typeof handleBashStart !== "undefined" ? handleBashStart : null;
-  tools.handleBashOutput = typeof handleBashOutput !== "undefined" ? handleBashOutput : null;
-  tools.handleBashEnd = typeof handleBashEnd !== "undefined" ? handleBashEnd : null;
-
-})();
+  
