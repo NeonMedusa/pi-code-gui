@@ -8,7 +8,7 @@ import {
   getCompactReadLabel, registerToolRenderer, getToolRenderer,
   hideWelcome, resetChat, scrollToBottom, updateStreamingState,
   renderToolResultTruncated, renderBlockToHTML,
-  syntaxHighlightLine, shortenPath, renderCodeBlockHTML,
+  shortenPath, renderCodeBlockHTML,
   setupCodeBlockHandlers,
 } from "../render/engine.js";
 import {
@@ -1375,7 +1375,19 @@ let sbSettings = document.getElementById("pi-sb-settings");
         return;
       }
     }
+    // Enter: accept slash autocomplete if open, otherwise send
     if (e.key === "Enter" && !e.shiftKey) {
+      if (state.slashAutocompleteOpen) {
+        e.preventDefault();
+        var sel = state.slashAutocomplete.querySelector(".slash-item.selected");
+        if (sel) {
+          state.promptInput.value = sel.getAttribute("data-cmd") + " ";
+        }
+        state.slashAutocomplete.classList.remove("visible");
+        state.slashAutocompleteOpen = false;
+        state.promptInput.focus();
+        return;
+      }
       closeAllOverlays();
       e.preventDefault();
       sendPrompt();

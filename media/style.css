@@ -282,16 +282,41 @@
   .code-block .code-text { display: inline; }
 
   /* ── Syntax highlight tokens ─────────────────────────── */
-  .tok-kw  { color: var(--vscode-symbolIcon-keywordForeground,  #c586c0); }
-  .tok-str { color: var(--vscode-symbolIcon-stringForeground,    #ce9178); }
-  .tok-num { color: var(--vscode-symbolIcon-numberForeground,    #b5cea8); }
-  .tok-cm  { color: var(--vscode-symbolIcon-constantForeground,  #6a9955); font-style: italic; }
-  .tok-fn  { color: var(--vscode-symbolIcon-functionForeground,  #dcdcaa); }
-  .tok-type    { color: var(--vscode-symbolIcon-classForeground,     #4ec9b0); }
-  .tok-prop    { color: var(--vscode-symbolIcon-propertyForeground,  #9cdcfe); }
-  .tok-op      { color: var(--vscode-symbolIcon-operatorForeground,  #d4d4d4); }
-  .tok-builtin { color: var(--vscode-symbolIcon-constantForeground,  #569cd6); }
-  .tok-punct   { color: var(--vscode-symbolIcon-operatorForeground,  #d4d4d4); }
+  /* ── Syntax highlight tokens (highlight.js → VS Code variables) ── */
+  .hljs-keyword    { color: var(--vscode-symbolIcon-keywordForeground,  #c586c0); }
+  .hljs-string     { color: var(--vscode-symbolIcon-stringForeground,    #ce9178); }
+  .hljs-number     { color: var(--vscode-symbolIcon-numberForeground,    #b5cea8); }
+  .hljs-comment    { color: var(--vscode-symbolIcon-constantForeground,  #6a9955); font-style: italic; }
+  .hljs-function   { color: var(--vscode-symbolIcon-functionForeground,  #dcdcaa); }
+  .hljs-type       { color: var(--vscode-symbolIcon-classForeground,     #4ec9b0); }
+  .hljs-attr       { color: var(--vscode-symbolIcon-propertyForeground,  #9cdcfe); }
+  .hljs-operator   { color: var(--vscode-symbolIcon-operatorForeground,  #d4d4d4); }
+  .hljs-literal    { color: var(--vscode-symbolIcon-constantForeground,  #569cd6); }
+  .hljs-punctuation { color: var(--vscode-symbolIcon-operatorForeground,  #d4d4d4); }
+  .hljs-title      { color: var(--vscode-symbolIcon-functionForeground,  #dcdcaa); }
+  .hljs-title.class_ { color: var(--vscode-symbolIcon-classForeground,  #4ec9b0); }
+  .hljs-params     { color: var(--vscode-editor-foreground); }
+  .hljs-built_in   { color: var(--vscode-symbolIcon-constantForeground,  #569cd6); }
+  .hljs-meta       { color: var(--vscode-descriptionForeground); }
+  .hljs-variable   { color: var(--vscode-editor-foreground); }
+  .hljs-regexp     { color: var(--vscode-symbolIcon-stringForeground,    #ce9178); }
+  .hljs-subst      { color: var(--vscode-editor-foreground); }
+  .hljs-symbol     { color: var(--vscode-symbolIcon-constantForeground,  #569cd6); }
+  .hljs-selector-class { color: var(--vscode-symbolIcon-classForeground, #4ec9b0); }
+  .hljs-selector-tag   { color: var(--vscode-symbolIcon-keywordForeground, #c586c0); }
+  .hljs-template-tag   { color: var(--vscode-symbolIcon-keywordForeground, #c586c0); }
+  .hljs-template-variable { color: var(--vscode-editor-foreground); }
+  .hljs-addition   { color: var(--vscode-terminal-ansiGreen); }
+  .hljs-deletion   { color: var(--vscode-terminal-ansiRed); }
+  .hljs-emphasis   { font-style: italic; }
+  .hljs-strong     { font-weight: 700; }
+  .hljs-link       { text-decoration: underline; }
+  .hljs-code       { font-family: var(--vscode-editor-font-family); }
+  .hljs-tag        { color: var(--vscode-symbolIcon-keywordForeground,  #c586c0); }
+  .hljs-name       { color: var(--vscode-symbolIcon-keywordForeground,  #c586c0); }
+  .hljs-attribute  { color: var(--vscode-symbolIcon-propertyForeground,  #9cdcfe); }
+  .hljs-doctag     { color: var(--vscode-symbolIcon-keywordForeground,  #c586c0); }
+  .hljs-section    { color: var(--vscode-symbolIcon-classForeground,  #4ec9b0); font-weight: 700; }
 
   /* ═══ Thinking blocks ════════════════════════════════════ */
 
@@ -572,6 +597,16 @@
       }
 
       .cancel-hint { opacity: 0.6; }
+
+      .bash-spinner {
+        display: inline-block;
+        width: 10px; height: 10px;
+        border: 2px solid var(--vscode-descriptionForeground);
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: think-spin 0.8s linear infinite;
+        vertical-align: middle;
+      }
     }
   }
 

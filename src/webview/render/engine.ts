@@ -8,6 +8,7 @@
 
 import { state } from "../state.js";
 import { logEvent, logDom } from "../debug.js";
+import { highlightCode } from "../highlight.js";
 
 // ═══ Utilities ══════════════════════════════════════════════
 
@@ -290,13 +291,12 @@ function postProcessMarkedHTML(html) {
 export function renderCodeBlockHTML(code, lang) {
   code = code.replace(/\r\n?/g, "\n");
   code = code.replace(/\n+$/, "");
-  const lines = code.split("\n");
+  // Highlight the full block, then split into lines for line numbers.
+  var highlighted = highlightCode(code, lang);
+  var lines = highlighted.split("\n");
   const numberedContent = lines
     .map(function (line) {
-      return (
-        '<span class="code-ln"></span>' +
-        syntaxHighlightLine(line, lang)
-      );
+      return '<span class="code-ln"></span>' + line;
     })
     .join("\n");
   const langLabel = lang
@@ -322,16 +322,14 @@ export function renderFileContent(content, lang) {
   content = content.replace(/\r\n?/g, "\n");
   content = content.replace(/\n+$/, "");
   if (!content) {return "";}
-  const lines = content.split("\n");
+  var highlighted = highlightCode(content, lang);
+  var lines = highlighted.split("\n");
   const langLabel = lang
     ? '<span class="code-lang-label">' + escapeHtml(lang) + "</span>"
     : "";
   const numbered = lines
     .map(function (line) {
-      return (
-        '<span class="code-ln"></span>' +
-        syntaxHighlightLine(line, lang)
-      );
+      return '<span class="code-ln"></span>' + line;
     })
     .join("\n");
   return (
@@ -511,140 +509,7 @@ export function renderBlockToHTML(token) {
 
 // ═══ Syntax Highlighting ══════════════════════════════════
 
-const TOKENS = {
-  kw: "tok-kw",
-  str: "tok-str",
-  num: "tok-num",
-  cm: "tok-cm",
-  fn: "tok-fn",
-  type: "tok-type",
-  prop: "tok-prop",
-  op: "tok-op",
-  builtin: "tok-builtin",
-  punct: "tok-punct",
-};
 
-function span(cls, text) {
-  return '<span class="' + cls + '">' + text + "</span>";
-}
-
-export function syntaxHighlightLine(line, lang) {
-  line = escapeHtml(line);
-  if (!lang) {return line;}
-  lang = lang.toLowerCase();
-
-  if (lang === "js" || lang === "javascript" || lang === "ts" || lang === "typescript" ||
-      lang === "jsx" || lang === "tsx") {return highlightJS(line);}
-  if (lang === "py" || lang === "python") {return highlightPython(line);}
-  if (lang === "rs" || lang === "rust") {return highlightRust(line);}
-  if (lang === "html" || lang === "xml" || lang === "svg") {return highlightHTML(line);}
-  if (lang === "css" || lang === "scss" || lang === "less") {return highlightCSS(line);}
-  if (lang === "bash" || lang === "sh" || lang === "shell" || lang === "zsh") {return highlightShell(line);}
-  if (lang === "json") {return highlightJSON(line);}
-  if (lang === "java") {return highlightJava(line);}
-  if (lang === "go" || lang === "golang") {return highlightGo(line);}
-
-  return line;
-}
-
-function highlightJS(line) {
-  let raw = line;
-  raw = raw.replace(/(\/\/[^"']*$)|(\/\*[\s\S]*?\*\/)/g, (m) => span(TOKENS.cm, m));
-  raw = raw.replace(/("(?:[^"\\]|\\.)*")|('(?:[^'\\]|\\.)*')|(`(?:[^`\\]|\\.)*`)/g, (m) => span(TOKENS.str, m));
-  raw = raw.replace(/\b(\d+(?:\.\d+)?)\b/g, (m) => span(TOKENS.num, m));
-  const jsKeywords = "\\b(async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|function|if|import|in|instanceof|let|new|of|return|static|super|switch|this|throw|try|typeof|var|void|while|with|yield|enum|implements|interface|package|private|protected|public)\\b";
-  raw = raw.replace(new RegExp(jsKeywords, "g"), (m) => span(TOKENS.kw, m));
-  raw = raw.replace(/\b(null|undefined|true|false|NaN|Infinity)\b/g, (m) => span(TOKENS.builtin, m));
-  raw = raw.replace(/([a-zA-Z_$][\w$]*)\s*\(/g, (m, id) => span(TOKENS.fn, id) + "(");
-  return raw;
-}
-
-function highlightPython(line) {
-  let raw = line;
-  raw = raw.replace(/(#[^"']*$)/g, (m) => span(TOKENS.cm, m));
-  raw = raw.replace(/("(?:[^"\\]|\\.)*")|('(?:[^'\\]|\\.)*')|("""[\s\S]*?""")|('''[\s\S]*?''')/g, (m) => span(TOKENS.str, m));
-  raw = raw.replace(/\b(\d+(?:\.\d+)?)\b/g, (m) => span(TOKENS.num, m));
-  const pyKeywords = "\\b(False|None|True|and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\\b";
-  raw = raw.replace(new RegExp(pyKeywords, "g"), (m) => span(TOKENS.kw, m));
-  raw = raw.replace(/([a-zA-Z_][\w]*)\s*\(/g, (m, id) => span(TOKENS.fn, id) + "(");
-  raw = raw.replace(/(@[\w.]+)/g, (m) => span(TOKENS.prop, m));
-  return raw;
-}
-
-function highlightRust(line) {
-  let raw = line;
-  raw = raw.replace(/(\/\/[^"']*$)|(\/\*[\s\S]*?\*\/)/g, (m) => span(TOKENS.cm, m));
-  raw = raw.replace(/("(?:[^"\\]|\\.)*")|('(?:[^'\\]|\\.)*')/g, (m) => span(TOKENS.str, m));
-  raw = raw.replace(/\b(\d+(?:_\d+)*(?:\.\d+)?)\b/g, (m) => span(TOKENS.num, m));
-  const rsKeywords = "\\b(as|break|const|continue|crate|else|enum|extern|false|fn|for|if|impl|in|let|loop|match|mod|move|mut|pub|ref|return|self|Self|static|struct|super|trait|true|type|unsafe|use|where|while|async|await|dyn)\\b";
-  raw = raw.replace(new RegExp(rsKeywords, "g"), (m) => span(TOKENS.kw, m));
-  raw = raw.replace(/('\w+)/g, (m) => span(TOKENS.prop, m));
-  raw = raw.replace(/([a-zA-Z_][\w]*)\s*\(/g, (m, id) => span(TOKENS.fn, id) + "(");
-  return raw;
-}
-
-function highlightHTML(line) {
-  let raw = line;
-  raw = raw.replace(/(<!--[\s\S]*?-->)/g, (m) => span(TOKENS.cm, m));
-  raw = raw.replace(/(&lt;\/?)([\w:-]+)/g, (m, prefix, tag) => prefix + span(TOKENS.kw, tag));
-  raw = raw.replace(/([\w:-]+)(=)(&quot;|"|')/g, (m, attr, eq, q) => span(TOKENS.prop, attr) + eq + q);
-  raw = raw.replace(/(&quot;[^&]*&quot;|"[^"]*"|'[^']*')/g, (m) => span(TOKENS.str, m));
-  return raw;
-}
-
-function highlightCSS(line) {
-  let raw = line;
-  raw = raw.replace(/(\/\*[\s\S]*?\*\/)/g, (m) => span(TOKENS.cm, m));
-  raw = raw.replace(/("(?:[^"\\]|\\.)*")|('(?:[^'\\]|\\.)*')/g, (m) => span(TOKENS.str, m));
-  raw = raw.replace(/([\w-]+)(\s*:)/g, (m, prop, col) => span(TOKENS.prop, prop) + col);
-  raw = raw.replace(/\b(\d+(?:\.\d+)?(?:px|em|rem|vh|vw|%|s|ms|deg|fr)?)\b/g, (m) => span(TOKENS.num, m));
-  raw = raw.replace(/([.#]?[\w-]+)\s*\{/g, (m, sel) => span(TOKENS.kw, sel) + " {");
-  raw = raw.replace(/(:\w+)/g, (m) => span(TOKENS.type, m));
-  return raw;
-}
-
-function highlightShell(line) {
-  let raw = line;
-  raw = raw.replace(/(#[^"']*$)/g, (m) => span(TOKENS.cm, m));
-  raw = raw.replace(/("(?:[^"\\]|\\.)*")|('(?:[^'\\]|\\.)*')/g, (m) => span(TOKENS.str, m));
-  raw = raw.replace(/(\$[\w{}]+)/g, (m) => span(TOKENS.prop, m));
-  raw = raw.replace(/^\s*(\w+)/gm, (m) => span(TOKENS.kw, m));
-  raw = raw.replace(/(--?\w+)/g, (m) => span(TOKENS.fn, m));
-  return raw;
-}
-
-function highlightJSON(line) {
-  let raw = line;
-  raw = raw.replace(/("(?:[^"\\]|\\.)*")/g, (m) => span(TOKENS.str, m));
-  raw = raw.replace(/\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, (m) => span(TOKENS.num, m));
-  raw = raw.replace(/\b(true|false|null)\b/g, (m) => span(TOKENS.kw, m));
-  return raw;
-}
-
-function highlightJava(line) {
-  let raw = line;
-  raw = raw.replace(/(\/\/[^"']*$)|(\/\*[\s\S]*?\*\/)/g, (m) => span(TOKENS.cm, m));
-  raw = raw.replace(/("(?:[^"\\]|\\.)*")|('(?:[^'\\]|\\.)*')/g, (m) => span(TOKENS.str, m));
-  raw = raw.replace(/\b(\d+(?:\.\d+)?[lLfFdD]?)\b/g, (m) => span(TOKENS.num, m));
-  const javaKeywords = "\\b(abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|package|private|protected|public|return|short|static|strictfp|super|switch|synchronized|this|throw|throws|transient|try|void|volatile|while|true|false|null)\\b";
-  raw = raw.replace(new RegExp(javaKeywords, "g"), (m) => span(TOKENS.kw, m));
-  raw = raw.replace(/(@\w+)/g, (m) => span(TOKENS.prop, m));
-  raw = raw.replace(/([a-zA-Z_][\w]*)\s*\(/g, (m, id) => span(TOKENS.fn, id) + "(");
-  return raw;
-}
-
-function highlightGo(line) {
-  let raw = line;
-  raw = raw.replace(/(\/\/[^"']*$)|(\/\*[\s\S]*?\*\/)/g, (m) => span(TOKENS.cm, m));
-  raw = raw.replace(/("(?:[^"\\]|\\.)*")|('(?:[^'\\]|\\.)*')/g, (m) => span(TOKENS.str, m));
-  raw = raw.replace(/\b(\d+(?:\.\d+)?)\b/g, (m) => span(TOKENS.num, m));
-  const goKeywords = "\\b(break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var)\\b";
-  raw = raw.replace(new RegExp(goKeywords, "g"), (m) => span(TOKENS.kw, m));
-  const goBuiltins = "\\b(append|cap|close|complex|copy|delete|imag|len|make|new|panic|print|println|real|recover)\\b";
-  raw = raw.replace(new RegExp(goBuiltins, "g"), (m) => span(TOKENS.builtin, m));
-  raw = raw.replace(/([a-zA-Z_][\w]*)\s*\(/g, (m, id) => span(TOKENS.fn, id) + "(");
-  return raw;
-}
 
 // ═══ Code Block Handlers ══════════════════════════════════
 
