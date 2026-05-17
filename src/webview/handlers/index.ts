@@ -1648,7 +1648,7 @@ export function renderInlineCustomMessage(data) {
       if (renderer) {
         // Re-run registered renderer on the existing container
         var body = existing.querySelector(".custom-message-body");
-        if (body) { body.innerHTML = ""; renderer(data, body); }
+        if (body) { body.innerHTML = ""; renderer(data, body, escapeHtml); }
       } else {
         existing.querySelector(".custom-message-body").innerHTML = renderMarkdown(content);
       }
@@ -1669,7 +1669,7 @@ export function renderInlineCustomMessage(data) {
 
     var body = el.querySelector(".custom-message-body");
     if (renderer) {
-      renderer(data, body);
+      renderer(data, body, escapeHtml);
     } else {
       body.innerHTML = renderMarkdown(content);
     }
@@ -1780,8 +1780,13 @@ export function handleRegisterMessageRenderer(data) {
     if (!data.customType || !data.sourceCode) {return;}
     try {
       // eslint-disable-next-line no-eval
-      var renderer = eval("(function(data, containerEl) { " + data.sourceCode + " })");
-      registerMessageRenderer(data.customType, renderer);
+      // Pass escapeHtml as a parameter so the renderer works even after
+      // esbuild renames it in production builds.
+      var renderer = eval("(function(data, containerEl, escapeHtml) { " + data.sourceCode + " })");
+      var boundRenderer = function(data, containerEl) {
+        renderer(data, containerEl, escapeHtml);
+      };
+      registerMessageRenderer(data.customType, boundRenderer);
     } catch (e) {
       console.warn("[pi-gui] Failed to register message renderer for", data.customType, e);
     }
