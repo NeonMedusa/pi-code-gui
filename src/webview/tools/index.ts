@@ -130,6 +130,7 @@ export function processWriteUpdate(el, text) {
   }
 
   /** Update the .tool-content area of a write block with highlighted file content. */
+  /** Update the .tool-content area of a write block with highlighted file content. */
 export function renderWriteContentBlock(el) {
     var tc = el.querySelector(".tool-content");
     if (!tc) {return;}
@@ -139,18 +140,20 @@ export function renderWriteContentBlock(el) {
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
     var allLines = content.split("\n");
     var maxCollapsedLines = 10;
-    // Never collapse while streaming — always show full content and auto-scroll
-    var collapsed = !active && allLines.length > maxCollapsedLines + 5;
-    var displayContent = collapsed ? allLines.slice(0, maxCollapsedLines).join("\n") : content;
+    // Show only the trailing sliding window so the block never outgrows
+    // the collapsed height.  Expand button appears only when done.
+    var enoughLines = allLines.length > maxCollapsedLines + 5;
+    var displayContent = enoughLines
+      ? allLines.slice(-maxCollapsedLines).join("\n")
+      : content;
 
-    // Persist the .code-block element so scroll state survives across renders
-    // (same approach thinking-blocks use with textContent on a persistent element).
+    // Persist the .code-block element so we only swap inner code nodes,
+    // avoiding scroll position resets.
     var cb = tc.querySelector(".code-block");
     if (!cb) {
       tc.innerHTML = renderFileContent(displayContent, lang);
       cb = tc.querySelector(".code-block");
     } else {
-      // Extract just the <code> innerHTML from a fresh render, inject into existing element
       var tmp = document.createElement("div");
       tmp.innerHTML = renderFileContent(displayContent, lang);
       var freshCode = tmp.querySelector(".code-block code");
@@ -160,11 +163,7 @@ export function renderWriteContentBlock(el) {
       }
     }
 
-    if (active && cb) {
-      cb.scrollTop = cb.scrollHeight;
-    }
-
-    if (collapsed) {
+    if (enoughLines && !active) {
       var remaining = allLines.length - maxCollapsedLines;
       tc.innerHTML += '<div style="text-align:center;margin-top:4px;">' +
         '<button class="tool-expand-btn" type="button">' +
@@ -175,25 +174,15 @@ export function renderWriteContentBlock(el) {
       var btn = tc.querySelector(".tool-expand-btn");
       if (btn) {
         btn.addEventListener("click", function () {
-          tc.innerHTML = renderFileContent(content, lang);
-          var cb = tc.querySelector(".code-block");
-          if (cb) {
-            requestAnimationFrame(function () {
-              requestAnimationFrame(function () {
-                cb.scrollTop = cb.scrollHeight;
-              });
+          tc.innerHTML = '<div class="tool-scroll-view" style="max-height:500px;overflow-y:auto;">' +
+            renderFileContent(content, lang) + '</div>' +
+            '<div style="text-align:center;margin-top:4px;">' +
+            '<button class="tool-expand-btn" type="button">\u25B2 Show less</button></div>';
+          var collapseBtn = tc.querySelector(".tool-expand-btn");
+          if (collapseBtn) {
+            collapseBtn.addEventListener("click", function () {
+              renderWriteContentBlock(el);
             });
-          }
-          var collapsedBtn = tc.querySelector(".tool-expand-btn");
-          if (!collapsedBtn) {
-            tc.innerHTML += '<div style="text-align:center;margin-top:4px;">' +
-              '<button class="tool-expand-btn" type="button">\u25B2 Show less</button></div>';
-            var cb = tc.querySelector(".tool-expand-btn");
-            if (cb) {
-              cb.addEventListener("click", function () {
-                renderWriteContentBlock(el);
-              });
-            }
           }
         });
       }

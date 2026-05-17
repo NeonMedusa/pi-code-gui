@@ -335,17 +335,6 @@
 
   .thinking-collapsed .thinking-content {
     max-height: 200px; overflow-y: auto;
-
-    &.overflowing { position: relative; }
-
-    &.overflowing::after {
-      content: "";
-      position: absolute;
-      bottom: 0; left: 0; right: 0;
-      height: 30px;
-      background: linear-gradient(transparent, var(--thinking-bg));
-      pointer-events: none;
-    }
   }
 
   .thinking-expand-btn {
