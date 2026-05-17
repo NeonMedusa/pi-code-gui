@@ -521,12 +521,6 @@ export function _scheduleThinkingRender(tc) {
         var lineCount = block.querySelector(".thinking-line-count");
         var lines = raw ? raw.split("\n").length : 0;
         if (lineCount) {lineCount.textContent = lines > 0 ? "(" + lines + " lines)" : "";}
-        // Toggle gradient overlay when content overflows
-        if (el.scrollHeight > el.clientHeight + 2) {
-          el.classList.add("overflowing");
-        } else {
-          el.classList.remove("overflowing");
-        }
         // Show expand button ONLY when content overflows the visible area
         var btn = block.querySelector(".thinking-expand-btn");
         if (btn && lines > 0) {
@@ -571,9 +565,6 @@ export function handleThinkingDelta(data) {
         var btn = block.querySelector(".thinking-expand-btn");
         if (btn && contentEl) {
           var overflowing = contentEl.scrollHeight > contentEl.clientHeight + 2;
-          if (overflowing) {
-            contentEl.classList.add("overflowing");
-          }
           if (block.classList.contains("thinking-collapsed")) {
             btn.style.display = overflowing ? "" : "none";
             btn.textContent = "Show more";

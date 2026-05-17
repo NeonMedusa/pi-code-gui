@@ -148,19 +148,16 @@ export function createThinkingBlock(content) {
     '<button class="thinking-expand-btn">Show more</button>';
   const btn = el.querySelector(".thinking-expand-btn");
   const contentEl = el.querySelector(".thinking-content");
+
   btn.addEventListener("click", function () {
     const wasCollapsed = el.classList.contains("thinking-collapsed");
     if (wasCollapsed) {
       el.classList.remove("thinking-collapsed");
-      contentEl.classList.remove("overflowing");
       btn.textContent = "Show less";
     } else {
       el.classList.add("thinking-collapsed");
       btn.textContent = "Show more";
       contentEl.scrollTop = 0;
-      if (contentEl.scrollHeight > contentEl.clientHeight + 2) {
-        contentEl.classList.add("overflowing");
-      }
       el.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   });
@@ -259,6 +256,19 @@ export function renderMarkdown(text) {
     return escapeHtml(text).replace(/\n/g, "<br>");
   }
   const html = marked.parse(text);
+  return postProcessMarkedHTML(html);
+}
+
+/** Like renderMarkdown but safe for untrusted content (escapes raw HTML). */
+export function renderMarkdownSafe(text) {
+  if (!text) {return "";}
+  if (!state._markedAvailable) {
+    return escapeHtml(text).replace(/\n/g, "<br>");
+  }
+  // Escape &, <, > so content like "</div>" can't break the container.
+  // Order: & first so existing entities aren't re-escaped.
+  var safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const html = marked.parse(safe);
   return postProcessMarkedHTML(html);
 }
 
@@ -647,6 +657,7 @@ function highlightGo(line) {
 // ═══ Code Block Handlers ══════════════════════════════════
 
 export function setupCodeBlockHandlers() {
+  // ── Click delegation for tool blocks, copy buttons, file paths ──
   state.chatContainer.addEventListener("click", function (e) {
     // Show-more button for truncated tool results
     const showMoreBtn = e.target.closest(".show-more-btn");
@@ -661,12 +672,12 @@ export function setupCodeBlockHandlers() {
       const previewEl = truncEl.querySelector(".tool-result-preview");
       if (!previewEl) {return;}
       if (expanded) {
-        previewEl.innerHTML = renderMarkdown(stored.preview);
+        previewEl.innerHTML = renderMarkdownSafe(stored.preview);
         truncEl.setAttribute("data-expanded", "0");
         showMoreBtn.textContent =
           "\u25BC " + truncEl.getAttribute("data-hidden") + " more lines";
       } else {
-        previewEl.innerHTML = renderMarkdown(stored.full);
+        previewEl.innerHTML = renderMarkdownSafe(stored.full);
         truncEl.setAttribute("data-expanded", "1");
         showMoreBtn.textContent = "\u25B2 Show less";
       }
@@ -866,7 +877,8 @@ export function renderToolResult(text) {
     const lang = detectToolResultLang(trimmed);
     return renderMarkdown("```" + lang + "\n" + trimmed + "\n```");
   }
-  return renderMarkdown(text);
+  // Short untrusted text — escape HTML so it can't break the container.
+  return renderMarkdownSafe(text);
 }
 
 /** Guess the language of a tool result blob. */

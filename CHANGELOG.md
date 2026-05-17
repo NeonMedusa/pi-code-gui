@@ -1,5 +1,15 @@
 # Change Log
 
+## [0.0.23] — Thinking fade, write resize, and HTML breakout fixes
+
+### Fixed
+- **Thinking block fade** removed - scrollbars indicated "more" available.
+- **Write tool block** height is now capped to the same 10-line collapsed view
+  during streaming, eliminating the jarring resize on the active→done transition.
+- **HTML breakout guard**: `renderMarkdown` now escapes raw `&`, `<`, `>` in
+  read-tool results, tool-result short text, and truncation show-more toggles,
+  preventing file content like `</div>` from breaking the chat layout.
+
 ## [0.0.22] — Webview rewrite: TypeScript modules, typed protocol, modern CSS
 
 ### Changed
