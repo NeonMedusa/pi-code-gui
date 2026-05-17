@@ -86,11 +86,10 @@ export const writeToolRenderer = {
         el.id = "entry-" + entryId;
       }
 
-      // Re-render to apply collapse now that streaming is done
+      // Re-render final content, scroll to top
       renderWriteContentBlock(el);
-      // Scroll code block back to top so user sees the beginning
-      var cb = el.querySelector(".code-block");
-      if (cb) { cb.scrollTop = 0; }
+      var sv = el.querySelector(".tool-scroll-view");
+      if (sv) { sv.scrollTop = 0; }
 
       // Only show error output (matching TUI: result hidden on success)
       if (isError && result && result.content) {
@@ -131,7 +130,6 @@ export function processWriteUpdate(el, text) {
   }
 
   /** Update the .tool-content area of a write block with highlighted file content. */
-  /** Update the .tool-content area of a write block with highlighted file content. */
 export function renderWriteContentBlock(el) {
     var tc = el.querySelector(".tool-content");
     if (!tc) {return;}
@@ -139,54 +137,33 @@ export function renderWriteContentBlock(el) {
     var content = writeState.content || "";
     var lang = writeState.lang;
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
-    var allLines = content.split("\n");
-    var maxCollapsedLines = 10;
-    // Show only the trailing sliding window so the block never outgrows
-    // the collapsed height.  Expand button appears only when done.
-    var enoughLines = allLines.length > maxCollapsedLines + 5;
-    var displayContent = enoughLines
-      ? allLines.slice(-maxCollapsedLines).join("\n")
-      : content;
 
-    // Persist the .code-block element so we only swap inner code nodes,
-    // avoiding scroll position resets.
-    var cb = tc.querySelector(".code-block");
-    if (!cb) {
-      tc.innerHTML = renderFileContent(displayContent, lang);
-      cb = tc.querySelector(".code-block");
+    // Fixed-size scrollable container — same height active and done.
+    // The code block is rendered at full natural height inside a scroll-view
+    // that caps the visible area.  Auto-scrolls to bottom during streaming.
+    var scrollView = tc.querySelector(".tool-scroll-view");
+    if (!scrollView) {
+      tc.innerHTML = '<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;">'
+        + renderFileContent(content, lang) + '</div>';
+      scrollView = tc.querySelector(".tool-scroll-view");
     } else {
-      var tmp = document.createElement("div");
-      tmp.innerHTML = renderFileContent(displayContent, lang);
-      var freshCode = tmp.querySelector(".code-block code");
-      var existingCode = cb.querySelector("code");
-      if (freshCode && existingCode) {
-        existingCode.innerHTML = freshCode.innerHTML;
+      // Persist the .code-block so scroll state survives across renders
+      var cb = scrollView.querySelector(".code-block");
+      if (!cb) {
+        scrollView.innerHTML = renderFileContent(content, lang);
+      } else {
+        var tmp = document.createElement("div");
+        tmp.innerHTML = renderFileContent(content, lang);
+        var freshCode = tmp.querySelector(".code-block code");
+        var existingCode = cb.querySelector("code");
+        if (freshCode && existingCode) {
+          existingCode.innerHTML = freshCode.innerHTML;
+        }
       }
     }
 
-    if (enoughLines && !active) {
-      var remaining = allLines.length - maxCollapsedLines;
-      tc.innerHTML += '<div style="text-align:center;margin-top:4px;">' +
-        '<button class="tool-expand-btn" type="button">' +
-        '\u25BC ' + remaining + ' more lines (' + allLines.length + ' total)' +
-        '</button></div>';
-
-      // Wire the expand button
-      var btn = tc.querySelector(".tool-expand-btn");
-      if (btn) {
-        btn.addEventListener("click", function () {
-          tc.innerHTML = '<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;">' +
-            renderFileContent(content, lang) + '</div>' +
-            '<div style="text-align:center;margin-top:4px;">' +
-            '<button class="tool-expand-btn" type="button">\u25B2 Show less</button></div>';
-          var collapseBtn = tc.querySelector(".tool-expand-btn");
-          if (collapseBtn) {
-            collapseBtn.addEventListener("click", function () {
-              renderWriteContentBlock(el);
-            });
-          }
-        });
-      }
+    if (active) {
+      scrollView.scrollTop = scrollView.scrollHeight;
     }
   }
 

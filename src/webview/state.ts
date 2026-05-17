@@ -46,6 +46,7 @@ export const state = {
 
   // ── Overlay state ──────────────────────────────────────────
   userMsgSelectorOpen: false,
+  userMsgSelectedIdx: 0,
   slashAutocompleteOpen: false,
   slashFilter: "",
   slashSelectedIdx: 0,

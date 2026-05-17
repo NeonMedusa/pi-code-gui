@@ -70,6 +70,8 @@ export interface PiServiceEvent {
     | "slash-commands-update"
     // Extension widget bridge
     | "widget-update"
+    // Message renderer registration bridge
+    | "registerMessageRenderer"
     // Errors
     | "error";
   data?: any;
