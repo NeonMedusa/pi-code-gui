@@ -47,6 +47,76 @@ For people who prefer a GUI experience, this extension embeds Pi directly in VS 
 
 - Not all TUI behaviours map well into VSCode's UX. For instance, having new UI widgets spawned by extension packages. I did a best effort implementation, but there is definitely room for improvement.
 
+## Custom Message Renderers (Extension API)
+
+Pi extensions can send custom messages that render **inline in the conversation stream** with interactive elements (buttons, status indicators, etc.). This is the webview equivalent of Pi's TUI `MessageRenderer`.
+
+### Registering a renderer
+
+Extensions call `window.__piRegisterMessageRenderer(customType, renderer)` to register a handler for a specific `customType`:
+
+```js
+window.__piRegisterMessageRenderer("my-extension", function (data, containerEl) {
+  // data: { customType, content, display, details, timestamp, entryId }
+  // containerEl: empty DOM element to populate
+
+  var items = data.details?.items || [];
+  var html = "<ul>";
+  items.forEach(function (item) {
+    html += '<li>' + escapeHtml(item.title) +
+      ' <button data-command="/my_attach ' + item.id + '">Attach</button></li>';
+  });
+  html += "</ul>";
+  containerEl.innerHTML = html;
+});
+```
+
+### Sending a message
+
+On the extension (server) side, call `pi.sendMessage()` with `display: true` to trigger inline rendering:
+
+```typescript
+pi.sendMessage({
+  customType: "my-extension",
+  display: true,           // true = inline in conversation, false/undefined = notification
+  content: "Fallback markdown if no renderer registered",
+  details: {               // arbitrary typed payload passed to renderer
+    items: [{ id: "abc", title: "Fix login bug" }]
+  }
+});
+```
+
+### Action buttons
+
+Buttons with `data-command` attributes automatically execute the slash command when clicked:
+
+```html
+<button data-command="/my_attach abc123">Attach</button>
+<button data-command="/my_approve abc123">✓ Approve</button>
+```
+
+The framework listens for `click` events on `[data-command]` elements and posts `{ type: "slashCommand", command }` to the extension host.
+
+### Polling updates
+
+To refresh a card (e.g., work-item status changes), call `pi.sendMessage()` again with the same `customType` and updated `details`. The webview finds the existing inline card and re-runs the renderer in-place:
+
+```typescript
+setInterval(async () => {
+  const items = await fetchWorkItems();
+  pi.sendMessage({
+    customType: "nimble-pick-list",
+    display: true,
+    content: "Work items updated",
+    details: { items }
+  });
+}, 5000);
+```
+
+### No renderer registered?
+
+If no renderer is registered for a `customType`, the message's `content` is rendered as markdown inside a bordered card. This provides a graceful fallback for extensions that don't ship a webview renderer.
+
 ## Architecture
 
 Pi Code Gui loads the `@earendil-works/pi-coding-agent` SDK at runtime from your global npm install. This means `pi update --self` picks up new SDK versions without an extension update.

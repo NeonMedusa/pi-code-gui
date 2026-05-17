@@ -965,7 +965,7 @@ export class PiService {
             }
           }
         } else if (msg.role === "custom") {
-          this.emit({ type: "custom-message", data: { customType: msg.customType, content: msg.content, timestamp: msg.timestamp, entryId: entry.id } });
+          this.emit({ type: "custom-message", data: { customType: msg.customType, content: msg.content, display: msg.display, details: msg.details, timestamp: msg.timestamp, entryId: entry.id } });
         } else if (msg.role === "bashExecution") {
           const bashEntryId = entry.id ?? `bash-${Date.now()}`;
           this.emit({ type: "bash-start", data: { toolCallId: bashEntryId, command: msg.command ?? "", entryId: entry.id } });
@@ -1124,7 +1124,7 @@ export class PiService {
         } else if (event.message?.role === "custom") {
           const { entries } = this.getEntriesWithLookups();
           const custEntry = reverseFind(entries, (e: any) => e.type === "message" && e.message?.role === "custom");
-          this.emit({ type: "custom-message", data: { customType: event.message.customType, content: event.message.content, timestamp: event.message.timestamp, entryId: custEntry?.id ?? event.message.id } });
+          this.emit({ type: "custom-message", data: { customType: event.message.customType, content: event.message.content, display: event.message.display, details: event.message.details, timestamp: event.message.timestamp, entryId: custEntry?.id ?? event.message.id } });
         }
         break;
 
@@ -1446,7 +1446,7 @@ export class PiService {
             }
           }
         } else if (msg.role === "custom") {
-          this.emit({ type: "custom-message", data: { customType: msg.customType, content: msg.content, timestamp: msg.timestamp, entryId: entry.id } });
+          this.emit({ type: "custom-message", data: { customType: msg.customType, content: msg.content, display: msg.display, details: msg.details, timestamp: msg.timestamp, entryId: entry.id } });
         } else if (msg.role === "bashExecution") {
           const bashEntryId = entry.id ?? `bash-${Date.now()}`;
           this.emit({ type: "bash-start", data: { toolCallId: bashEntryId, command: msg.command ?? "", entryId: entry.id } });

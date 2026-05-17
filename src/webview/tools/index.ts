@@ -4,9 +4,10 @@ import {
   createToolBlock, morphRender, escapeHtml, renderToolResult,
   renderFileContent, renderDiffMarkup, renderDiffIfApplicable,
   formatToolError, getLangFromPath, getCompactReadLabel,
-  renderMarkdown, hideWelcome, scrollToBottom, renderToolResultTruncated,
+  renderMarkdown, renderMarkdownSafe, hideWelcome, scrollToBottom, renderToolResultTruncated,
   registerToolRenderer, getToolRenderer,
 } from "../render/engine.js";
+import { highlightCode } from "../highlight.js";
 
 
 
@@ -174,7 +175,7 @@ export function renderWriteContentBlock(el) {
       var btn = tc.querySelector(".tool-expand-btn");
       if (btn) {
         btn.addEventListener("click", function () {
-          tc.innerHTML = '<div class="tool-scroll-view" style="max-height:500px;overflow-y:auto;">' +
+          tc.innerHTML = '<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;">' +
             renderFileContent(content, lang) + '</div>' +
             '<div style="text-align:center;margin-top:4px;">' +
             '<button class="tool-expand-btn" type="button">\u25B2 Show less</button></div>';
@@ -220,6 +221,7 @@ export const editToolRenderer = {
 
       if (Array.isArray(edits) && edits.length > 0) {
         block._editEdits = edits;
+        block._editLang = rawPath ? getLangFromPath(rawPath) : undefined;
         renderEditPreviews(block, edits);
       }
 
@@ -291,8 +293,7 @@ export function renderEditPreviews(el, edits) {
     var tc = el.querySelector(".tool-content");
     if (!tc) {return;}
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
-    // While streaming, show all edits and auto-scroll to bottom.
-    // When done, limit to 3 previews max.
+    var lang = el._editLang;
     var maxVisible = active ? edits.length : Math.min(edits.length, 3);
     var html = "";
     var remaining = edits.length - maxVisible;
@@ -305,8 +306,8 @@ export function renderEditPreviews(el, edits) {
       if (edits.length > 1) {
         html += '<div class="edit-header">Edit ' + (i + 1) + ' of ' + edits.length + '</div>';
       }
-      html += '<div class="edit-old">- ' + escapeHtml(oldText) + '</div>';
-      html += '<div class="edit-new">+ ' + escapeHtml(newText) + '</div>';
+      html += '<div class="edit-old">- ' + (lang ? highlightCode(oldText, lang) : escapeHtml(oldText)) + '</div>';
+      html += '<div class="edit-new">+ ' + (lang ? highlightCode(newText, lang) : escapeHtml(newText)) + '</div>';
       html += '</div>';
     }
 
@@ -319,7 +320,7 @@ export function renderEditPreviews(el, edits) {
     // Persistent scroll wrapper — same whether active or done (no morph).
     var scrollView = tc.querySelector(".tool-scroll-view");
     if (!scrollView) {
-      tc.innerHTML = '<div class="tool-scroll-view" style="max-height:500px;overflow-y:auto;">' + html + '</div>';
+      tc.innerHTML = '<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;">' + html + '</div>';
       scrollView = tc.querySelector(".tool-scroll-view");
     } else {
       scrollView.innerHTML = html;
@@ -418,67 +419,11 @@ export const readToolRenderer = {
       var readState = el._readState || {};
       var lang = readState.lang;
 
-      // For read results, render with syntax highlighting inline (not as markdown code block)
-      var lines = text.split("\n");
-      var maxCollapsed = 10;
-      var collapsed = lines.length > maxCollapsed + 5;
-
-      if (collapsed) {
-        var previewLines = lines.slice(0, maxCollapsed);
-        var previewText = previewLines.join("\n");
-        var remaining = lines.length - maxCollapsed;
-
-        // Store state on the element for simple toggle
-        el._readCollapseState = {
-          previewText: previewText,
-          fullText: text,
-          lang: lang,
-          remaining: remaining,
-          totalLines: lines.length,
-          expanded: false,
-        };
-
-        tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:500px;overflow-y:auto;">' +
-          renderMarkdown(text) +
-          '</div>' +
-          '<button class="tool-expand-btn" type="button">' +
-          '\u25BC ' + remaining + ' more lines (' + lines.length + ' total)' +
-          '</button>';
-
-        var btn = tr.querySelector(".tool-expand-btn");
-        if (btn) {
-          function toggleReadCollapse() {
-            var st = el._readCollapseState;
-            if (!st) {return;}
-            st.expanded = !st.expanded;
-            if (st.expanded) {
-              // For markdown files, render instead of showing code
-              var expandedContent = (st.lang === "markdown" || st.lang === "md")
-                ? renderMarkdown(st.fullText)
-                : renderFileContent(st.fullText, st.lang);
-              tr.innerHTML = expandedContent +
-                '<button class="tool-expand-btn" type="button">\u25B2 Show less</button>';
-              tr.scrollTop = 0;
-            } else {
-              tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:500px;overflow-y:auto;">' +
-                renderMarkdown(st.fullText) +
-                '</div>' +
-                '<button class="tool-expand-btn" type="button">' +
-                '\u25BC ' + st.remaining + ' more lines (' + st.totalLines + ' total)' +
-                '</button>';
-            }
-            var newBtn = tr.querySelector(".tool-expand-btn");
-            if (newBtn) {newBtn.addEventListener("click", toggleReadCollapse);}
-            if (!st.expanded) {
-              tr.scrollTop = 0;
-              el.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
-          }
-          btn.addEventListener("click", toggleReadCollapse);
-        }
-      } else {
-        tr.innerHTML = renderFileContent(text, lang);
-      }
+      // Syntax-highlighted code in scrollable container.
+      tr.style.maxHeight = "15rem";
+      tr.innerHTML = renderFileContent(text, lang);
+      var cb = tr.querySelector(".code-block");
+      if (cb) { cb.style.maxHeight = "none"; cb.style.overflowY = "visible"; }
 
       // Truncation note from details
       if (result && result.details && result.details.truncation) {
@@ -491,7 +436,7 @@ export const readToolRenderer = {
             note += '[Truncated: ' + t.outputLines + ' lines shown]';
           }
           note += '</div>';
-          tr.innerHTML += note;
+          tc.innerHTML += note;
         }
       }
     },
@@ -560,7 +505,7 @@ export const bashToolRenderer = {
       block.innerHTML =
         '<div class="bash-header">$ ' + escapeHtml(cmd) + '</div>' +
         '<div class="bash-output"></div>' +
-        '<div class="bash-footer"><span class="cancel-hint">running\u2026</span></div>';
+        '<div class="bash-footer"><span class="bash-spinner"></span> <span class="cancel-hint">running\u2026</span></div>';
       state.bashBlocks[data.toolCallId] = block;
       state.bashOutputs[data.toolCallId] = "";
       return block;
