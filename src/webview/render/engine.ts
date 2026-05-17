@@ -295,11 +295,7 @@ export function renderCodeBlockHTML(code, lang) {
     .map(function (line) {
       return (
         '<span class="code-ln"></span>' +
-        '<span class="code-text" data-lang="' +
-        escapeHtml(lang) +
-        '">' +
-        syntaxHighlightLine(line, lang) +
-        "</span>"
+        syntaxHighlightLine(line, lang)
       );
     })
     .join("\n");
@@ -334,11 +330,7 @@ export function renderFileContent(content, lang) {
     .map(function (line) {
       return (
         '<span class="code-ln"></span>' +
-        '<span class="code-text" data-lang="' +
-        escapeHtml(lang || "") +
-        '">' +
-        syntaxHighlightLine(line, lang) +
-        "</span>"
+        syntaxHighlightLine(line, lang)
       );
     })
     .join("\n");

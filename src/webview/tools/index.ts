@@ -4,7 +4,7 @@ import {
   createToolBlock, morphRender, escapeHtml, renderToolResult,
   renderFileContent, renderDiffMarkup, renderDiffIfApplicable,
   formatToolError, getLangFromPath, getCompactReadLabel,
-  renderMarkdown, hideWelcome, scrollToBottom, renderToolResultTruncated,
+  renderMarkdown, renderMarkdownSafe, hideWelcome, scrollToBottom, renderToolResultTruncated,
   registerToolRenderer, getToolRenderer,
 } from "../render/engine.js";
 
@@ -418,67 +418,11 @@ export const readToolRenderer = {
       var readState = el._readState || {};
       var lang = readState.lang;
 
-      // For read results, render with syntax highlighting inline (not as markdown code block)
-      var lines = text.split("\n");
-      var maxCollapsed = 10;
-      var collapsed = lines.length > maxCollapsed + 5;
-
-      if (collapsed) {
-        var previewLines = lines.slice(0, maxCollapsed);
-        var previewText = previewLines.join("\n");
-        var remaining = lines.length - maxCollapsed;
-
-        // Store state on the element for simple toggle
-        el._readCollapseState = {
-          previewText: previewText,
-          fullText: text,
-          lang: lang,
-          remaining: remaining,
-          totalLines: lines.length,
-          expanded: false,
-        };
-
-        tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:500px;overflow-y:auto;">' +
-          renderMarkdown(text) +
-          '</div>' +
-          '<button class="tool-expand-btn" type="button">' +
-          '\u25BC ' + remaining + ' more lines (' + lines.length + ' total)' +
-          '</button>';
-
-        var btn = tr.querySelector(".tool-expand-btn");
-        if (btn) {
-          function toggleReadCollapse() {
-            var st = el._readCollapseState;
-            if (!st) {return;}
-            st.expanded = !st.expanded;
-            if (st.expanded) {
-              // For markdown files, render instead of showing code
-              var expandedContent = (st.lang === "markdown" || st.lang === "md")
-                ? renderMarkdown(st.fullText)
-                : renderFileContent(st.fullText, st.lang);
-              tr.innerHTML = expandedContent +
-                '<button class="tool-expand-btn" type="button">\u25B2 Show less</button>';
-              tr.scrollTop = 0;
-            } else {
-              tr.innerHTML = '<div class="tool-result-collapsed" style="max-height:500px;overflow-y:auto;">' +
-                renderMarkdown(st.fullText) +
-                '</div>' +
-                '<button class="tool-expand-btn" type="button">' +
-                '\u25BC ' + st.remaining + ' more lines (' + st.totalLines + ' total)' +
-                '</button>';
-            }
-            var newBtn = tr.querySelector(".tool-expand-btn");
-            if (newBtn) {newBtn.addEventListener("click", toggleReadCollapse);}
-            if (!st.expanded) {
-              tr.scrollTop = 0;
-              el.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
-          }
-          btn.addEventListener("click", toggleReadCollapse);
-        }
-      } else {
-        tr.innerHTML = renderFileContent(text, lang);
-      }
+      // Scrollable plain text — safe, no CSS leakage from syntax highlighting.
+      tr.style.maxHeight = "500px";
+      tr.innerHTML = '<pre style="margin:0;white-space:pre-wrap;font-family:var(--vscode-editor-font-family);font-size:0.85em;">' +
+        escapeHtml(text) +
+        '</pre>';
 
       // Truncation note from details
       if (result && result.details && result.details.truncation) {
@@ -491,7 +435,7 @@ export const readToolRenderer = {
             note += '[Truncated: ' + t.outputLines + ' lines shown]';
           }
           note += '</div>';
-          tr.innerHTML += note;
+          tc.innerHTML += note;
         }
       }
     },
