@@ -1586,9 +1586,81 @@ export function closeAllOverlays() {
   // ═══ #5: Diff Rendering for edit tool results ════════════
   // ═══ #7: Custom Message Rendering ═════════════════════════
 
+/**
+ * Render a custom message inline in the conversation stream.
+ * Supports per-customType renderers registered via
+ * window.__piRegisterMessageRenderer, and updates existing
+ * cards in-place when the same customType reappears (polling).
+ * Action buttons with data-command execute slash commands.
+ */
+export function renderInlineCustomMessage(data) {
+    var customType = data.customType || "custom";
+    var details = data.details;
+    var content = typeof data.content === "string"
+      ? data.content
+      : (Array.isArray(data.content) ? data.content.filter(function (c) { return c.type === "text"; }).map(function (c) { return c.text; }).join("\n") : "");
+
+    // Check for existing card to update in-place (polling refresh)
+    var existing = state.chatContainer.querySelector('[data-custom-type="' + customType + '"]');
+
+    var renderer = getMessageRenderer(customType);
+
+    if (existing) {
+      // Update existing card
+      if (renderer) {
+        // Re-run registered renderer on the existing container
+        var body = existing.querySelector(".custom-message-body");
+        if (body) { body.innerHTML = ""; renderer(data, body); }
+      } else {
+        existing.querySelector(".custom-message-body").innerHTML = renderMarkdown(content);
+      }
+      return;
+    }
+
+    // Create new inline card
+    var el = document.createElement("div");
+    el.className = "custom-message-inline";
+    el.setAttribute("data-custom-type", customType);
+
+    var label = escapeHtml(customType);
+    el.innerHTML =
+      '<div class="custom-message-header">' +
+      '<span class="custom-message-label">' + label + '</span>' +
+      '</div>' +
+      '<div class="custom-message-body"></div>';
+
+    var body = el.querySelector(".custom-message-body");
+    if (renderer) {
+      renderer(data, body);
+    } else {
+      body.innerHTML = renderMarkdown(content);
+    }
+
+    // Wire action buttons: data-command sends slash command
+    el.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-command]");
+      if (btn) {
+        e.preventDefault();
+        var cmd = btn.getAttribute("data-command");
+        if (cmd && window.__vscode) {
+          window.__vscode.postMessage({ type: "slashCommand", command: cmd });
+        }
+      }
+    });
+
+    state.chatContainer.appendChild(el);
+    scrollToBottom();
+  }
+
 export function handleCustomMessage(data) {
     hideWelcome();
     var customType = data.customType || "custom";
+
+    // ── display: true → inline in conversation stream ──────
+    if (data.display === true) {
+      renderInlineCustomMessage(data);
+      return;
+    }
 
     // "info" type: render as in-chat status message (for slash command feedback)
     if (customType === "info") {

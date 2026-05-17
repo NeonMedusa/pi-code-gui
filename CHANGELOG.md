@@ -1,6 +1,15 @@
 # Change Log
 
-## [0.0.24] — highlight.js replaces hand-rolled syntax highlighting
+## [0.0.24] — highlight.js, custom message renderer, and UX polish
+
+### Added
+- **Custom message renderer**: `display: true` messages now render inline in the
+  conversation stream with support for registered `MessageRenderer` functions,
+  interactive `[data-command]` action buttons, and polling-based in-place updates.
+  See [README § Custom Message Renderers](./README.md#custom-message-renderers-extension-api)
+  for the extension developer API.
+
+### Changed
 
 ### Changed
 - **Syntax highlighting** replaced hand-rolled regex highlighter with **highlight.js**, in all code paths.
