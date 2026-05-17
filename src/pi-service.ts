@@ -650,6 +650,11 @@ export class PiService {
         opts.resourceLoader = this.resourceLoader;
       }
 
+      // Inject before extensions load (SDK may load them during createAgentSession)
+      (globalThis as any).__piRegisterMessageRenderer = (customType: string, sourceCode: string) => {
+        this.emit({ type: "registerMessageRenderer", data: { customType, sourceCode } } as any);
+      };
+
       result = await SDK.createAgentSession(opts);
     } catch (e: any) {
       return { success: false, error: `createAgentSession failed: ${e.message ?? e}` };
@@ -836,14 +841,6 @@ export class PiService {
         return undefined;
       },
     });
-
-    // Bridge: extensions call globalThis.__piRegisterMessageRenderer to
-    // register a renderer that runs in the webview DOM.  The source code
-    // is forwarded to the webview where it's eval'd into a function.
-    (globalThis as any).__piRegisterMessageRenderer = (customType: string, sourceCode: string) => {
-      piLog(`Extension registered message renderer: ${customType}`);
-      emit({ type: "registerMessageRenderer", data: { customType, sourceCode } });
-    };
 
     try {
       await this.session.bindExtensions({

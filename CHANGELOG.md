@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.0.26] — Fix custom message renderer timing and production builds
+
+### Fixed
+- **`globalThis.__piRegisterMessageRenderer`** now injected before
+  `createAgentSession()` so extensions find it during load, not after.
+- **`escapeHtml`** now passed as a renderer parameter instead of relying
+  on closure scope, fixing breakage in production builds where esbuild
+  renames identifiers.
+
 ## [0.0.25] — Inline custom messages, user message selector, UX fixes
 
 ### Added

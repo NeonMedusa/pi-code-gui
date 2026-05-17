@@ -72,7 +72,7 @@ globalThis.__piRegisterMessageRenderer("my-extension", `
 > It runs in the webview DOM context and receives `(data, containerEl)`:
 > - `data` — the full custom message payload
 > - `containerEl` — an empty `<div>` to populate with the card's DOM
-> - The global `escapeHtml` utility is available in the renderer scope.
+> - `escapeHtml` — utility function, passed as third parameter (safe across builds)
 
 ### Sending a message
 
