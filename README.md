@@ -53,13 +53,10 @@ Pi extensions can send custom messages that render **inline in the conversation 
 
 ### Registering a renderer
 
-Extensions call `window.__piRegisterMessageRenderer(customType, renderer)` to register a handler for a specific `customType`:
+Extensions call `globalThis.__piRegisterMessageRenderer(customType, sourceCode)` with the renderer's JavaScript source code as a string. Pi Code GUI forwards it to the webview where it runs in the DOM:
 
 ```js
-window.__piRegisterMessageRenderer("my-extension", function (data, containerEl) {
-  // data: { customType, content, display, details, timestamp, entryId }
-  // containerEl: empty DOM element to populate
-
+globalThis.__piRegisterMessageRenderer("my-extension", `
   var items = data.details?.items || [];
   var html = "<ul>";
   items.forEach(function (item) {
@@ -68,19 +65,34 @@ window.__piRegisterMessageRenderer("my-extension", function (data, containerEl) 
   });
   html += "</ul>";
   containerEl.innerHTML = html;
-});
+`);
 ```
+
+> **Important:** The second argument is **source code as a string**, not a function.
+> It runs in the webview DOM context and receives `(data, containerEl)`:
+> - `data` — the full custom message payload
+> - `containerEl` — an empty `<div>` to populate with the card's DOM
+> - The global `escapeHtml` utility is available in the renderer scope.
 
 ### Sending a message
 
-On the extension (server) side, call `pi.sendMessage()` with `display: true` to trigger inline rendering:
+From the extension (Node.js side), call `pi.sendMessage()` with `display: true` and `details` containing your payload. Register the renderer first (see above):
 
 ```typescript
+// 1. Register renderer on load
+globalThis.__piRegisterMessageRenderer("my-extension", `
+  containerEl.innerHTML = '<ul>' +
+    data.details.items.map(function(i) {
+      return '<li>' + escapeHtml(i.title) + ' <button data-command="/my_attach ' + i.id + '">Attach</button></li>';
+    }).join('') + '</ul>';
+`);
+
+// 2. Send message to display
 pi.sendMessage({
   customType: "my-extension",
-  display: true,           // true = inline in conversation, false/undefined = notification
+  display: true,           // true = inline, false/undefined = notification
   content: "Fallback markdown if no renderer registered",
-  details: {               // arbitrary typed payload passed to renderer
+  details: {               // passed to your renderer as data.details
     items: [{ id: "abc", title: "Fix login bug" }]
   }
 });

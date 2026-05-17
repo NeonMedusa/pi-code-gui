@@ -1,5 +1,22 @@
 # Change Log
 
+## [0.0.25] — Inline custom messages, user message selector, UX fixes
+
+### Added
+- **`globalThis.__piRegisterMessageRenderer`** bridge: extensions running in the
+  extension host (Node.js) can now register renderers that execute in the webview
+  DOM. Accepts `(customType, sourceCode)` as a string.
+- **User message selector** keyboard navigation: up/down arrows scroll the list,
+  Enter picks the highlighted item, Escape dismisses.
+
+### Fixed
+- **Live-card notifications** no longer show content expanded with a collapsed
+  toggle icon.
+- **Slash command picker** now spans the full webview width and truncates long
+  descriptions with ellipsis.
+- **Write tool block** consistent height during streaming (max-height scroll-view,
+  no jitter at size boundary).
+
 ## [0.0.24] — highlight.js, custom message renderer, and UX polish
 
 ### Added

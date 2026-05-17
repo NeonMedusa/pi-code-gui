@@ -802,6 +802,8 @@
       text-transform: uppercase;
       font-size: 0.75em; letter-spacing: 0.5px;
       cursor: pointer; user-select: none;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 100%;
 
       .live-card-expando { display: inline-block; width: 12px; font-size: 0.9em; }
     }
@@ -1031,8 +1033,8 @@
 
   .slash-autocomplete {
     display: none;
-    position: fixed; bottom: 110px; left: 16px;
-    max-width: 320px;
+    position: fixed; bottom: 110px; left: 16px; right: 16px;
+    max-width: calc(100% - 32px);
     background: var(--vscode-sideBar-background);
     border: 1px solid var(--accent);
     border-radius: 8px;
@@ -1054,8 +1056,8 @@
       &:hover, &.selected { background: var(--vscode-list-hoverBackground); }
     }
 
-    .slash-cmd { font-weight: 600; color: var(--accent); min-width: 80px; }
-    .slash-desc { color: var(--vscode-descriptionForeground); font-size: 0.85em; }
+    .slash-cmd { font-weight: 600; color: var(--accent); flex-shrink: 0; }
+    .slash-desc { color: var(--vscode-descriptionForeground); font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
 
   /* ═══ Message content variants ═══════════════════════ */

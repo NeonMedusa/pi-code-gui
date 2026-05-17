@@ -837,6 +837,14 @@ export class PiService {
       },
     });
 
+    // Bridge: extensions call globalThis.__piRegisterMessageRenderer to
+    // register a renderer that runs in the webview DOM.  The source code
+    // is forwarded to the webview where it's eval'd into a function.
+    (globalThis as any).__piRegisterMessageRenderer = (customType: string, sourceCode: string) => {
+      piLog(`Extension registered message renderer: ${customType}`);
+      emit({ type: "registerMessageRenderer", data: { customType, sourceCode } });
+    };
+
     try {
       await this.session.bindExtensions({
         uiContext,

@@ -83,7 +83,7 @@ export function createLiveCard(customType, label, content) {
     card.innerHTML =
       '<div class="live-card-label"><span class="live-card-expando">\u25B8</span> ' + escapeHtml(label) + '</div>' +
       '<button class="live-card-close" title="Dismiss">&times;</button>' +
-      '<div class="live-card-content">' + renderMarkdown(content) + '</div>';
+      '<div class="live-card-content" style="display:none">' + renderMarkdown(content) + '</div>';
     card.querySelector(".live-card-label").addEventListener("click", function () {
       var wasCollapsed = card.classList.contains("live-card-collapsed");
       if (wasCollapsed) {
@@ -171,6 +171,7 @@ export function createLiveCard(customType, label, content) {
 
       // Widget bridge from extensions (setWidget calls)
       case "widget-update":      handleWidgetUpdate(msg.data); break;
+      case "registerMessageRenderer": handleRegisterMessageRenderer(msg.data); break;
 
 
     }
@@ -1364,7 +1365,19 @@ let sbSettings = document.getElementById("pi-sb-settings");
     // priority when the input is empty (no slash typed yet)
     if (e.key === "ArrowUp" && state.promptInput.value === "" && state.userMessageHistory.length > 0) {
       e.preventDefault();
-      showUserMessageSelector();
+      if (!state.userMsgSelectorOpen) {
+        showUserMessageSelector();
+      } else {
+        state.userMsgSelectedIdx = Math.max(0, state.userMsgSelectedIdx - 1);
+        highlightUserMsgItem();
+      }
+      return;
+    }
+    // ArrowDown: navigate user message list if open
+    if (e.key === "ArrowDown" && state.userMsgSelectorOpen) {
+      e.preventDefault();
+      state.userMsgSelectedIdx = Math.min(state.userMessageHistory.length - 1, state.userMsgSelectedIdx + 1);
+      highlightUserMsgItem();
       return;
     }
     // Esc to close all overlays
@@ -1375,8 +1388,19 @@ let sbSettings = document.getElementById("pi-sb-settings");
         return;
       }
     }
-    // Enter: accept slash autocomplete if open, otherwise send
+    // Enter: accept user msg or slash autocomplete if open, otherwise send
     if (e.key === "Enter" && !e.shiftKey) {
+      if (state.userMsgSelectorOpen) {
+        e.preventDefault();
+        var idx = state.userMsgSelectedIdx;
+        if (idx >= 0 && idx < state.userMessageHistory.length) {
+          state.promptInput.value = state.userMessageHistory[idx].text;
+          state.promptInput.focus();
+          resizePromptInput();
+        }
+        closeUserMsgSelector();
+        return;
+      }
       if (state.slashAutocompleteOpen) {
         e.preventDefault();
         var sel = state.slashAutocomplete.querySelector(".slash-item.selected");
@@ -1474,6 +1498,7 @@ export function showUserMessageSelector() {
     if (state.userMessageHistory.length === 0) {return;}
     closeAllOverlays();
     state.userMsgSelectorOpen = true;
+    state.userMsgSelectedIdx = 0;
     state.userMsgOverlay.classList.add("visible");
     var html = "";
     for (var i = 0; i < state.userMessageHistory.length; i++) {
@@ -1500,8 +1525,21 @@ export function showUserMessageSelector() {
     });
   }
 
+export function highlightUserMsgItem() {
+    var items = state.userMsgOverlay.querySelectorAll(".user-msg-item");
+    items.forEach(function (item, i) {
+      if (i === state.userMsgSelectedIdx) {
+        item.classList.add("selected");
+        item.scrollIntoView({ block: "nearest" });
+      } else {
+        item.classList.remove("selected");
+      }
+    });
+  }
+
 export function closeUserMsgSelector() {
     state.userMsgSelectorOpen = false;
+    state.userMsgSelectedIdx = 0;
     state.userMsgOverlay.classList.remove("visible");
   }
 
@@ -1736,6 +1774,18 @@ export function clearLivePanel() {
   // ── Widget Bridge ─────────────────────────────────────
   // ── Widget Bridge ─────────────────────────────────────
 
+
+/** Bridge: extension host registers a renderer by source code. */
+export function handleRegisterMessageRenderer(data) {
+    if (!data.customType || !data.sourceCode) {return;}
+    try {
+      // eslint-disable-next-line no-eval
+      var renderer = eval("(function(data, containerEl) { " + data.sourceCode + " })");
+      registerMessageRenderer(data.customType, renderer);
+    } catch (e) {
+      console.warn("[pi-gui] Failed to register message renderer for", data.customType, e);
+    }
+  }
 
 export function handleWidgetUpdate(data) {
     if (!data || !data.key) {return;}
