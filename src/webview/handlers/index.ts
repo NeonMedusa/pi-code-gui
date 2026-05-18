@@ -1779,14 +1779,25 @@ export function clearLivePanel() {
 export function handleRegisterMessageRenderer(data) {
     if (!data.customType || !data.sourceCode) {return;}
     try {
-      // eslint-disable-next-line no-eval
-      // Pass escapeHtml as a parameter so the renderer works even after
-      // esbuild renames it in production builds.
-      var renderer = eval("(function(data, containerEl, escapeHtml) { " + data.sourceCode + " })");
-      var boundRenderer = function(data, containerEl) {
-        renderer(data, containerEl, escapeHtml);
-      };
-      registerMessageRenderer(data.customType, boundRenderer);
+      // CSP blocks eval().  Inject a <script nonce> tag instead.
+      var nonce = document.querySelector("script[nonce]")?.getAttribute("nonce");
+      if (!nonce) {
+        console.warn("[pi-gui] Cannot register renderer: no CSP nonce found");
+        return;
+      }
+      var fnName = "__piRenderer_" + data.customType.replace(/[^\w]/g, "_");
+      var script = document.createElement("script");
+      script.setAttribute("nonce", nonce);
+      script.textContent =
+        "window['" + fnName + "'] = function(data, containerEl, escapeHtml) { " + data.sourceCode + " }";
+      document.head.appendChild(script);
+      var renderer = (window as any)[fnName];
+      if (typeof renderer === "function") {
+        var boundRenderer = function(d: any, el: HTMLElement) {
+          renderer(d, el, escapeHtml);
+        };
+        registerMessageRenderer(data.customType, boundRenderer);
+      }
     } catch (e) {
       console.warn("[pi-gui] Failed to register message renderer for", data.customType, e);
     }

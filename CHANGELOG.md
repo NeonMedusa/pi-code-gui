@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.0.27] — Fix renderer CSP violation
+
+### Fixed
+- **Custom message renderer** switched from `eval()` to `<script nonce>` injection,
+  fixing CSP violation when extensions register renderers.
+
 ## [0.0.26] — Fix custom message renderer timing and production builds
 
 ### Fixed
