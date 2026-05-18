@@ -42,92 +42,160 @@ For people who prefer a GUI experience, this extension embeds Pi directly in VS 
 | 🪟 **Multi-session** | Multiple independent chat panels, each with its own model, thinking level, and conversation tree |
 | 🔐 **Flexible auth** | Runtime API key overrides via VS Code settings, env vars, or the built-in auth config |
 | 🔧 **Settings** | Toggle auto-compaction, auto-retry, skills loading, context files, and prompt templates from the UI |
+| 📋 **Custom Messages** | Extensions can render inline interactive cards with buttons, clickable rows, and live polling updates — see [§ Custom Messages](#custom-messages--minimal-working-example) |
 
 ## Gotchas
 
 - Not all TUI behaviours map well into VSCode's UX. For instance, having new UI widgets spawned by extension packages. I did a best effort implementation, but there is definitely room for improvement.
 
-## Custom Message Renderers (Extension API)
+## Custom Messages — Minimal Working Example
 
-Pi extensions can send custom messages that render **inline in the conversation stream** with interactive elements (buttons, status indicators, etc.). This is the webview equivalent of Pi's TUI `MessageRenderer`.
+Custom messages render inline in the conversation stream with interactive
+elements (buttons, clickable rows, status indicators). This is the
+webview equivalent of Pi's TUI `MessageRenderer`.
 
-### Registering a renderer
+### 1. Register a renderer (Pi Code GUI extension host)
 
-Extensions call `globalThis.__piRegisterMessageRenderer(customType, sourceCode)` with the renderer's JavaScript source code as a string. Pi Code GUI forwards it to the webview where it runs in the DOM:
-
-```js
-globalThis.__piRegisterMessageRenderer("my-extension", `
-  var items = data.details?.items || [];
-  var html = "<ul>";
-  items.forEach(function (item) {
-    html += '<li>' + escapeHtml(item.title) +
-      ' <button data-command="/my_attach ' + item.id + '">Attach</button></li>';
-  });
-  html += "</ul>";
-  containerEl.innerHTML = html;
-`);
-```
-
-> **Important:** The second argument is **source code as a string**, not a function.
-> It runs in the webview DOM context and receives `(data, containerEl)`:
-> - `data` — the full custom message payload
-> - `containerEl` — an empty `<div>` to populate with the card's DOM
-> - `escapeHtml` — utility function, passed as third parameter (safe across builds)
-
-### Sending a message
-
-From the extension (Node.js side), call `pi.sendMessage()` with `display: true` and `details` containing your payload. Register the renderer first (see above):
+Pi extensions call `globalThis.__piRegisterMessageRenderer(customType, sourceCode)`.
+The second argument is **JavaScript source code as a string** — it runs in the
+webview DOM and receives `(data, containerEl, escapeHtml)`.
 
 ```typescript
-// 1. Register renderer on load
-globalThis.__piRegisterMessageRenderer("my-extension", `
-  containerEl.innerHTML = '<ul>' +
-    data.details.items.map(function(i) {
-      return '<li>' + escapeHtml(i.title) + ' <button data-command="/my_attach ' + i.id + '">Attach</button></li>';
-    }).join('') + '</ul>';
-`);
+// In your Pi extension's entry point (e.g. index.ts):
 
-// 2. Send message to display
-pi.sendMessage({
-  customType: "my-extension",
-  display: true,           // true = inline, false/undefined = notification
-  content: "Fallback markdown if no renderer registered",
-  details: {               // passed to your renderer as data.details
-    items: [{ id: "abc", title: "Fix login bug" }]
+export default function (pi: ExtensionAPI) {
+  // Register renderer at load time. Defer to session_start if the
+  // hook may not be available at file evaluation time.
+  function registerRenderer() {
+    const reg = (globalThis as any).__piRegisterMessageRenderer;
+    if (typeof reg !== "function") return;
+
+    reg("my-extension", `
+// This code runs in the webview DOM. Variables declared here are scoped
+// to this renderer invocation and won't leak to other cards or the global
+// scope (Pi Code GUI wraps renderers in an IIFE or <script> tag).
+
+// data: the full custom message payload from pi.sendMessage()
+var items = (data.details && data.details.items) || [];
+if (!items.length) {
+  containerEl.innerHTML = "<p>No items.</p>";
+  return;
+}
+
+var h = '<div class="my-card">';
+for (var i = 0; i < items.length; i++) {
+  var it = items[i];
+  // escapeHtml() is provided by Pi Code GUI — use it for any
+  // user-supplied text to prevent XSS.
+  h += '<div class="my-item"' +
+    // data-command attributes automatically execute the slash command
+    // when clicked. The leading / is added by the framework — omit it.
+    ' data-command="my_action ' + escapeHtml(it.id) + '"' +
+    ' style="display:block;border:1px solid var(--vscode-panel-border,#333);margin:4px 0;padding:6px;border-radius:4px;cursor:pointer">';
+  h += '<strong>' + escapeHtml(it.label) + '</strong>';
+  h += ' <span style="color:#888">' + escapeHtml(it.status) + '</span>';
+  h += ' <button data-command="my_approve ' + escapeHtml(it.id) + '"' +
+    ' style="margin-left:8px">Approve</button>';
+  h += '</div>';
+}
+h += '</div>';
+containerEl.innerHTML = h;
+`);
   }
-});
+
+  // Try immediately (hook may already exist), and on session_start.
+  registerRenderer();
+  pi.on("session_start", () => registerRenderer());
+}
 ```
 
-### Action buttons
+### 2. Send the message (anywhere in your Pi extension)
 
-Buttons with `data-command` attributes automatically execute the slash command when clicked:
+```typescript
+// From a slash command, tool, or event handler:
+
+pi.sendMessage({
+  customType: "my-extension",   // must match the registered customType
+  display: true,                // true = inline card, false/undefined = notification
+  content: "Fallback markdown if no renderer registered",  // graceful fallback
+  details: {                    // passed to your renderer as data.details
+    items: [
+      { id: "abc123", label: "Fix login bug",      status: "awaiting" },
+      { id: "def456", label: "Add dark mode toggle", status: "in-progress" },
+    ]
+  }
+}, { triggerTurn: false });     // false = don't wake the LLM
+```
+
+When the message arrives in the webview:
+- **If a renderer is registered for `my-extension`:** the renderer runs,
+  `containerEl` is populated with your HTML, and the card appears inline.
+- **If no renderer is registered:** the `content` string is rendered as
+  markdown inside a bordered card (graceful fallback).
+
+### 3. Action buttons
+
+Buttons with `data-command` attributes automatically execute the slash
+command when clicked. Pi Code GUI prepends `/` — so `data-command="my_action abc"`
+becomes the slash command `/my_action abc`.
 
 ```html
-<button data-command="/my_attach abc123">Attach</button>
-<button data-command="/my_approve abc123">✓ Approve</button>
+<button data-command="my_attach abc123">Attach</button>
+<button data-command="my_approve abc123">Approve</button>
 ```
 
-The framework listens for `click` events on `[data-command]` elements and posts `{ type: "slashCommand", command }` to the extension host.
+Clickable rows: put `data-command` on any element, not just `<button>`:
 
-### Polling updates
+```html
+<div data-command="nimble_attach abc123" style="cursor:pointer">
+  Click this entire row
+</div>
+```
 
-To refresh a card (e.g., work-item status changes), call `pi.sendMessage()` again with the same `customType` and updated `details`. The webview finds the existing inline card and re-runs the renderer in-place:
+### 4. Polling / live updates
+
+To refresh a card with new data, call `pi.sendMessage()` again with the
+**same `customType`** and updated `details`. The webview finds the existing
+card and re-runs the renderer in-place:
 
 ```typescript
 setInterval(async () => {
   const items = await fetchWorkItems();
   pi.sendMessage({
-    customType: "nimble-pick-list",
+    customType: "my-extension",
     display: true,
-    content: "Work items updated",
+    content: "Items updated",
     details: { items }
-  });
+  }, { triggerTurn: false });
 }, 5000);
 ```
 
-### No renderer registered?
+**Unique cards:** If you want each invocation to create a *new* card
+(instead of replacing the old one), use a unique `customType` per
+invocation (e.g. `my-extension-1`, `my-extension-2`). Register a renderer
+for each unique type.
 
-If no renderer is registered for a `customType`, the message's `content` is rendered as markdown inside a bordered card. This provides a graceful fallback for extensions that don't ship a webview renderer.
+### 5. Complete file structure (Pi extension directory)
+
+```
+.pi/extensions/my-extension/
+  index.ts          # Pi extension entry point (registration + sending)
+  renderer.js       # (optional) Renderer logic in a separate file
+```
+
+**Using a separate renderer file:** Instead of embedding the renderer as
+a string literal, read it from disk at load time:
+
+```typescript
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const src = readFileSync(join(__dirname, "renderer.js"), "utf-8");
+reg("my-extension", src);
+```
+
+This avoids TypeScript string-escaping issues and lets you test the
+renderer independently in a browser console.
 
 ## Architecture
 
