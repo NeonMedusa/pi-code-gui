@@ -173,7 +173,16 @@ export function createLiveCard(customType, label, content) {
       case "widget-update":      handleWidgetUpdate(msg.data); break;
       case "registerMessageRenderer": handleRegisterMessageRenderer(msg.data); break;
 
-
+      default:
+        // Surface unknown message types as visible notifications.
+        // Skip high-frequency types that we intentionally don't render.
+        if (msg.type !== "stream-delta" && msg.type !== "thinking-delta") {
+          defaultMessageRenderer({
+            customType: "pi-gui-diagnostic",
+            content: "Unhandled webview message: " + msg.type,
+          });
+        }
+        break;
     }
   });
 
@@ -676,13 +685,20 @@ export function handleBatchStart(data) {
 export function handleBatchEnd(data) {
     state._inBatch = false;
     document.body.classList.remove("no-animate");
-    // For fresh sessions, state.welcome was never hidden — keep it visible
-    // For restores, state.welcome is already hidden
-    // Force-scroll to bottom after batch replay (ignores state.hasScrolledUp).
-    // Use a double-rAF so layout has settled before reading scrollHeight.
+    // Force-scroll to bottom after batch replay.  Triple-rAF ensures
+    // layout has settled (highlight.js code blocks, syntax spans, etc.)
+    // before we read scrollHeight.  Falls back to scrollIntoView which
+    // triggers a layout pass if needed.
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
-        state.chatContainer.scrollTop = state.chatContainer.scrollHeight;
+        requestAnimationFrame(function () {
+          var container = state.chatContainer;
+          if (container.lastElementChild) {
+            container.lastElementChild.scrollIntoView({ block: "end", behavior: "instant" });
+          } else {
+            container.scrollTop = container.scrollHeight;
+          }
+        });
       });
     });
   }

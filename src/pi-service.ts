@@ -1204,6 +1204,21 @@ export class PiService {
       case "auto_retry_end":
         this.emit({ type: "auto-retry-end", data: { success: event.success, attempt: event.attempt, finalError: event.finalError } });
         break;
+
+      default:
+        // Surface unknown SDK events as visible notifications so they
+        // aren't silently lost.  Add a case above once handled.
+        this.emit({
+          type: "custom-message",
+          data: {
+            customType: "pi-gui-diagnostic",
+            display: false,
+            content: `Unhandled agent event: ${event.type}`,
+            timestamp: Date.now(),
+          },
+        });
+        piWarn(`Unhandled agent event type: ${event.type}`);
+        break;
     }
   }
 
