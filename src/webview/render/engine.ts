@@ -9,6 +9,9 @@
 import { state } from "../state.js";
 import { logEvent, logDom } from "../debug.js";
 import { highlightCode } from "../highlight.js";
+import { html, safe } from "./html.js";
+import { CodeBlock } from "../components/code-block.js";
+import { ThinkingBlock } from "../components/thinking-block.js";
 
 // ═══ Utilities ══════════════════════════════════════════════
 
@@ -135,34 +138,9 @@ export function createMessageEl(role) {
 }
 
 export function createThinkingBlock(content) {
-  const el = document.createElement("div");
-  el.className = "thinking-block thinking-collapsed";
-  el.innerHTML =
-    '<div class="thinking-header">' +
-    '<span class="thinking-label">Thinking</span>' +
-    '<span class="thinking-spinner"></span>' +
-    '<span class="thinking-line-count"></span>' +
-    '</div>' +
-    '<div class="thinking-content">' +
-    escapeHtml(content) +
-    '</div>' +
-    '<button class="thinking-expand-btn">Show more</button>';
-  const btn = el.querySelector(".thinking-expand-btn");
-  const contentEl = el.querySelector(".thinking-content");
-
-  btn.addEventListener("click", function () {
-    const wasCollapsed = el.classList.contains("thinking-collapsed");
-    if (wasCollapsed) {
-      el.classList.remove("thinking-collapsed");
-      btn.textContent = "Show less";
-    } else {
-      el.classList.add("thinking-collapsed");
-      btn.textContent = "Show more";
-      contentEl.scrollTop = 0;
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  });
-  return el;
+  const tb = new ThinkingBlock({ content: content || "" });
+  tb.el._component = tb; // attach for later updating
+  return tb.el;
 }
 
 export function createToolBlock(toolName, toolCallId, status, args) {
@@ -176,19 +154,21 @@ export function createToolBlock(toolName, toolCallId, status, args) {
     try {
       argsText = JSON.stringify(args, null, 2);
     } catch (e) {
+      console.warn("[pi-gui] JSON.stringify failed for tool args:", e);
       argsText = String(args);
     }
   }
 
-  block.innerHTML =
-    '<div class="tool-header">' +
-    '<span class="tool-name">' + escapeHtml(toolName) + '</span>' +
-    '<span class="tool-status ' + (status === "running" ? "running" : "pending") + '">' +
-      (status === "running" ? "running" : "pending") +
-    '</span>' +
-    '</div>' +
-    (argsText ? '<div class="tool-args"><code>' + escapeHtml(truncate(argsText, 200)) + '</code></div>' : '') +
-    '<div class="tool-result"></div>';
+  const isRunning = status === "running";
+  block.innerHTML = html`
+    <div class="tool-header">
+      <span class="tool-name">${toolName}</span>
+      <span class="tool-status ${isRunning ? "running" : "pending"}">
+        ${isRunning ? "running" : "pending"}
+      </span>
+    </div>
+    ${argsText ? safe(html`<div class="tool-args"><code>${truncate(argsText, 200)}</code></div>`) : ""}
+    <div class="tool-result"></div>`;
 
   return block;
 }
@@ -289,66 +269,23 @@ function postProcessMarkedHTML(html) {
 }
 
 export function renderCodeBlockHTML(code, lang) {
-  code = code.replace(/\r\n?/g, "\n");
-  code = code.replace(/\n+$/, "");
-  // Highlight the full block, then split into lines for line numbers.
-  var highlighted = highlightCode(code, lang);
-  var lines = highlighted.split("\n");
-  const numberedContent = lines
-    .map(function (line) {
-      return '<span class="code-ln"></span>' + line;
-    })
-    .join("\n");
-  const langLabel = lang
-    ? '<span class="code-lang-label">' + escapeHtml(lang) + "</span>"
-    : "";
-  return (
-    '<div class="code-block-wrapper">' +
-    '<div class="code-block-header">' +
-    langLabel +
-    '<button class="code-copy-btn" type="button">Copy</button>' +
-    "</div>" +
-    '<pre class="code-block" data-lang="' +
-    escapeHtml(lang) +
-    '"><code>' +
-    numberedContent +
-    "</code></pre>" +
-    "</div>"
-  );
+  const cb = new CodeBlock({ code, lang, showHeader: true, showCopy: true });
+  return cb.el.outerHTML;
 }
 
 export function renderFileContent(content, lang) {
   if (!content) {return "";}
-  content = content.replace(/\r\n?/g, "\n");
-  content = content.replace(/\n+$/, "");
-  if (!content) {return "";}
-  var highlighted = highlightCode(content, lang);
-  var lines = highlighted.split("\n");
-  const langLabel = lang
-    ? '<span class="code-lang-label">' + escapeHtml(lang) + "</span>"
-    : "";
-  const numbered = lines
-    .map(function (line) {
-      return '<span class="code-ln"></span>' + line;
-    })
-    .join("\n");
-  return (
-    '<div class="code-block-wrapper">' +
-    '<div class="code-block-header">' +
-    langLabel +
-    '<button class="code-copy-btn" type="button">Copy</button></div>' +
-    '<pre class="code-block" data-lang="' +
-    escapeHtml(lang || "") +
-    '"><code>' +
-    numbered +
-    "</code></pre></div>"
-  );
+  const trimmed = content.replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+  if (!trimmed) {return "";}
+  const cb = new CodeBlock({ code: trimmed, lang, showHeader: true, showCopy: true });
+  return cb.el.outerHTML;
 }
 
 // ═══ Block-level Rendering (for structured streaming) ══════
 
 export function renderBlock(token) {
   let el;
+  try {
   switch (token.type) {
     case "heading":
       el = document.createElement("h" + token.depth);
@@ -359,6 +296,8 @@ export function renderBlock(token) {
       el.innerHTML = renderInline(token.tokens);
       return el;
     case "code": {
+      // Use renderCodeBlockHTML which returns the outerHTML string.
+      // The morphRender fix handles the wrapper properly without nesting.
       const wrapper = document.createElement("div");
       wrapper.innerHTML = renderCodeBlockHTML(token.text, token.lang || "");
       return wrapper.firstChild;
@@ -382,11 +321,21 @@ export function renderBlock(token) {
     case "hr":
       return document.createElement("hr");
     case "space":
-      return document.createTextNode("");
+      // Return an empty span instead of a TextNode.
+      // TextNodes aren't in container.children (Elements only),
+      // which causes patchBlockList to mis-index and morph the wrong
+      // elements — the root cause of streaming content jitter.
+      return document.createElement("span");
     default:
       el = document.createElement("div");
       el.textContent = token.raw || "";
       return el;
+  }
+  } catch (e) {
+    console.warn("[pi-gui] renderBlock failed for type=" + token.type + ":", e);
+    const fallback = document.createElement("div");
+    fallback.textContent = token.raw || "";
+    return fallback;
   }
 }
 
@@ -421,55 +370,45 @@ function renderTableBlock(token) {
 
 export function renderInline(tokens) {
   if (!tokens || tokens.length === 0) {return "";}
-  let html = "";
+  let result = "";
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     switch (t.type) {
       case "text":
-        html += escapeHtml(t.text);
+        result += escapeHtml(t.text);
         break;
       case "strong":
-        html += "<strong>" + renderInline(t.tokens) + "</strong>";
+        result += html`<strong>${safe(renderInline(t.tokens))}</strong>`;
         break;
       case "em":
-        html += "<em>" + renderInline(t.tokens) + "</em>";
+        result += html`<em>${safe(renderInline(t.tokens))}</em>`;
         break;
       case "codespan":
-        html += "<code>" + escapeHtml(t.text) + "</code>";
+        result += html`<code>${t.text}</code>`;
         break;
       case "link":
-        html +=
-          '<a href="' +
-          escapeHtml(t.href) +
-          '">' +
-          renderInline(t.tokens) +
-          "</a>";
+        result += html`<a href="${t.href}">${safe(renderInline(t.tokens))}</a>`;
         break;
       case "del":
-        html += "<del>" + renderInline(t.tokens) + "</del>";
+        result += html`<del>${safe(renderInline(t.tokens))}</del>`;
         break;
       case "image":
-        html +=
-          '<img src="' +
-          escapeHtml(t.href) +
-          '" alt="' +
-          escapeHtml(t.text) +
-          '">';
+        result += html`<img src="${t.href}" alt="${t.text}">`;
         break;
       case "br":
-        html += "<br>";
+        result += "<br>";
         break;
       case "html":
-        html += t.text || t.raw || "";
+        result += t.text || t.raw || "";
         break;
       case "escape":
-        html += escapeHtml(t.text);
+        result += escapeHtml(t.text);
         break;
       default:
-        html += escapeHtml(t.raw || t.text || "");
+        result += escapeHtml(t.raw || t.text || "");
     }
   }
-  return html;
+  return result;
 }
 
 // ═══ Token-diff Streaming ═════════════════════════════════
@@ -502,9 +441,15 @@ export function patchBlockList(container, prevTokens, newTokens) {
 }
 
 export function renderBlockToHTML(token) {
-  const temp = document.createElement("div");
-  temp.appendChild(renderBlock(token));
-  return temp.innerHTML;
+  const block = renderBlock(token);
+  if (!block) {return "";}
+  // Return the element's innerHTML so morphdom can diff children directly.
+  // Using outerHTML would cause nesting (the wrapper div from morphRender
+  // would match the block's tag, causing .code-block-wrapper > .code-block-wrapper).
+  if (block.nodeType === 3 /* TEXT_NODE */) {
+    return block.textContent || "";
+  }
+  return (block as HTMLElement).innerHTML || "";
 }
 
 // ═══ Syntax Highlighting ══════════════════════════════════
@@ -592,9 +537,7 @@ export function renderDiffMarkup(diffText) {
     const line = lines[i];
     const parsed = parseDiffLine(line);
     if (!parsed) {
-      resultLines.push(
-        '<span class="diff-line-context">' + escapeHtml(line) + "</span>",
-      );
+      resultLines.push(html`<span class="diff-line-context">${line}</span>`);
       i++;
       continue;
     }
@@ -616,64 +559,36 @@ export function renderDiffMarkup(diffText) {
       if (removedLines.length === 1 && addedLines.length === 1) {
         const intra = diffWords(removedLines[0].content, addedLines[0].content);
         resultLines.push(
-          '<span class="diff-line-removed">-' +
-            removedLines[0].lineNum +
-            " " +
-            intra.removed +
-            "</span>",
+          html`<span class="diff-line-removed">-${removedLines[0].lineNum} ${safe(intra.removed)}</span>`,
         );
         resultLines.push(
-          '<span class="diff-line-added">+' +
-            addedLines[0].lineNum +
-            " " +
-            intra.added +
-            "</span>",
+          html`<span class="diff-line-added">+${addedLines[0].lineNum} ${safe(intra.added)}</span>`,
         );
       } else {
         for (let ri = 0; ri < removedLines.length; ri++) {
           resultLines.push(
-            '<span class="diff-line-removed">-' +
-              removedLines[ri].lineNum +
-              " " +
-              escapeHtml(removedLines[ri].content) +
-              "</span>",
+            html`<span class="diff-line-removed">-${removedLines[ri].lineNum} ${removedLines[ri].content}</span>`,
           );
         }
         for (let ai = 0; ai < addedLines.length; ai++) {
           resultLines.push(
-            '<span class="diff-line-added">+' +
-              addedLines[ai].lineNum +
-              " " +
-              escapeHtml(addedLines[ai].content) +
-              "</span>",
+            html`<span class="diff-line-added">+${addedLines[ai].lineNum} ${addedLines[ai].content}</span>`,
           );
         }
       }
     } else if (parsed.prefix === "+") {
       resultLines.push(
-        '<span class="diff-line-added">+' +
-          parsed.lineNum +
-          " " +
-          escapeHtml(parsed.content) +
-          "</span>",
+        html`<span class="diff-line-added">+${parsed.lineNum} ${parsed.content}</span>`,
       );
       i++;
     } else {
       resultLines.push(
-        '<span class="diff-line-context"> ' +
-          parsed.lineNum +
-          " " +
-          escapeHtml(parsed.content) +
-          "</span>",
+        html`<span class="diff-line-context"> ${parsed.lineNum} ${parsed.content}</span>`,
       );
       i++;
     }
   }
-  return (
-    '<pre style="white-space:pre;font-family:var(--vscode-editor-font-family);font-size:0.85em;line-height:1.55;overflow-x:auto;padding:8px 0;">' +
-    resultLines.join("\n") +
-    "</pre>"
-  );
+  return html`<pre style="white-space:pre;font-family:var(--vscode-editor-font-family);font-size:0.85em;line-height:1.55;overflow-x:auto;padding:8px 0;">${safe(resultLines.join("\n"))}</pre>`;
 }
 
 function parseDiffLine(line) {
@@ -693,24 +608,14 @@ function diffWords(oldStr, newStr) {
   )
     {suffixLen++;}
 
-  const commonPrefix = escapeHtml(oldStr.slice(0, prefixLen));
-  const commonSuffix = escapeHtml(oldStr.slice(oldStr.length - suffixLen));
-  const removedMiddle = escapeHtml(oldStr.slice(prefixLen, oldStr.length - suffixLen));
-  const addedMiddle = escapeHtml(newStr.slice(prefixLen, newStr.length - suffixLen));
+  const commonPrefix = oldStr.slice(0, prefixLen);
+  const commonSuffix = oldStr.slice(oldStr.length - suffixLen);
+  const removedMiddle = oldStr.slice(prefixLen, oldStr.length - suffixLen);
+  const addedMiddle = newStr.slice(prefixLen, newStr.length - suffixLen);
 
   return {
-    removed:
-      commonPrefix +
-      '<span class="diff-word-removed">' +
-      removedMiddle +
-      "</span>" +
-      commonSuffix,
-    added:
-      commonPrefix +
-      '<span class="diff-word-added">' +
-      addedMiddle +
-      "</span>" +
-      commonSuffix,
+    removed: html`${commonPrefix}<span class="diff-word-removed">${removedMiddle}</span>${commonSuffix}`,
+    added: html`${commonPrefix}<span class="diff-word-added">${addedMiddle}</span>${commonSuffix}`,
   };
 }
 
@@ -762,18 +667,9 @@ export function renderToolResultTruncated(text: string, maxLines = 50): string {
     full: text,
   };
 
-  return (
-    '<div class="tool-result-truncated" id="' +
-    id +
-    '" data-hidden="' +
-    hiddenCount +
-    '" data-expanded="0">' +
-    '<div class="tool-result-preview">' +
-    renderMarkdown(previewLines.join("\n")) +
-    "</div>" +
-    '<button class="show-more-btn" type="button">' +
-    "\u25BC " +
-    hiddenCount +
-    " more lines</button></div>"
-  );
+  return html`
+    <div class="tool-result-truncated" id="${id}" data-hidden="${hiddenCount}" data-expanded="0">
+      <div class="tool-result-preview">${safe(renderMarkdown(previewLines.join("\n")))}</div>
+      <button class="show-more-btn" type="button">\u25BC ${hiddenCount} more lines</button>
+    </div>`;
 }

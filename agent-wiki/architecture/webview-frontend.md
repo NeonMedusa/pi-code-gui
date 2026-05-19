@@ -17,8 +17,9 @@ base, components` with native CSS nesting.
 |------|---------|
 | `state.ts` | Single source of truth for all mutable state (DOM refs, boolean flags, tool tracking, overlays, slash commands). Auto-initializes DOM refs on import. |
 | `debug.ts` | Debug logging infrastructure: event log, DOM mutation observer, `/debug` command. Exposes `window.__piDebug` for DevTools inspection. |
-| `render/engine.ts` | All rendering functions: markdown parsing (marked), syntax highlighting (JS/Python/Rust/HTML/CSS/Shell/JSON/Java/Go), diff viewing, code block wrappers with line numbers and copy buttons, block-level streaming, tool result expandable display, DOM helpers (escapeHtml, createMessageEl, createThinkingBlock, createToolBlock, morphRender). |
+| `render/engine.ts` | All rendering functions: markdown parsing (marked), diff viewing, code block wrappers with line numbers and copy buttons, block-level streaming, tool result expandable display, DOM helpers (escapeHtml, createMessageEl, createThinkingBlock, createToolBlock, morphRender). Syntax highlighting delegates to `highlight.ts`. |
 | `tools/index.ts` | Tool renderers for write/edit/read/bash operations. Each renderer handles the create→update→finalize lifecycle. Registers itself with the tool renderer registry on import. |
+| `highlight.ts` | highlight.js setup: language registration, aliases, `highlightCode()` function. Exports a single safe highlighting entry point used by `renderFileContent` and `renderCodeBlockHTML`. |
 | `handlers/index.ts` | Message router (window.addEventListener) dispatching 30+ event types: agent lifecycle, stream deltas, thinking deltas, tool execution, status updates, batch replay, compaction, auto-retry, slash commands, widget bridge, errors, user commands. Also contains all UI wiring (input area, status bar, settings overlay, slash autocomplete). |
 | `main.ts` | Entry point. Acquires VS Code API, initializes debug observer, sets up code block handlers, scroll tracking. |
 
@@ -38,17 +39,28 @@ and `main.ts` in order. esbuild bundles everything into a single IIFE.
 
 - **morphdom** (`media/lib/morphdom.js`) — efficient DOM diffing/patching.
 - **marked** (`media/marked.min.js`) — GFM-compliant Markdown parser.
-  Both are loaded as globals before the app bundle.
+- **highlight.js** (bundled via esbuild from npm) — syntax highlighting for ~12 languages.
+  morphdom and marked are loaded as globals; highlight.js is tree-shaken from the app bundle.
 
 ## Type safety
 
-Message types are defined in `src/shared/protocol.ts` as discriminated unions:
-- `ExtensionToWebview` — 30+ event types from extension to webview
+Message types are defined in `src/shared/protocol.ts` as Zod-validated schemas
+with derived TypeScript types:
+- `ExtensionToWebview` — 37 event types from extension to webview
 - `WebviewToExtension` — 16 command types from webview to extension
+- `PiServiceEvent` — alias for `ExtensionToWebview` (all events through `emit()`)
 
-The `postMessage` bridge in `webview-panel.ts` is typed as
-`ExtensionToWebview | WebviewToExtension`, catching shape mismatches at
-compile time.
+Runtime validation via Zod wraps every message boundary:
+- **`emit()`** in `pi-service.ts`: validates outgoing events; logs + notifies on
+  schema violations without blocking dispatch
+- **`postMessage()`** in `webview-panel.ts`: validates extension→webview messages
+  before calling `panel.webview.postMessage()`
+- **Webview message listener** in `handlers/index.ts`: validates incoming messages
+  against the schema; unknown fields are stripped (Zod v4 default)
+
+This catches protocol drift (missing fields, unknown types, malformed data) at
+runtime with visible diagnostic notifications, eliminating the silent-message-drop
+class of bugs.
 
 ## Key rendering patterns
 
@@ -61,15 +73,64 @@ compile time.
   gradient fade. A "Show more" button expands them.
 - **Tool result collapse:** Long tool results get a `max-height` with a
   gradient overlay. "Show more" expands them; "Show less" collapses back.
-- **Code syntax highlighting:** Code blocks are rendered with token-based
-  CSS classes (`tok-kw`, `tok-str`, `tok-fn`, etc.) for VS Code theme-aligned
-  colors.
+- **Code syntax highlighting:** Code blocks use highlight.js with CSS classes
+  (`.hljs-keyword`, `.hljs-string`, `.hljs-number`, etc.) mapped to VS Code
+  `--vscode-symbolIcon-*` variables. See [Syntax Highlighting](syntax-highlighting.md).
+
+## Interactive dialogs
+
+`src/webview/components/dialog.ts` provides a `Dialog` component that overlays the
+prompt area for interactive extension UI methods (`select`, `confirm`, `input`).
+Wire up via `bindExtensionUI` in `pi-service.ts`:
+- Methods return Promises that resolve when the user dismisses the dialog
+- Dialog response posted back as `extension_ui_response` message
+- Keyboard shortcuts: Enter (confirm), Esc (cancel), Up/Down (navigate)
+
+## Persistent status
+
+`setStatus` widgets render as inline badge indicators in `#pi-extension-status`
+(within the `#pi-status-bar` footer) instead of collapsible live-cards.
+Status keys prefixed `status-` are routed by `handleWidgetUpdate` to the
+status bar. Regular `setWidget` calls still render as live-cards unchanged.
+
+## Component system
+
+`src/webview/components/` contains micro-components that own their DOM subtrees
+with lifecycle hooks (`mount`, `update`, `destroy`). Each component creates its
+DOM in the constructor and exposes a `.el` property.
+
+| Component | File | Replaces |
+|-----------|------|----------|
+| `Component<P>` | `types.ts` | Interface (no prior) |
+| `CodeBlock` | `code-block.ts` | `renderFileContent`, `renderCodeBlockHTML` |
+| `ThinkingBlock` | `thinking-block.ts` | `createThinkingBlock` + ad-hoc toggle |
+| `LiveCard` | `live-card.ts` | `createLiveCard` + DOM manipulation |
+| `InlineCard` | `inline-card.ts` | `renderInlineCustomMessage` |
+| `ToolBlock` | `tool-block.ts` | Per-tool `create()` DOM builders |
+
+Components own their state — e.g., `LiveCard` owns collapse/expand toggle,
+`ThinkingBlock` owns spinner visibility and line count. No cross-component
+CSS interference because scroll containers are scoped to their owning component.
+
+## Safe HTML builder
+
+`src/webview/render/html.ts` provides a tagged template literal `html` that
+auto-escapes all `${...}` interpolated values via `textContent` assignment.
+Trusted HTML (from `renderMarkdown()`, `highlightCode()`, etc.) bypasses
+escaping when wrapped in a `safe()` marker.
+
+All DOM-building functions in `engine.ts`, `tools/index.ts`, and
+`handlers/index.ts` have been migrated from string concatenation
+(`'<div class="' + x + '">'`) to the `html` tagged template. This eliminates
+the entire class of HTML injection and CSS token leakage bugs.
 
 ## Related
 
 - [Webview Panel](webview-panel.md) — the extension-host side that loads the bundle
 - [Bridge Tools](bridge-tools.md) — tools whose results render here
 - [Extension UI Bridge](extension-ui-bridge.md) — widgets that render as live cards
-- [Webview Rewrite Plan](../archive/webview-rewrite-plan.md) — the 5-step migration plan (completed, archived)
+- [Syntax Highlighting](syntax-highlighting.md) — highlight.js integration
+- [Streaming Pipeline](streaming-pipeline.md) — RAF-batched rendering
+- [Component System Proposal](component-system-proposal.md) — proposed architectural upgrade
 
-> **Last updated:** 2026-05-16 — update for TS module rewrite
+> **Last updated:** 2026-05-19 — All 7 steps complete (Zod, safe HTML, components, dialogs, status bar)

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { PiService } from "./pi-service.js";
 import type { PiServiceEvent, PromptMessage } from "./types.js";
-import type { WebviewToExtension, ExtensionToWebview } from "./shared/protocol.js";
+import { validateExtensionToWebview, type WebviewToExtension, type ExtensionToWebview } from "./shared/protocol.js";
 
 export type PanelDisposeCallback = (piService: PiService) => void;
 
@@ -218,6 +218,10 @@ export class PiWebviewPanel {
             }
             break;
 
+          case "extension_ui_response":
+            this.piService.resolveDialog(message.id, message.value);
+            break;
+
           case "clearQueue":
             await this.piService.clearQueue();
             break;
@@ -322,6 +326,22 @@ export class PiWebviewPanel {
   get summary(): string | null { return this._tabSummary; }
 
   postMessage(message: ExtensionToWebview | WebviewToExtension) {
+    // ── Layer 1: Validate extension→webview messages before posting ──
+    // Webview-to-extension messages are validated on receipt by the extension host.
+    // For extension→webview, we validate here to catch malformed events early.
+    // We check if "type" is an extension→webview type (has data or is command).
+    const msgType = (message as any).type;
+    if (msgType && msgType !== "prompt" && msgType !== "abort" && msgType !== "slashCommand" &&
+        msgType !== "pickModel" && msgType !== "pickThinkingLevel" && msgType !== "pickEffort" &&
+        msgType !== "pickContextBudget" && msgType !== "getSettings" && msgType !== "toggleAutoCompaction" &&
+        msgType !== "toggleAutoRetry" && msgType !== "toggleShowImages" && msgType !== "openUrl" &&
+        msgType !== "openFile" && msgType !== "promoteToSteer" && msgType !== "clearQueue" &&
+        msgType !== "resendUserMessage") {
+      const result = validateExtensionToWebview(message);
+      if (!result.success) {
+        console.error(`[pi-gui] postMessage validation failed for type "${msgType}": ${result.error}`);
+      }
+    }
     this.panel?.webview.postMessage(message);
   }
 
@@ -417,6 +437,7 @@ export class PiWebviewPanel {
     <div class="pi-sb-item" id="pi-sb-model" title="Click to change model">π Pi</div>
     <div class="pi-sb-item" id="pi-sb-thinking" title="Click to change thinking level">thinking: off</div>
     <div class="pi-sb-item" id="pi-sb-effort" title="Click to change effort">effort: auto</div>
+    <div id="pi-extension-status" class="pi-sb-item"></div>
     <div class="pi-sb-item spacer"></div>
     <div class="pi-sb-item" id="pi-sb-usage" title="Click to set context budget">0%</div>
     <div class="pi-sb-item" id="pi-sb-settings" title="Settings">⚙</div>

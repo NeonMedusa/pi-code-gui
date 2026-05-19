@@ -8,6 +8,9 @@ import {
   registerToolRenderer, getToolRenderer,
 } from "../render/engine.js";
 import { highlightCode } from "../highlight.js";
+import { html, safe } from "../render/html.js";
+import { ToolBlock } from "../components/tool-block.js";
+import { CodeBlock } from "../components/code-block.js";
 
 
 
@@ -22,25 +25,19 @@ import { highlightCode } from "../highlight.js";
 export const writeToolRenderer = {
     create: function (data) {
       hideWelcome();
-      var block = document.createElement("div");
-      block.className = "tool-block";
-      block.id = data.entryId ? "entry-" + data.entryId : "tool-" + data.toolCallId;
-      block.setAttribute("data-status", "running");
-
       var rawPath = data.args && (data.args.path || data.args.file_path || data.args.filePath);
       var fileContent = data.args && data.args.content;
-      var pathDisplay = rawPath || "...";
       var lang = rawPath ? getLangFromPath(rawPath) : undefined;
 
-      block.innerHTML =
-        '<div class="tool-header">' +
-        '<span class="tool-name">write</span>' +
-        '<span class="tool-path" data-path="' + escapeHtml(rawPath || "") + '" title="Click to open file">' + escapeHtml(pathDisplay) + '</span>' +
-        '<span class="tool-status running">running</span>' +
-        '</div>' +
-        '<div class="tool-content"></div>' +
-        '<div class="tool-result"></div>';
-
+      var tb = new ToolBlock({
+        toolName: "write",
+        toolCallId: data.toolCallId,
+        entryId: data.entryId,
+        filePath: rawPath || undefined,
+        status: "running",
+      });
+      var block = tb.el;
+      block._toolBlock = tb; // attach component for update/finalize
       block._writeState = { lang: lang, content: "", rawPath: rawPath };
 
       if (typeof fileContent === "string" && fileContent) {
@@ -76,14 +73,19 @@ export const writeToolRenderer = {
       if (el._writeRafId) { cancelAnimationFrame(el._writeRafId); el._writeRafId = null; }
       if (el._writePending) { processWriteUpdate(el, el._writePending); el._writePending = null; }
 
-      var statusEl = el.querySelector(".tool-status");
-      if (statusEl) {
-        statusEl.textContent = isError ? "error" : "done";
-        statusEl.className = "tool-status " + (isError ? "error" : "success");
-      }
-      el.setAttribute("data-status", isError ? "error" : "done");
-      if (entryId && !el.id.startsWith("entry-")) {
-        el.id = "entry-" + entryId;
+      var tb = el._toolBlock;
+      if (tb) {
+        tb.update({ status: isError ? "error" : "done", entryId: entryId });
+      } else {
+        var statusEl = el.querySelector(".tool-status");
+        if (statusEl) {
+          statusEl.textContent = isError ? "error" : "done";
+          statusEl.className = "tool-status " + (isError ? "error" : "success");
+        }
+        el.setAttribute("data-status", isError ? "error" : "done");
+        if (entryId && !el.id.startsWith("entry-")) {
+          el.id = "entry-" + entryId;
+        }
       }
 
       // Re-render final content, scroll to top
@@ -97,9 +99,9 @@ export const writeToolRenderer = {
           .filter(function (c) { return c.type === "text"; })
           .map(function (c) { return c.text; })
           .join("\n");
-        var tr = el.querySelector(".tool-result");
+        var tr = tb ? tb.getResultEl() : el.querySelector(".tool-result");
         if (tr && errorText) {
-          tr.innerHTML = '<div style="color:var(--vscode-errorForeground);margin-top:6px;white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(errorText, "write")) + '</div>';
+          tr.innerHTML = html`<div style="color:var(--vscode-errorForeground);margin-top:6px;white-space:pre-wrap;font-size:0.85em;">${formatToolError(errorText, "write")}</div>`;
         }
       }
     },
@@ -120,7 +122,8 @@ export function processWriteUpdate(el, text) {
         if (pathEl) {pathEl.textContent = args.path;}
       }
     } catch (e) {
-      // JSON incomplete (mid-stream) — try heuristic extraction of content
+      // JSON incomplete (mid-stream) — try heuristic extraction of content.
+      // Expected during streaming; only log if it persists (not a real error).
       var match = text.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
       if (match) {
         el._writeState.content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "\t");
@@ -143,17 +146,21 @@ export function renderWriteContentBlock(el) {
     // that caps the visible area.  Auto-scrolls to bottom during streaming.
     var scrollView = tc.querySelector(".tool-scroll-view");
     if (!scrollView) {
-      tc.innerHTML = '<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;">'
-        + renderFileContent(content, lang) + '</div>';
+      tc.innerHTML = '<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;"></div>';
       scrollView = tc.querySelector(".tool-scroll-view");
+      var cbComp = new CodeBlock({ code: content, lang: lang, showHeader: true, showCopy: true });
+      cbComp.mount(scrollView);
     } else {
       // Persist the .code-block so scroll state survives across renders
       var cb = scrollView.querySelector(".code-block");
       if (!cb) {
-        scrollView.innerHTML = renderFileContent(content, lang);
+        scrollView.innerHTML = "";
+        var newCb = new CodeBlock({ code: content, lang: lang, showHeader: true, showCopy: true });
+        newCb.mount(scrollView);
       } else {
         var tmp = document.createElement("div");
-        tmp.innerHTML = renderFileContent(content, lang);
+        var tmpCb = new CodeBlock({ code: content, lang: lang, showHeader: true, showCopy: true });
+        tmp.appendChild(tmpCb.el);
         var freshCode = tmp.querySelector(".code-block code");
         var existingCode = cb.querySelector("code");
         if (freshCode && existingCode) {
@@ -176,25 +183,21 @@ export function renderWriteContentBlock(el) {
 export const editToolRenderer = {
     create: function (data) {
       hideWelcome();
-      var block = document.createElement("div");
-      block.className = "tool-block";
-      block.id = data.entryId ? "entry-" + data.entryId : "tool-" + data.toolCallId;
-      block.setAttribute("data-status", "running");
-
       var rawPath = data.args && (data.args.path || data.args.file_path || data.args.filePath);
       var edits = data.args && data.args.edits;
-      var pathDisplay = rawPath || "...";
       var editCount = Array.isArray(edits) ? edits.length : 0;
       var editLabel = editCount > 1 ? " (" + editCount + " edits)" : "";
 
-      block.innerHTML =
-        '<div class="tool-header">' +
-        '<span class="tool-name">edit</span>' +
-        '<span class="tool-path" data-path="' + escapeHtml(rawPath || "") + '" title="Click to open file">' + escapeHtml(pathDisplay) + editLabel + '</span>' +
-        '<span class="tool-status running">running</span>' +
-        '</div>' +
-        '<div class="tool-content"></div>' +
-        '<div class="tool-result"></div>';
+      var tb = new ToolBlock({
+        toolName: "edit",
+        toolCallId: data.toolCallId,
+        entryId: data.entryId,
+        filePath: rawPath || undefined,
+        status: "running",
+        pathExtra: editLabel,
+      });
+      var block = tb.el;
+      block._toolBlock = tb;
 
       if (Array.isArray(edits) && edits.length > 0) {
         block._editEdits = edits;
@@ -224,18 +227,23 @@ export const editToolRenderer = {
           renderEditPreviews(el, edits);
         }
       } catch (e) {
-        // JSON incomplete — ignore
+        // JSON incomplete during streaming — expected, not an error
       }
     },
     finalize: function (el, result, isError, entryId) {
-      var statusEl = el.querySelector(".tool-status");
-      if (statusEl) {
-        statusEl.textContent = isError ? "error" : "done";
-        statusEl.className = "tool-status " + (isError ? "error" : "success");
-      }
-      el.setAttribute("data-status", isError ? "error" : "done");
-      if (entryId && !el.id.startsWith("entry-")) {
-        el.id = "entry-" + entryId;
+      var tb = el._toolBlock;
+      if (tb) {
+        tb.update({ status: isError ? "error" : "done", entryId: entryId });
+      } else {
+        var statusEl = el.querySelector(".tool-status");
+        if (statusEl) {
+          statusEl.textContent = isError ? "error" : "done";
+          statusEl.className = "tool-status " + (isError ? "error" : "success");
+        }
+        el.setAttribute("data-status", isError ? "error" : "done");
+        if (entryId && !el.id.startsWith("entry-")) {
+          el.id = "entry-" + entryId;
+        }
       }
 
       // Re-render previews to collapse to max 3 now that streaming is done
@@ -251,13 +259,13 @@ export const editToolRenderer = {
       if (!text && result && typeof result.text === "string") {text = result.text;}
       if (!text && result && typeof result === "string") {text = result;}
       if (!text && result && result.content && result.content.length > 0) {
-        try { text = JSON.stringify(result.content, null, 2); } catch (e) {}
+        try { text = JSON.stringify(result.content, null, 2); } catch (e) { console.warn("[pi-gui] JSON.stringify failed for tool result content"); }
       }
 
       var tr = el.querySelector(".tool-result");
       if (tr && text) {
         if (isError) {
-          tr.innerHTML = '<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(text, "edit")) + '</div>';
+          tr.innerHTML = html`<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">${formatToolError(text, "edit")}</div>`;
         } else {
           tr.innerHTML = '<div style="margin-top:4px;">' + renderDiffIfApplicable(text) + '</div>';
         }
@@ -272,35 +280,35 @@ export function renderEditPreviews(el, edits) {
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
     var lang = el._editLang;
     var maxVisible = active ? edits.length : Math.min(edits.length, 3);
-    var html = "";
+    var result = "";
     var remaining = edits.length - maxVisible;
 
     for (var i = 0; i < Math.min(edits.length, maxVisible); i++) {
       var edit = edits[i];
       var oldText = edit.oldText || "";
       var newText = edit.newText || "";
-      html += '<div class="edit-change">';
-      if (edits.length > 1) {
-        html += '<div class="edit-header">Edit ' + (i + 1) + ' of ' + edits.length + '</div>';
-      }
-      html += '<div class="edit-old">- ' + (lang ? highlightCode(oldText, lang) : escapeHtml(oldText)) + '</div>';
-      html += '<div class="edit-new">+ ' + (lang ? highlightCode(newText, lang) : escapeHtml(newText)) + '</div>';
-      html += '</div>';
+      var editHeader = edits.length > 1
+        ? safe(html`<div class="edit-header">Edit ${i + 1} of ${edits.length}</div>`)
+        : "";
+      result += html`
+        <div class="edit-change">
+          ${editHeader}
+          <div class="edit-old">- ${lang ? safe(highlightCode(oldText, lang)) : oldText}</div>
+          <div class="edit-new">+ ${lang ? safe(highlightCode(newText, lang)) : newText}</div>
+        </div>`;
     }
 
     if (remaining > 0) {
-      html += '<div style="text-align:center;margin-top:4px;font-size:0.85em;color:var(--vscode-descriptionForeground);">' +
-        '\u2026 ' + remaining + ' more edit(s) not shown' +
-        '</div>';
+      result += html`<div style="text-align:center;margin-top:4px;font-size:0.85em;color:var(--vscode-descriptionForeground);">\u2026 ${remaining} more edit(s) not shown</div>`;
     }
 
     // Persistent scroll wrapper — same whether active or done (no morph).
     var scrollView = tc.querySelector(".tool-scroll-view");
     if (!scrollView) {
-      tc.innerHTML = '<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;">' + html + '</div>';
+      tc.innerHTML = html`<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;">${safe(result)}</div>`;
       scrollView = tc.querySelector(".tool-scroll-view");
     } else {
-      scrollView.innerHTML = html;
+      scrollView.innerHTML = result;
     }
 
     if (active && scrollView) {
@@ -326,15 +334,9 @@ export function renderEditPreviews(el, edits) {
 export const readToolRenderer = {
     create: function (data) {
       hideWelcome();
-      var block = document.createElement("div");
-      block.className = "tool-block";
-      block.id = data.entryId ? "entry-" + data.entryId : "tool-" + data.toolCallId;
-      block.setAttribute("data-status", "running");
-
       var rawPath = data.args && (data.args.path || data.args.file_path || data.args.filePath);
       var offset = data.args && data.args.offset;
       var limit = data.args && data.args.limit;
-      var pathDisplay = rawPath || "...";
       var rangeLabel = "";
       if (offset !== undefined) {
         rangeLabel = ":" + offset;
@@ -343,15 +345,24 @@ export const readToolRenderer = {
 
       var compact = getCompactReadLabel(rawPath);
 
-      block.innerHTML =
-        '<div class="tool-header">' +
-        '<span class="tool-name">read</span>' +
-        '<span class="tool-path" data-path="' + escapeHtml(rawPath || "") + '" title="Click to open file">' + escapeHtml(pathDisplay) + rangeLabel + '</span>' +
-        '<span class="tool-status running">running</span>' +
-        '</div>' +
-        (compact ? '<div class="compact-label">[' + compact.kind + '] ' + escapeHtml(compact.label) + '</div>' : '') +
-        '<div class="tool-content"></div>' +
-        '<div class="tool-result"></div>';
+      var tb = new ToolBlock({
+        toolName: "read",
+        toolCallId: data.toolCallId,
+        entryId: data.entryId,
+        filePath: rawPath || undefined,
+        status: "running",
+        pathExtra: rangeLabel,
+      });
+      var block = tb.el;
+      block._toolBlock = tb;
+
+      // Add compact label below header if applicable
+      if (compact) {
+        var compactEl = document.createElement("div");
+        compactEl.className = "compact-label";
+        compactEl.textContent = "[" + compact.kind + "] " + compact.label;
+        tb.getHeaderEl().after(compactEl);
+      }
 
       // Store path for result rendering
       block._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath) : undefined, compact: compact };
@@ -362,14 +373,19 @@ export const readToolRenderer = {
       // Read tool results come via tool-end, not incremental updates
     },
     finalize: function (el, result, isError, entryId) {
-      var statusEl = el.querySelector(".tool-status");
-      if (statusEl) {
-        statusEl.textContent = isError ? "error" : "done";
-        statusEl.className = "tool-status " + (isError ? "error" : "success");
-      }
-      el.setAttribute("data-status", isError ? "error" : "done");
-      if (entryId && !el.id.startsWith("entry-")) {
-        el.id = "entry-" + entryId;
+      var tb = el._toolBlock;
+      if (tb) {
+        tb.update({ status: isError ? "error" : "done", entryId: entryId });
+      } else {
+        var statusEl = el.querySelector(".tool-status");
+        if (statusEl) {
+          statusEl.textContent = isError ? "error" : "done";
+          statusEl.className = "tool-status " + (isError ? "error" : "success");
+        }
+        el.setAttribute("data-status", isError ? "error" : "done");
+        if (entryId && !el.id.startsWith("entry-")) {
+          el.id = "entry-" + entryId;
+        }
       }
 
       var text = "";
@@ -380,11 +396,11 @@ export const readToolRenderer = {
           .join("\n");
       }
 
-      var tr = el.querySelector(".tool-result");
+      var tr = tb ? tb.getResultEl() : el.querySelector(".tool-result");
       if (!tr) {return;}
 
       if (isError) {
-        tr.innerHTML = '<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">' + escapeHtml(formatToolError(text, "read")) + '</div>';
+        tr.innerHTML = html`<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">${formatToolError(text, "read")}</div>`;
         return;
       }
 
@@ -398,9 +414,12 @@ export const readToolRenderer = {
 
       // Syntax-highlighted code in scrollable container.
       tr.style.maxHeight = "15rem";
-      tr.innerHTML = renderFileContent(text, lang);
-      var cb = tr.querySelector(".code-block");
-      if (cb) { cb.style.maxHeight = "none"; cb.style.overflowY = "visible"; }
+      tr.style.overflowY = "auto";
+      tr.innerHTML = "";
+      var cb = new CodeBlock({ code: text, lang: lang, showHeader: true, showCopy: true });
+      cb.mount(tr);
+      var preEl = tr.querySelector(".code-block");
+      if (preEl) { preEl.style.maxHeight = "none"; preEl.style.overflowY = "visible"; }
 
       // Truncation note from details
       if (result && result.details && result.details.truncation) {
@@ -413,7 +432,7 @@ export const readToolRenderer = {
             note += '[Truncated: ' + t.outputLines + ' lines shown]';
           }
           note += '</div>';
-          tc.innerHTML += note;
+          tr.innerHTML += note;
         }
       }
     },
@@ -459,7 +478,7 @@ export const defaultToolRenderer = {
       if (tr) {
         if (isError) {
           var displayText = formatToolError(text, el.querySelector(".tool-name") ? el.querySelector(".tool-name").textContent : "");
-          tr.innerHTML = '<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;margin-top:4px;">' + escapeHtml(displayText) + '</div>';
+          tr.innerHTML = html`<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;margin-top:4px;">${displayText}</div>`;
         } else {
           var lines = text.split("\n");
           tr.innerHTML = lines.length > 50 ? renderToolResultTruncated(text) : renderToolResult(text);
@@ -476,13 +495,15 @@ export const bashToolRenderer = {
       var block = document.createElement("div");
       block.className = "bash-execution";
       block.id = data.entryId ? "entry-" + data.entryId : "bash-" + data.toolCallId;
+      block.setAttribute("data-tool-call-id", data.toolCallId);
+      if (data.entryId) { block.setAttribute("data-entry-id", data.entryId); }
       block.setAttribute("data-status", "running");
       var cmd = data.args && data.args.command ? data.args.command : "";
       if (cmd.length > 120) {cmd = cmd.slice(0, 120) + "\u2026";}
-      block.innerHTML =
-        '<div class="bash-header">$ ' + escapeHtml(cmd) + '</div>' +
-        '<div class="bash-output"></div>' +
-        '<div class="bash-footer"><span class="bash-spinner"></span> <span class="cancel-hint">running\u2026</span></div>';
+      block.innerHTML = html`
+        <div class="bash-header">$ ${cmd}</div>
+        <div class="bash-output"></div>
+        <div class="bash-footer"><span class="bash-spinner"></span> <span class="cancel-hint">running\u2026</span></div>`;
       state.bashBlocks[data.toolCallId] = block;
       state.bashOutputs[data.toolCallId] = "";
       return block;
@@ -508,9 +529,9 @@ export const bashToolRenderer = {
       var details = result && result.details ? result.details : {};
       var exitCode = details.exitCode !== undefined ? details.exitCode : 0;
       if (footer) {
-        footer.innerHTML =
-          '<span class="exit-code' + (isError ? " error" : "") + '">exit: ' + exitCode + '</span>' +
-          (details.cancelled ? ' <span>(cancelled)</span>' : "");
+        footer.innerHTML = html`
+          <span class="exit-code${isError ? " error" : ""}">exit: ${exitCode}</span>
+          ${details.cancelled ? " <span>(cancelled)</span>" : ""}`;
       }
       if (entryId && !el.id.startsWith("entry-")) {
         el.id = "entry-" + entryId;
@@ -534,8 +555,13 @@ export function handleToolStart(data) {
 
     // Stop thinking spinner — tool execution means thinking is done
     if (state.currentThinkingEl) {
-      var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
-      if (thSpinner) {thSpinner.remove();}
+      var _tb = state.currentThinkingEl._component;
+      if (_tb) {
+        _tb.update({ content: _tb._rawText || "", done: true });
+      } else {
+        var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
+        if (thSpinner) {thSpinner.remove();}
+      }
     }
 
     var callId = data.toolCallId;
@@ -584,6 +610,18 @@ export function handleToolStart(data) {
           pathEl.textContent = newPath;
           pathEl.setAttribute("data-path", newPath);
         }
+        // Also update internal state so lang/syntax highlighting work
+        if (block._readState && !block._readState.rawPath) {
+          block._readState.rawPath = newPath;
+          block._readState.lang = getLangFromPath(newPath);
+        }
+        if (block._writeState && !block._writeState.rawPath) {
+          block._writeState.rawPath = newPath;
+          block._writeState.lang = getLangFromPath(newPath);
+        }
+        // Update ToolBlock component if present
+        var tb = block._toolBlock;
+        if (tb) { tb.update({ filePath: newPath }); }
       }
       if (data.entryId && block && block.id && !block.id.startsWith("entry-")) {
         block.id = "entry-" + data.entryId;
@@ -619,8 +657,13 @@ export function handleToolStart(data) {
 export function handleToolUpdate(data) {
     // Ensure thinking spinner stays hidden during tool execution
     if (state.currentThinkingEl) {
-      var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
-      if (thSpinner) {thSpinner.remove();}
+      var _tb2 = state.currentThinkingEl._component;
+      if (_tb2) {
+        _tb2.update({ content: _tb2._rawText || "", done: true });
+      } else {
+        var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
+        if (thSpinner) {thSpinner.remove();}
+      }
     }
 
     var entry = state.currentToolBlocks[data.toolCallId];

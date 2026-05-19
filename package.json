@@ -4,7 +4,7 @@
   "author": "Jack Noppé",
   "displayName": "Pi Code Gui",
   "description": "Native VS Code editor experience for Pi coding agent",
-  "version": "0.0.28",
+  "version": "0.0.29",
   "license": "MIT",
   "sponsor": {
     "url": "https://github.com/sponsors/NimbleTronAI"
@@ -452,11 +452,11 @@
     "lint": "eslint src",
     "test": "vscode-test",
     "vsix": "pnpm run package && npx @vscode/vsce package --no-dependencies",
+    "wiki:lint": "npx tsx agent-wiki/scripts/wiki-lint.ts",
+    "wiki:lint:full": "npx tsx agent-wiki/scripts/wiki-lint.ts --full",
     "publish": "vsce publish --no-yarn --skip-duplicate",
     "un-publish": "vsce unpublish",
-    "vsix:openvsx": "pnpm run package && pnpm exec ovsx publish",
-    "wiki:lint": "npx tsx agent-wiki/scripts/wiki-lint.ts",
-    "wiki:lint:full": "npx tsx agent-wiki/scripts/wiki-lint.ts --full"
+    "vsix:openvsx": "pnpm run package && pnpm exec ovsx publish"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -473,7 +473,8 @@
     "npm-run-all": "^4.1.5",
     "ovsx": "^0.10.12",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.59.3"
+    "typescript-eslint": "^8.59.3",
+    "zod": "^4.4.3"
   },
   "optionalDependencies": {
     "@types/mocha": "^10.0.10",

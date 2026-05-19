@@ -5,6 +5,19 @@ starts with `## [YYYY-MM-DD] <action> | <description>`. Actions:
 `ingest` (new page), `update` (existing page changed), `lint` (quality
 pass performed), `archive` (page moved to archive).
 
+## [2026-05-19] update | Webview Frontend — Steps 6-7 complete (interactive dialogs, persistent status bar); Component System Proposal all 7 steps done
+## [2026-05-19] update | Webview Frontend — Layer 3 micro components (CodeBlock, ThinkingBlock, LiveCard, InlineCard, ToolBlock); Component System Proposal Layers 1-3 complete
+## [2026-05-19] update | Webview Frontend — Layer 2 safe HTML tagged template; Component System Proposal Layers 1+2 marked complete
+## [2026-05-19] update | Webview Frontend — Layer 1 Zod runtime protocol validation; Component System Proposal Layer 1 marked complete
+## [2026-05-19] ingest | Architecture — Syntax Highlighting (`architecture/syntax-highlighting.md`)
+## [2026-05-19] ingest | Architecture — Custom Message Renderer (`architecture/custom-message-renderer.md`)
+## [2026-05-19] ingest | Architecture — Tool Block Rendering (`architecture/tool-block-rendering.md`)
+## [2026-05-19] ingest | Architecture — Streaming Pipeline (`architecture/streaming-pipeline.md`)
+## [2026-05-19] ingest | Roadmap — Component System Proposal (`architecture/component-system-proposal.md`)
+## [2026-05-19] update | Webview Frontend — added highlight.js, streaming pipeline, component proposal cross-refs
+## [2026-05-19] update | Extension UI Bridge — added custom message renderer bridge, HTML support in setStatus, globalThis injection
+## [2026-05-19] update | Event Translation — added custom message display/details fields, diagnostic default case
+## [2026-05-19] update | Index — added Syntax Highlighting, Tool Block Rendering, Streaming Pipeline, Custom Message Renderer, Roadmap category
 ## [2026-05-16] archive | Webview Rewrite Plan moved to archive/ (all 5 steps completed)
 ## [2026-05-16] stale | Removed WEBVIEW_REWRITE_TODO.md (tracking complete)
 ## [2026-05-16] lint | Fixed all 65 ESLint warnings in src/webview — 0 warnings remain

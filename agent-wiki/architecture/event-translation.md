@@ -46,6 +46,12 @@ The translation layer:
 | `auto_retry_start` / `auto_retry_end` | corresponding events |
 | `thinking_level_changed` | `thinking-level-changed` + `status-update` |
 | `queue_update` | `queue-update` |
+| `message_end` (custom) | `custom-message` (with `display`, `details` fields forwarded) |
+| *unknown/any other* | `custom-message` diagnostic notification (visible in webview) |
+
+**Diagnostic default:** Unknown SDK event types emit a `custom-message` with
+`customType: "pi-gui-diagnostic"` that renders as a visible notification above
+the prompt. Previously they were silently dropped.
 
 ## Related
 
@@ -53,4 +59,4 @@ The translation layer:
 - [Webview Panel](webview-panel.md) — consumes the translated events
 - [Types](https://github.com/NimbleTronAI/pi-code-gui/blob/main/src/types.ts) — the `PiServiceEvent` type union
 
-> **Last updated:** 2026-05-15 — initial documentation
+> **Last updated:** 2026-05-19 — added custom message display/details forwarding, diagnostic default case
