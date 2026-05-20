@@ -279,35 +279,29 @@ export function renderEditPreviews(el, edits) {
     if (!tc) {return;}
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
     var lang = el._editLang;
-    var maxVisible = active ? edits.length : Math.min(edits.length, 3);
+    // Build edit previews inline (no surrounding whitespace).
     var result = "";
-    var remaining = edits.length - maxVisible;
 
-    for (var i = 0; i < Math.min(edits.length, maxVisible); i++) {
+    for (var i = 0; i < edits.length; i++) {
       var edit = edits[i];
       var oldText = edit.oldText || "";
       var newText = edit.newText || "";
       var editHeader = edits.length > 1
         ? safe(html`<div class="edit-header">Edit ${i + 1} of ${edits.length}</div>`)
         : "";
-      result += html`
-        <div class="edit-change">
-          ${editHeader}
-          <div class="edit-old">- ${lang ? safe(highlightCode(oldText, lang)) : oldText}</div>
-          <div class="edit-new">+ ${lang ? safe(highlightCode(newText, lang)) : newText}</div>
-        </div>`;
+      result += html`<div class="edit-change">${editHeader}<div class="edit-old">- ${lang ? safe(highlightCode(oldText, lang)) : oldText}</div><div class="edit-new">+ ${lang ? safe(highlightCode(newText, lang)) : newText}</div></div>`;
     }
 
-    if (remaining > 0) {
-      result += html`<div style="text-align:center;margin-top:4px;font-size:0.85em;color:var(--vscode-descriptionForeground);">\u2026 ${remaining} more edit(s) not shown</div>`;
-    }
+    // Only use scroll wrapper when there are many edits; otherwise let it grow naturally.
+    var needsScroll = edits.length > 3;
+    var scrollStyle = needsScroll ? "max-height:15rem;overflow-y:auto;" : "";
 
-    // Persistent scroll wrapper — same whether active or done (no morph).
     var scrollView = tc.querySelector(".tool-scroll-view");
     if (!scrollView) {
-      tc.innerHTML = html`<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;">${safe(result)}</div>`;
+      tc.innerHTML = html`<div class="tool-scroll-view" style="${scrollStyle}">${safe(result)}</div>`;
       scrollView = tc.querySelector(".tool-scroll-view");
     } else {
+      scrollView.setAttribute("style", scrollStyle);
       scrollView.innerHTML = result;
     }
 
@@ -412,14 +406,13 @@ export const readToolRenderer = {
       var readState = el._readState || {};
       var lang = readState.lang;
 
-      // Syntax-highlighted code in scrollable container.
-      tr.style.maxHeight = "15rem";
+      // Syntax-highlighted code in a scrollable container when tall.
+      // No expand/collapse — just native scroll.
+      tr.style.maxHeight = "20rem";
       tr.style.overflowY = "auto";
       tr.innerHTML = "";
       var cb = new CodeBlock({ code: text, lang: lang, showHeader: true, showCopy: true });
       cb.mount(tr);
-      var preEl = tr.querySelector(".code-block");
-      if (preEl) { preEl.style.maxHeight = "none"; preEl.style.overflowY = "visible"; }
 
       // Truncation note from details
       if (result && result.details && result.details.truncation) {
