@@ -1,5 +1,16 @@
 # Change Log
 
+## [0.0.31] — Read block polish, truncation affordance
+
+### Changed
+- **Read result** now uses native scroll instead of expand/collapse button.
+  Single scrollbar (inner `.code-block` scroll disabled via CSS + JS).
+- **Truncated reads** show a clickable "▼ Continue reading (N lines remaining)"
+  link that inserts the follow-up command into the input bar. Handles both SDK
+  hard truncation (50KB/2000 lines) and user-specified limits with remaining content.
+- SDK truncation footer noise (`[Showing lines X-Y…]`, `[Truncated…]`,
+  `[N more lines in file…]`) stripped from display text.
+
 ## [0.0.30] — Tool block spacing, scroll, and zombie bash fix
 
 ### Fixed

@@ -358,8 +358,8 @@ export const readToolRenderer = {
         tb.getHeaderEl().after(compactEl);
       }
 
-      // Store path for result rendering
-      block._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath) : undefined, compact: compact };
+      // Store path, offset, and language for result rendering
+      block._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath) : undefined, compact: compact, offset: offset };
 
       return block;
     },
@@ -403,6 +403,18 @@ export const readToolRenderer = {
         return;
       }
 
+      // Check for continuation hints BEFORE stripping SDK footer lines.
+      // The SDK has two truncation modes:
+      //   1. Hard truncation (50KB/2000 lines): result.details.truncation exists
+      //   2. User limit with more content: note is embedded in text, no details
+      // Parse both so we can render a clickable "Continue" affordance.
+      var userMoreMatch = text.match(/\[(\d+) more lines in file\. Use offset=(\d+) to continue\.\]/);
+
+      // Strip SDK truncation footer lines — they're noise in a scrollable webview.
+      text = text.replace(/\n?\[Showing[^\]]*\](?:\n|$)/g, "");
+      text = text.replace(/\n?\[Truncated[^\]]*\](?:\n|$)/g, "");
+      text = text.replace(/\n?\[\d+ more lines in file[^\]]*\](?:\n|$)/g, "");
+
       var readState = el._readState || {};
       var lang = readState.lang;
 
@@ -413,20 +425,48 @@ export const readToolRenderer = {
       tr.innerHTML = "";
       var cb = new CodeBlock({ code: text, lang: lang, showHeader: true, showCopy: true });
       cb.mount(tr);
+      // Disable inner scroll on the code block — the tool-result is the
+      // scroll container.  Without this, the CSS .tool-result .code-block
+      // rule adds a second nested scrollbar.
+      var preEl = tr.querySelector(".code-block");
+      if (preEl) { preEl.style.maxHeight = "none"; preEl.style.overflowY = "visible"; }
 
-      // Truncation note from details
-      if (result && result.details && result.details.truncation) {
-        var t = result.details.truncation;
-        if (t.truncated) {
-          var note = '<div style="margin-top:6px;font-size:0.8em;color:var(--vscode-editorWarning-foreground);">';
-          if (t.truncatedBy === "lines") {
-            note += '[' + t.outputLines + ' of ' + t.totalLines + ' lines shown (line limit)]';
-          } else {
-            note += '[Truncated: ' + t.outputLines + ' lines shown]';
+      // If the result was truncated (SDK-enforced or user-limited), add a
+      // clickable "Continue reading" link that inserts the follow-up into
+      // the input bar (user reviews, then presses Enter).
+      var trunc = result && result.details && result.details.truncation;
+      var hasMore = false;
+      var contNextOffset = 0;
+      var contRemaining = 0;
+
+      if (trunc && trunc.truncated) {
+        // Case 1: SDK hard truncation (50KB or 2000 lines)
+        contNextOffset = (readState.offset || 0) + trunc.outputLines;
+        contRemaining = trunc.totalLines - contNextOffset;
+        hasMore = contRemaining > 0;
+      } else if (userMoreMatch) {
+        // Case 2: User-specified limit with more content in file
+        contRemaining = parseInt(userMoreMatch[1], 10);
+        contNextOffset = parseInt(userMoreMatch[2], 10);
+        hasMore = contRemaining > 0;
+      }
+
+      if (hasMore) {
+        var contEl = document.createElement("div");
+        contEl.style.cssText = "margin-top:6px;font-size:0.8em;color:var(--vscode-descriptionForeground);cursor:pointer;text-decoration:underline;";
+        contEl.textContent = "\u25BC Continue reading (" + contRemaining + " lines remaining)";
+        contEl.addEventListener("click", function () {
+          // Insert into the input bar — user reviews and presses Enter.
+          // Auto-submitting would create a new agent turn / read block,
+          // which is surprising when you expected inline expansion.
+          var cmd = "Continue reading " + readState.rawPath + " from offset " + contNextOffset;
+          if (state.promptInput) {
+            state.promptInput.value = cmd + " ";
+            state.promptInput.focus();
+            state.promptInput.dispatchEvent(new Event("input"));
           }
-          note += '</div>';
-          tr.innerHTML += note;
-        }
+        });
+        tr.appendChild(contEl);
       }
     },
   };
