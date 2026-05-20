@@ -1428,6 +1428,10 @@ export class PiService {
       piWarn("abort() called but session not initialized — nothing to abort");
       return;
     }
+    // Kill running bash processes first — agent.abort() only stops the LLM call,
+    // not child processes.  Without this, long-running commands (npm install,
+    // test suites, etc.) become orphaned/zombie processes on the system.
+    try { this.session.abortBash?.(); } catch (e: any) { piWarn(`abortBash() failed: ${e?.message ?? e}`); }
     try { this.session.agent.abort(); } catch (e: any) { piWarn(`abort() failed: ${e?.message ?? e}`); }
   }
 
@@ -1477,6 +1481,8 @@ export class PiService {
       await this.initialize({ fresh: true });
       return;
     }
+    // Kill running bash before waiting for idle (otherwise waitForIdle hangs).
+    try { this.session.abortBash?.(); } catch (e: any) { piWarn(`abortBash() failed: ${e?.message ?? e}`); }
     await this.session.agent.waitForIdle();
     this.dispose();
     await this.initialize({ fresh: true });
@@ -1484,6 +1490,8 @@ export class PiService {
 
   /** Resume a past session from a .jsonl file path. Disposes current and re-initializes. */
   async resumeSession(filePath: string): Promise<{ success: boolean; error?: string }> {
+    // Kill running bash before waiting for idle.
+    try { this.session?.abortBash?.(); } catch (e: any) { piWarn(`abortBash() failed: ${e?.message ?? e}`); }
     try { await this.session?.agent.waitForIdle(); } catch (e: any) { piWarn(`waitForIdle() failed: ${e?.message ?? e}`); }
     this.dispose();
     return this.initialize({ openPath: filePath });
@@ -2331,6 +2339,9 @@ export class PiService {
     if (sm && !sm.flushed && typeof sm._rewriteFile === "function") {
       try { sm._rewriteFile(); } catch (e) { /* best-effort */ }
     }
+    // Kill any running bash processes before tearing down the session.
+    // Without this, processes orphaned by session close survive as zombies.
+    try { this.session?.abortBash?.(); } catch (e) { /* best-effort */ }
     if (this._widgetTimer) { clearInterval(this._widgetTimer); this._widgetTimer = null; }
     this.unsubscribe?.();
     this.session?.dispose();

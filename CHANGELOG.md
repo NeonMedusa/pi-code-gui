@@ -1,5 +1,18 @@
 # Change Log
 
+## [0.0.30] — Tool block spacing, scroll, and zombie bash fix
+
+### Fixed
+- **Read/edit tool blocks** no longer waste vertical space.
+- **Bash orphan processes** — `abort()`, `dispose()`, `newSession()`, and
+  `resumeSession()` now call `session.abortBash()` to signal `killProcessTree`,
+  preventing long-running commands from surviving session teardown as zombies.
+
+### Changed
+- **Read result** always uses native scroll (`max-height: 20rem`) — no expand/collapse
+  button.
+
+
 ## [0.0.29] — Protocol validation, safe HTML, component system
 
 > Architectural upgrade inspired by the Pi TUI's RPC component model
