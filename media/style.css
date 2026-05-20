@@ -427,7 +427,9 @@
       max-height: 420px; overflow-y: auto;
 
       .code-block-wrapper { margin: 4px 0; }
-      .code-block { max-height: 500px; overflow-y: auto; }
+      /* When tool-result is the scroll container, disable inner code-block
+         scroll to prevent double scrollbars. */
+      .code-block { max-height: none; overflow-y: visible; }
 
       p  { margin: 4px 0; white-space: pre-wrap; word-break: break-word; }
       ul, ol { padding-left: 2em; margin: 4px 0; }
