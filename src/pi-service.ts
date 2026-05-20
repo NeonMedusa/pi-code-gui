@@ -2,7 +2,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import * as vscode from "vscode";
 import { createBridgeTools } from "./bridge-tools.js";
-import type { PiServiceEvent } from "./types.js";
+import { type PiServiceEvent, validateExtensionToWebview } from "./types.js";
 import { piLog, piWarn } from "./logger.js";
 
 /** Find the last element matching predicate (ES2023 findLast polyfill). */
@@ -281,6 +281,9 @@ export class PiService {
   // Widget activity timer (cleared on dispose to prevent leaks)
   private _widgetTimer: ReturnType<typeof setInterval> | null = null;
 
+  // Pending interactive dialogs (select/confirm/input).  Maps dialog ID → Promise resolve.
+  private _pendingDialogs = new Map<string, { resolve: (v: unknown) => void }>();
+
   // Turn tracking (like AgentSession._turnIndex in the SDK)
   private turnIndex = 0;
 
@@ -304,8 +307,37 @@ export class PiService {
   }
 
   private emit(event: PiServiceEvent) {
+    // ── Layer 1: Runtime protocol validation ───────────────
+    // Validates every outgoing message against the Zod schema.
+    // If validation fails, we STILL emit to avoid breaking existing
+    // functionality, but log the error and show a diagnostic notification.
+    const result = validateExtensionToWebview(event);
+    if (!result.success) {
+      piWarn(`[protocol] emit validation failed for type "${(event as any).type}": ${result.error}`);
+      // Emit a visible diagnostic so the user (and us) can see the issue
+      this.emitSafe({
+        type: "custom-message",
+        data: {
+          customType: "pi-gui-diagnostic",
+          content: `Protocol validation error (type: ${(event as any).type}): ${result.error.substring(0, 200)}`,
+          display: false,
+        },
+      });
+    }
+    // Dispatch to listeners (always, even on validation failures for backward compat)
     for (const l of this.listeners) {
-      try { l(event); } catch { /* ignore */ }
+      try { l(event); } catch (e: any) {
+        piWarn(`emit listener threw for type "${(event as any).type}": ${e?.message ?? e}`);
+      }
+    }
+  }
+
+  /** Emit without validation (used internally to avoid recursive validation on diagnostics). */
+  private emitSafe(event: PiServiceEvent) {
+    for (const l of this.listeners) {
+      try { l(event); } catch (e: any) {
+        piWarn(`emitSafe listener threw for type "${(event as any).type}": ${e?.message ?? e}`);
+      }
     }
   }
 
@@ -652,7 +684,7 @@ export class PiService {
 
       // Inject before extensions load (SDK may load them during createAgentSession)
       (globalThis as any).__piRegisterMessageRenderer = (customType: string, sourceCode: string) => {
-        this.emit({ type: "registerMessageRenderer", data: { customType, sourceCode } } as any);
+        this.emit({ type: "registerMessageRenderer", data: { customType, sourceCode } });
       };
 
       result = await SDK.createAgentSession(opts);
@@ -803,11 +835,18 @@ export class PiService {
           piWarn(`setWidget("${key}"): render error: ${e?.message ?? e}`);
         }
       },
-      // Interactive methods — must return undefined to signal "not supported"
-      // so the SDK falls back to text-based prompts.
-      select: () => undefined,
-      confirm: () => undefined,
-      input: () => undefined,
+      // Interactive methods — return Promises that resolve when the user
+      // dismisses the dialog in the webview.  Falls back to undefined if
+      // no webview panel is active (e.g. during tests).
+      select: (prompt: string, options: string[]) => {
+        return this._showDialog("select", prompt, { options });
+      },
+      confirm: (prompt: string) => {
+        return this._showDialog("confirm", prompt, {});
+      },
+      input: (prompt: string, defaultValue?: string) => {
+        return this._showDialog("input", prompt, { defaultValue });
+      },
       custom: () => undefined,
 
       // TUI compatibility stubs discovered via the Proxy at runtime
@@ -1204,6 +1243,21 @@ export class PiService {
       case "auto_retry_end":
         this.emit({ type: "auto-retry-end", data: { success: event.success, attempt: event.attempt, finalError: event.finalError } });
         break;
+
+      default:
+        // Surface unknown SDK events as visible notifications so they
+        // aren't silently lost.  Add a case above once handled.
+        this.emit({
+          type: "custom-message",
+          data: {
+            customType: "pi-gui-diagnostic",
+            display: false,
+            content: `Unhandled agent event: ${event.type}`,
+            timestamp: Date.now(),
+          },
+        });
+        piWarn(`Unhandled agent event type: ${event.type}`);
+        break;
     }
   }
 
@@ -1374,7 +1428,46 @@ export class PiService {
       piWarn("abort() called but session not initialized — nothing to abort");
       return;
     }
-    try { this.session.agent.abort(); } catch { /* best-effort */ }
+    try { this.session.agent.abort(); } catch (e: any) { piWarn(`abort() failed: ${e?.message ?? e}`); }
+  }
+
+  /** Resolve a pending interactive dialog (called from webview-panel.ts). */
+  resolveDialog(id: string, value: unknown) {
+    const entry = this._pendingDialogs.get(id);
+    if (entry) {
+      this._pendingDialogs.delete(id);
+      entry.resolve(value);
+    }
+  }
+
+  /**
+   * Show an interactive dialog in the webview and return a Promise.
+   * Falls back to synchronous undefined if no listeners are attached
+   * (the SDK then uses text-based fallback prompts).
+   */
+  private _showDialog(
+    dialogType: "select" | "confirm" | "input",
+    prompt: string,
+    extras: { options?: string[]; defaultValue?: string },
+  ): Promise<unknown> | undefined {
+    if (this.listeners.length === 0) {
+      // No webview attached — SDK will fall back to text prompts
+      return undefined;
+    }
+    const id = "dlg_" + Math.random().toString(36).slice(2, 10);
+    return new Promise((resolve) => {
+      this._pendingDialogs.set(id, { resolve });
+      this.emit({
+        type: "show_dialog",
+        data: {
+          dialogType,
+          id,
+          prompt,
+          options: extras.options || [],
+          defaultValue: extras.defaultValue || "",
+        },
+      } as any);
+    });
   }
 
   async newSession() {
@@ -1391,7 +1484,7 @@ export class PiService {
 
   /** Resume a past session from a .jsonl file path. Disposes current and re-initializes. */
   async resumeSession(filePath: string): Promise<{ success: boolean; error?: string }> {
-    try { await this.session?.agent.waitForIdle(); } catch { /* ignore */ }
+    try { await this.session?.agent.waitForIdle(); } catch (e: any) { piWarn(`waitForIdle() failed: ${e?.message ?? e}`); }
     this.dispose();
     return this.initialize({ openPath: filePath });
   }

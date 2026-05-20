@@ -31,8 +31,13 @@ extensions actually use:
   events. Unchanged output is skipped. Widgets not updated for 30 seconds are
   auto-cleared to prevent orphaned animations.
 - `notify(message, level)` — emits `custom-message` events (info or error).
-- `setStatus(key, status)` — emits `widget-update` events with a card-like
-  format `**key** status`.
+- `setStatus(key, status)` — emits `widget-update` events with the content
+  `**key** status`. The webview renders widgets through `renderMarkdown()`
+  which preserves raw HTML via marked.js, so extensions can include clickable
+  links and styled spans. No escaping is applied to the status text.
+- `globalThis.__piRegisterMessageRenderer` — injected before extensions load,
+  forwards `(customType, sourceCode)` to the webview where it's registered
+  via `<script nonce>` injection. See [Custom Message Renderer](custom-message-renderer.md).
 - Interactive methods (`select`, `confirm`, `input`, `custom`) — return
   `undefined` to signal "not supported", causing the SDK to fall back to
   text-based prompting.
@@ -50,5 +55,7 @@ persisting indefinitely.
 - [Webview Panel](webview-panel.md) — receives widget-update and custom-message events
 - [Webview Frontend](webview-frontend.md) — renders live panel cards
 - [PiService](pi-service.md) — binds extensions with this bridge
+- [Custom Message Renderer](custom-message-renderer.md) — the `globalThis` bridge for renderers
+- [Component System Proposal](component-system-proposal.md) — proposed interactive dialog support
 
-> **Last updated:** 2026-05-15 — initial documentation
+> **Last updated:** 2026-05-19 — added custom message renderer bridge, HTML support in setStatus

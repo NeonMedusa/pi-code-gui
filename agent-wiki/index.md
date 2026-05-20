@@ -20,8 +20,16 @@ reference; follow the links for depth.
 - [Bridge Tools](architecture/bridge-tools.md) — 17 VS Code API tools for the AI agent
 - [Event Translation](architecture/event-translation.md) — SDK agent events → PiServiceEvent types
 - [Extension UI Bridge](architecture/extension-ui-bridge.md) — TUI widgets → webview via Proxy
+- [Syntax Highlighting](architecture/syntax-highlighting.md) — highlight.js integration replacing hand-rolled regex
+- [Tool Block Rendering](architecture/tool-block-rendering.md) — Write/edit/read/bash tool renderers and scroll-view pattern
+- [Streaming Pipeline](architecture/streaming-pipeline.md) — RAF-batched rendering, token-diff patching, morphdom
+- [Custom Message Renderer](architecture/custom-message-renderer.md) — Inline interactive cards, renderer registry, action buttons
 - [Webview Frontend](architecture/webview-frontend.md) — Chat UI, streaming, TypeScript modules, typed protocol
 - [Tree Views](architecture/tree-views.md) — Sessions and Packages sidebar trees
+
+## Roadmap
+
+- [Component System Proposal](architecture/component-system-proposal.md) — 3-layer architectural upgrade: typed protocol, safe HTML builder, micro-component system
 
 ## Operations
 

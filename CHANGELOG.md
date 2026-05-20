@@ -1,5 +1,35 @@
 # Change Log
 
+## [0.0.29] — Protocol validation, safe HTML, component system
+
+> Architectural upgrade inspired by the Pi TUI's RPC component model
+> ([rpc-extension-ui.ts](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/examples/rpc-extension-ui.ts)):
+> typed protocol → safe rendering → component lifecycle. 3 layers, 7 steps.
+
+### Added
+- **Zod protocol validation** on every postMessage boundary — 37 extension→webview
+  + 16 webview→extension schemas catch missing fields, unknown types, and malformed
+  data at runtime with visible diagnostic notifications.
+- **`html` tagged template** (`src/webview/render/html.ts`) auto-escapes all
+  interpolated values via `textContent`; only `safe()`-wrapped content renders as HTML.
+- **Micro component system** (`src/webview/components/`) — `CodeBlock`, `ToolBlock`,
+  `ThinkingBlock`, `LiveCard`, `InlineCard`, `Dialog` — each owns its DOM subtree
+  with mount/update/destroy lifecycle.
+- **Interactive dialogs** for extension `select()`/`confirm()`/`input()` — overlay
+  with keyboard navigation returning Promises via `extension_ui_response` messages.
+- **Persistent status bar** — `setStatus` widgets render as inline badges in the
+  footer instead of collapsible live-cards.
+- **Copy All** button on `/debug` output.
+
+### Fixed
+- **Streaming jitter** caused by TextNode/Element indexing mismatch in
+  `patchBlockList` — space tokens now return empty `<span>` elements.
+- **Double scrollbar** on write tool — CSS override disables inner `.code-block`
+  overflow when inside `.tool-scroll-view`.
+- **Read block** no longer shows empty result — tool renderer now uses `ToolBlock`
+  component and `CodeBlock.mount()`.
+- **Bash output** auto-scrolls to bottom during streaming.
+
 ## [0.0.27] — Fix renderer CSP violation
 
 ### Fixed

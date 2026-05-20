@@ -11,6 +11,11 @@ import {
   shortenPath, renderCodeBlockHTML,
   setupCodeBlockHandlers,
 } from "../render/engine.js";
+import { validateExtensionToWebview } from "../../shared/protocol.js";
+import { html, safe } from "../render/html.js";
+import { LiveCard } from "../components/live-card.js";
+import { InlineCard } from "../components/inline-card.js";
+import { Dialog } from "../components/dialog.js";
 import {
   handleToolStart, handleToolUpdate, handleToolEnd,
   writeToolRenderer, editToolRenderer, readToolRenderer,
@@ -58,11 +63,17 @@ export function defaultMessageRenderer(data) {
 
     // Live-updating card: replace content in-place
     if (state.liveCards[customType]) {
-      state.liveCards[customType].querySelector(".live-card-content").innerHTML = renderMarkdown(content);
-      state.liveCards[customType].classList.add("live-card-collapsed");
-      state.liveCards[customType].querySelector(".live-card-content").style.display = "none";
-      var exp = state.liveCards[customType].querySelector(".live-card-expando");
-      if (exp) { exp.textContent = "\u25B8"; }
+      var existingEl = state.liveCards[customType];
+      var existingLc = existingEl._component;
+      if (existingLc) {
+        existingLc.update({ cardType: customType, label: customType, content: renderMarkdown(content) });
+      } else {
+        existingEl.querySelector(".live-card-content").innerHTML = renderMarkdown(content);
+        existingEl.classList.add("live-card-collapsed");
+        existingEl.querySelector(".live-card-content").style.display = "none";
+        var exp = existingEl.querySelector(".live-card-expando");
+        if (exp) { exp.textContent = "\u25B8"; }
+      }
       return;
     }
 
@@ -77,33 +88,17 @@ export function defaultMessageRenderer(data) {
 
   /** Create a collapsible live-panel card. Returns the card element. */
 export function createLiveCard(customType, label, content) {
-    var card = document.createElement("div");
-    card.className = "live-card live-card-collapsed";
-    card.setAttribute("data-type", customType);
-    card.innerHTML =
-      '<div class="live-card-label"><span class="live-card-expando">\u25B8</span> ' + escapeHtml(label) + '</div>' +
-      '<button class="live-card-close" title="Dismiss">&times;</button>' +
-      '<div class="live-card-content" style="display:none">' + renderMarkdown(content) + '</div>';
-    card.querySelector(".live-card-label").addEventListener("click", function () {
-      var wasCollapsed = card.classList.contains("live-card-collapsed");
-      if (wasCollapsed) {
-        card.classList.remove("live-card-collapsed");
-        (card.querySelector(".live-card-expando") as HTMLElement).textContent = "\u25BE";
-        (card.querySelector(".live-card-content") as HTMLElement).style.display = "";
-      } else {
-        card.classList.add("live-card-collapsed");
-        (card.querySelector(".live-card-expando") as HTMLElement).textContent = "\u25B8";
-        (card.querySelector(".live-card-content") as HTMLElement).style.display = "none";
-      }
+    var lc = new LiveCard({
+      cardType: customType,
+      label: label,
+      content: renderMarkdown(content),
+      onDismiss: function () { dismissLiveCard(customType); },
     });
-    card.querySelector(".live-card-close").addEventListener("click", function (e) {
-      e.stopPropagation();
-      dismissLiveCard(customType);
-    });
-    state.livePanel.appendChild(card);
-    state.liveCards[customType] = card;
+    lc.el._component = lc; // attach for later updating
+    state.livePanel.appendChild(lc.el);
+    state.liveCards[customType] = lc.el;
     state.livePanel.classList.add("visible");
-    return card;
+    return lc.el;
   }
 
   // ═══ Event Router ═══════════════════════════════════════
@@ -111,6 +106,25 @@ export function createLiveCard(customType, label, content) {
 
   window.addEventListener("message", function (event) {
     var msg = event.data;
+
+    // ── Layer 1: Runtime protocol validation ───────────────
+    // Validate every incoming message against the Zod schema.
+    // Skip validation for high-frequency streaming types to avoid
+    // per-token overhead (every delta would parse the full union).
+    var skipValidation = msg.type === "stream-delta" || msg.type === "thinking-delta" ||
+                         msg.type === "tool-update" || msg.type === "bash-output";
+    if (!skipValidation) {
+      var vr = validateExtensionToWebview(msg);
+      if (!vr.success) {
+        console.warn("[pi-gui] Webview message validation failed:", vr.error, "msg:", JSON.stringify(msg).substring(0, 300));
+        // Show a visible diagnostic notification
+        var diag = createLiveCard("pi-gui-diagnostic", "Protocol Error",
+          "Message validation error for type `" + (msg.type || "unknown") + "`:\n```\n" +
+          vr.error.substring(0, 500) + "\n```");
+        // Don't block — fall through to existing handler for backward compat
+      }
+    }
+
     // Debug: log every incoming extension message (skip high-frequency stream deltas)
     if (msg.type !== "stream-delta" && msg.type !== "thinking-delta" && msg.type !== "tool-update" && msg.type !== "bash-output") {
       logEvent("recv:" + msg.type, msg.data || msg);
@@ -120,12 +134,12 @@ export function createLiveCard(customType, label, content) {
       case "agent-start":         handleAgentStart(); break;
       case "agent-end":           handleAgentEnd(); break;
 
-      // Turn lifecycle
+      // Message lifecycle
+      case "chat-message":        handleChatMessage(msg.data); break;
       case "turn-start":          handleTurnStart(msg.data); break;
       case "turn-end":            handleTurnEnd(msg.data); break;
 
       // Message lifecycle
-      case "chat-message":        handleChatMessage(msg.data); break;
       case "assistant-start":     handleAssistantStart(msg.data); break;
       case "assistant-end":       handleAssistantEnd(msg.data); break;
       case "stream-delta":        handleStreamDelta(msg.data); break;
@@ -157,7 +171,7 @@ export function createLiveCard(customType, label, content) {
       case "user-messages-list": handleUserMessagesList(msg.data); break;
       case "scoped-models-update": handleScopedModelsUpdate(msg.data); break;
       case "settings-update":    handleSettingsUpdate(msg.data); break;
-      case "revealEntry":        handleRevealEntry(msg.entryId); break;
+      case "revealEntry":        handleRevealEntry(msg.entryId, msg.toolCallId); break;
 
       // Errors
       case "error":               handleError(msg.data); break;
@@ -172,8 +186,18 @@ export function createLiveCard(customType, label, content) {
       // Widget bridge from extensions (setWidget calls)
       case "widget-update":      handleWidgetUpdate(msg.data); break;
       case "registerMessageRenderer": handleRegisterMessageRenderer(msg.data); break;
+      case "show_dialog":          handleShowDialog(msg.data); break;
 
-
+      default:
+        // Surface unknown message types as visible notifications.
+        // Skip high-frequency types that we intentionally don't render.
+        if (msg.type !== "stream-delta" && msg.type !== "thinking-delta") {
+          defaultMessageRenderer({
+            customType: "pi-gui-diagnostic",
+            content: "Unhandled webview message: " + msg.type,
+          });
+        }
+        break;
     }
   });
 
@@ -196,10 +220,15 @@ export function handleAgentStart() {
 
 export function handleAgentEnd() {
     setSbDot("idle");
-    // Stop thinking spinner (safety net)
+    // Stop thinking spinner (safety net) — use component API if available
     if (state.currentThinkingEl) {
-      var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
-      if (thSpinner) {thSpinner.remove();}
+      var tb = state.currentThinkingEl._component;
+      if (tb) {
+        tb.update({ content: tb._rawText || "", done: true });
+      } else {
+        var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
+        if (thSpinner) {thSpinner.remove();}
+      }
     }
 
     logEvent("agent-end:BEFORE", {
@@ -309,7 +338,10 @@ export function handleChatMessage(data) {
 
     var el = createMessageEl(data.role);
     // #9: Entry ID for scroll-to
-    if (data.entryId) {el.id = "entry-" + data.entryId;}
+    if (data.entryId) {
+      el.id = "entry-" + data.entryId;
+      el.setAttribute("data-entry-id", data.entryId);
+    }
     var mc = el.querySelector(".message-content");
     if (mc) {
       // Use block rendering for user messages (one-shot, no streaming)
@@ -505,37 +537,18 @@ export function handleStreamDelta(data) {
   // Uses textContent (no HTML parse) for efficiency, batched
   // per animation frame like stream deltas.
 
-export function _scheduleThinkingRender(tc) {
+export function _scheduleThinkingRender(el) {
     if (state._thinkingRafId) {return;}
-    state._thinkingEl = tc;
+    state._thinkingEl = el;
     state._thinkingRafId = requestAnimationFrame(function () {
       state._thinkingRafId = null;
       if (!state._thinkingEl) {return;}
       var el = state._thinkingEl;
       state._thinkingEl = null;
-      // Flush accumulated text via textContent (avoids HTML parse)
-      var raw = el.getAttribute("data-raw") || "";
-      el.textContent = raw;
-      // Update line count and expand button
-      var block = el.closest(".thinking-block");
-      if (block) {
-        var lineCount = block.querySelector(".thinking-line-count");
-        var lines = raw ? raw.split("\n").length : 0;
-        if (lineCount) {lineCount.textContent = lines > 0 ? "(" + lines + " lines)" : "";}
-        // Show expand button ONLY when content overflows the visible area
-        var btn = block.querySelector(".thinking-expand-btn");
-        if (btn && lines > 0) {
-          var overflowing = el.scrollHeight > el.clientHeight + 2;
-          if (block.classList.contains("thinking-collapsed")) {
-            btn.style.display = overflowing ? "" : "none";
-            btn.textContent = "Show more";
-          } else {
-            btn.style.display = "";
-            btn.textContent = "Show less";
-          }
-        }
-        // Auto-scroll to bottom of content area
-        el.scrollTop = el.scrollHeight;
+      var tb = el._component;
+      if (tb) {
+        tb.update({ content: tb._rawText || "" });
+        tb.scrollToBottom();
       }
       scrollToBottom();
     });
@@ -548,8 +561,10 @@ export function _flushThinkingRender() {
       if (state._thinkingEl) {
         var el = state._thinkingEl;
         state._thinkingEl = null;
-        var raw = el.getAttribute("data-raw") || "";
-        el.textContent = raw;
+        var tb = el._component;
+        if (tb) {
+          tb.update({ content: tb._rawText || "" });
+        }
       }
     }
   }
@@ -557,23 +572,10 @@ export function _flushThinkingRender() {
 export function handleThinkingDelta(data) {
     if (data.done) {
       _flushThinkingRender();
-      // Remove spinner when thinking completes, finalize expand button
-      if (state.currentThinkingEl) {
-        var spinner = state.currentThinkingEl.querySelector(".thinking-spinner");
-        if (spinner) {spinner.remove();}
-        var block = state.currentThinkingEl;
-        var contentEl = block.querySelector(".thinking-content");
-        var btn = block.querySelector(".thinking-expand-btn");
-        if (btn && contentEl) {
-          var overflowing = contentEl.scrollHeight > contentEl.clientHeight + 2;
-          if (block.classList.contains("thinking-collapsed")) {
-            btn.style.display = overflowing ? "" : "none";
-            btn.textContent = "Show more";
-          } else {
-            btn.style.display = "";
-            btn.textContent = "Show less";
-          }
-        }
+      // Finalize: update component with done=true (removes spinner, sets button)
+      if (state.currentThinkingEl && state.currentThinkingEl._component) {
+        var tb = state.currentThinkingEl._component;
+        tb.update({ content: tb._rawText || "", done: true });
       }
       return;
     }
@@ -584,13 +586,12 @@ export function handleThinkingDelta(data) {
         if (mc) {mc.prepend(state.currentThinkingEl);}
       }
     }
-    var tc = state.currentThinkingEl.querySelector(".thinking-content");
-    if (tc) {
-      // Accumulate into data-raw, render once per frame via textContent
-      var raw = tc.getAttribute("data-raw") || "";
-      raw += data.delta;
-      tc.setAttribute("data-raw", raw);
-      _scheduleThinkingRender(tc);
+    var el = state.currentThinkingEl;
+    if (el && el._component) {
+      // Accumulate raw text, render once per frame via the component
+      var tb = el._component;
+      tb._rawText = (tb._rawText || "") + data.delta;
+      _scheduleThinkingRender(el);
     }
     scrollToBottom();
   }
@@ -676,13 +677,20 @@ export function handleBatchStart(data) {
 export function handleBatchEnd(data) {
     state._inBatch = false;
     document.body.classList.remove("no-animate");
-    // For fresh sessions, state.welcome was never hidden — keep it visible
-    // For restores, state.welcome is already hidden
-    // Force-scroll to bottom after batch replay (ignores state.hasScrolledUp).
-    // Use a double-rAF so layout has settled before reading scrollHeight.
+    // Force-scroll to bottom after batch replay.  Triple-rAF ensures
+    // layout has settled (highlight.js code blocks, syntax spans, etc.)
+    // before we read scrollHeight.  Falls back to scrollIntoView which
+    // triggers a layout pass if needed.
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
-        state.chatContainer.scrollTop = state.chatContainer.scrollHeight;
+        requestAnimationFrame(function () {
+          var container = state.chatContainer;
+          if (container.lastElementChild) {
+            container.lastElementChild.scrollIntoView({ block: "end", behavior: "instant" });
+          } else {
+            container.scrollTop = container.scrollHeight;
+          }
+        });
       });
     });
   }
@@ -708,30 +716,30 @@ export function handleQueueUpdate(data) {
     el.id = "pending-queue-indicator";
     el.className = "queue-indicator";
 
-    var html = "";
+    var result = "";
 
     // Steering messages — already interrupting, show with label
     steering.forEach(function (m) {
-      html += '<div class="queue-row">' +
-        '<span class="queue-label">Steer:</span> ' +
-        '<span class="queue-text">' + escapeHtml(m) + '</span></div>';
+      result += html`<div class="queue-row">
+        <span class="queue-label">Steer:</span>
+        <span class="queue-text">${m}</span></div>`;
     });
 
     // Follow-up messages — queued, with promote button
     followUp.forEach(function (m, i) {
-      html += '<div class="queue-row">' +
-        '<span class="queue-label">Queue:</span> ' +
-        '<span class="queue-text">' + escapeHtml(m) + '</span>' +
-        '<button class="queue-promote-btn" data-idx="' + i + '" title="Promote to Steer (interrupt now)">Steer now</button>' +
-        '</div>';
+      result += html`<div class="queue-row">
+        <span class="queue-label">Queue:</span>
+        <span class="queue-text">${m}</span>
+        <button class="queue-promote-btn" data-idx="${i}" title="Promote to Steer (interrupt now)">Steer now</button>
+        </div>`;
     });
 
     // Clear all button — always show when there are items
-    html += '<div class="queue-actions">' +
-      '<button class="queue-clear-btn">✕ Clear all queued</button>' +
-      '</div>';
+    result += html`<div class="queue-actions">
+      <button class="queue-clear-btn">✕ Clear all queued</button>
+      </div>`;
 
-    el.innerHTML = html;
+    el.innerHTML = result;
 
     // Wire promote buttons
     el.querySelectorAll(".queue-promote-btn").forEach(function (btn) {
@@ -859,9 +867,10 @@ export function addCompactionIndicator(message) {
     var el = document.createElement("div");
     el.id = "compaction-indicator";
     el.className = "message assistant";
-    el.innerHTML =
-      '<div class="message-content warning">' +
-      '<span class="working-spinner">◆</span> ' + escapeHtml(message) + '</div>';
+    el.innerHTML = html`
+      <div class="message-content warning">
+        <span class="working-spinner">◆</span> ${message}
+      </div>`;
     state.chatContainer.appendChild(el);
     scrollToBottom();
 
@@ -929,8 +938,7 @@ export function removeRetryIndicator() {
 export function addStatusMessage(message) {
     var el = document.createElement("div");
     el.className = "message assistant";
-    el.innerHTML = '<div class="message-content muted">' +
-      escapeHtml(message) + '</div>';
+    el.innerHTML = html`<div class="message-content muted">${message}</div>`;
     state.chatContainer.appendChild(el);
     scrollToBottom();
   }
@@ -1066,30 +1074,30 @@ export function renderAttachments() {
     }
 
     state.attachmentBar.classList.add("visible");
-    var html = "";
+    var result = "";
 
     for (var i = 0; i < state.attachments.length; i++) {
       var a = state.attachments[i];
 
       if (a.type === "image") {
         var src = a.blobUrl || "";
-        html +=
-          '<div class="attachment-item" title="' + escapeHtml(a.name) + '">' +
-          '<img class="att-preview" src="' + src + '" alt="">' +
-          '<span class="att-name">' + escapeHtml(a.name) + '</span>' +
-          '<span class="att-remove" data-att-id="' + a.id + '">&times;</span>' +
-          '</div>';
+        result += html`
+          <div class="attachment-item" title="${a.name}">
+            <img class="att-preview" src="${src}" alt="">
+            <span class="att-name">${a.name}</span>
+            <span class="att-remove" data-att-id="${a.id}">&times;</span>
+          </div>`;
       } else {
-        html +=
-          '<div class="attachment-item" title="' + escapeHtml(a.name) + '">' +
-          '<span class="att-icon">&#128196;</span>' +
-          '<span class="att-name">' + escapeHtml(a.name) + '</span>' +
-          '<span class="att-remove" data-att-id="' + a.id + '">&times;</span>' +
-          '</div>';
+        result += html`
+          <div class="attachment-item" title="${a.name}">
+            <span class="att-icon">&#128196;</span>
+            <span class="att-name">${a.name}</span>
+            <span class="att-remove" data-att-id="${a.id}">&times;</span>
+          </div>`;
       }
     }
 
-    state.attachmentBar.innerHTML = html;
+    state.attachmentBar.innerHTML = result;
 
     // Delegate click events for remove buttons
     state.attachmentBar.querySelectorAll(".att-remove").forEach(function (btn) {
@@ -1469,10 +1477,10 @@ export function handleCompactionSummaryMessage(data) {
     if (data.entryId) {el.id = "entry-" + data.entryId;}
     var tokenStr = (data.tokensBefore || 0).toLocaleString();
     var summaryId = "cs-" + Math.random().toString(36).slice(2, 8);
-    el.innerHTML =
-      '<div class="cs-header">[compaction]</div>' +
-      '<div class="cs-preview" id="' + summaryId + '-toggle">Compacted from ' + tokenStr + ' tokens (click to expand)</div>' +
-      '<div class="cs-content" id="' + summaryId + '-content" style="display:none">' + escapeHtml(data.summary || "") + '</div>';
+    el.innerHTML = html`
+      <div class="cs-header">[compaction]</div>
+      <div class="cs-preview" id="${summaryId}-toggle">Compacted from ${tokenStr} tokens (click to expand)</div>
+      <div class="cs-content" id="${summaryId}-content" style="display:none">${data.summary || ""}</div>`;
     state.chatContainer.appendChild(el);
 
     // Wire toggle
@@ -1500,14 +1508,14 @@ export function showUserMessageSelector() {
     state.userMsgSelectorOpen = true;
     state.userMsgSelectedIdx = 0;
     state.userMsgOverlay.classList.add("visible");
-    var html = "";
+    var result = "";
     for (var i = 0; i < state.userMessageHistory.length; i++) {
       var msg = state.userMessageHistory[i];
       var text = msg.text || "";
       if (text.length > 100) {text = text.slice(0, 100) + "\u2026";}
-      html += '<div class="user-msg-item" data-idx="' + i + '"><span class="msg-idx">' + (i + 1) + '</span>' + escapeHtml(text) + '</div>';
+      result += html`<div class="user-msg-item" data-idx="${i}"><span class="msg-idx">${i + 1}</span>${text}</div>`;
     }
-    state.userMsgOverlay.innerHTML = html;
+    state.userMsgOverlay.innerHTML = result;
 
     // Click handlers
     var items = state.userMsgOverlay.querySelectorAll(".user-msg-item");
@@ -1566,7 +1574,7 @@ export function renderScopedModels() {
 
 export function renderSettingsPanel() {
     if (!state.settingsOverlay || !state.settingsOpen) {return;}
-    var html = '<div class="settings-title">Settings</div>';
+    var result = '<div class="settings-title">Settings</div>';
 
     var toggles = [
       { key: "autoCompaction", label: "Auto-compaction" },
@@ -1577,16 +1585,14 @@ export function renderSettingsPanel() {
     for (var i = 0; i < toggles.length; i++) {
       var t = toggles[i];
       var on = state.settingsState[t.key];
-      html +=
-        '<div class="settings-row">' +
-        '<span>' + t.label + '</span>' +
-        '<span class="settings-toggle' + (on ? " on" : "") + '" data-key="' + t.key + '"></span>' +
-        '</div>';
+      result += html`
+        <div class="settings-row">
+          <span>${t.label}</span>
+          <span class="settings-toggle${on ? " on" : ""}" data-key="${t.key}"></span>
+        </div>`;
     }
 
-
-
-    state.settingsOverlay.innerHTML = html;
+    state.settingsOverlay.innerHTML = result;
 
     // Wire toggle clicks
     var togglesEls = state.settingsOverlay.querySelectorAll(".settings-toggle");
@@ -1633,20 +1639,25 @@ export function closeAllOverlays() {
  */
 export function renderInlineCustomMessage(data) {
     var customType = data.customType || "custom";
-    var details = data.details;
     var content = typeof data.content === "string"
       ? data.content
       : (Array.isArray(data.content) ? data.content.filter(function (c) { return c.type === "text"; }).map(function (c) { return c.text; }).join("\n") : "");
 
     // Check for existing card to update in-place (polling refresh)
     var existing = state.chatContainer.querySelector('[data-custom-type="' + customType + '"]');
-
     var renderer = getMessageRenderer(customType);
 
     if (existing) {
-      // Update existing card
-      if (renderer) {
-        // Re-run registered renderer on the existing container
+      var existingIc = existing._component;
+      if (existingIc) {
+        existingIc.update({
+          customType: customType,
+          content: renderMarkdown(content),
+          renderer: renderer,
+          rawData: data,
+          escapeHtmlFn: escapeHtml,
+        });
+      } else if (renderer) {
         var body = existing.querySelector(".custom-message-body");
         if (body) { body.innerHTML = ""; renderer(data, body, escapeHtml); }
       } else {
@@ -1656,37 +1667,16 @@ export function renderInlineCustomMessage(data) {
     }
 
     // Create new inline card
-    var el = document.createElement("div");
-    el.className = "custom-message-inline";
-    el.setAttribute("data-custom-type", customType);
-
-    var label = escapeHtml(customType);
-    el.innerHTML =
-      '<div class="custom-message-header">' +
-      '<span class="custom-message-label">' + label + '</span>' +
-      '</div>' +
-      '<div class="custom-message-body"></div>';
-
-    var body = el.querySelector(".custom-message-body");
-    if (renderer) {
-      renderer(data, body, escapeHtml);
-    } else {
-      body.innerHTML = renderMarkdown(content);
-    }
-
-    // Wire action buttons: data-command sends slash command
-    el.addEventListener("click", function (e) {
-      var btn = e.target.closest("[data-command]");
-      if (btn) {
-        e.preventDefault();
-        var cmd = btn.getAttribute("data-command");
-        if (cmd && window.__vscode) {
-          window.__vscode.postMessage({ type: "slashCommand", command: cmd });
-        }
-      }
+    var ic = new InlineCard({
+      customType: customType,
+      content: renderMarkdown(content),
+      renderer: renderer,
+      rawData: data,
+      escapeHtmlFn: escapeHtml,
     });
+    ic.el._component = ic; // attach for later updating
 
-    state.chatContainer.appendChild(el);
+    state.chatContainer.appendChild(ic.el);
     scrollToBottom();
   }
 
@@ -1711,7 +1701,7 @@ export function handleCustomMessage(data) {
       if (infoContent) {
         var infoEl = document.createElement("div");
         infoEl.className = "message assistant";
-        infoEl.innerHTML = '<div class="message-content muted">' + escapeHtml(infoContent) + '</div>';
+        infoEl.innerHTML = html`<div class="message-content muted">${infoContent}</div>`;
         state.chatContainer.appendChild(infoEl);
         scrollToBottom();
       }
@@ -1809,6 +1799,12 @@ export function handleWidgetUpdate(data) {
     var key = data.key;
     var content = data.content;
 
+    // ── status-* widgets render inline in the status bar, not as live cards ──
+    if (key.startsWith("status-")) {
+      handleStatusWidget(key, content);
+      return;
+    }
+
     if (content === null || content === undefined) {
       // Remove widget card
       var existing = state.widgetCards[key];
@@ -1835,10 +1831,10 @@ export function handleWidgetUpdate(data) {
       card.className = "live-card";
       card.setAttribute("data-widget", "true");
       card.setAttribute("data-type", key);
-      card.innerHTML =
-        '<div class="live-card-label">' + escapeHtml(key) + '</div>' +
-        '<button class="live-card-close" title="Dismiss">&times;</button>' +
-        '<div class="live-card-content">' + renderMarkdown(content) + '</div>';
+      card.innerHTML = html`
+        <div class="live-card-label">${key}</div>
+        <button class="live-card-close" title="Dismiss">&times;</button>
+        <div class="live-card-content">${safe(renderMarkdown(content))}</div>`;
       card.querySelector(".live-card-close").addEventListener("click", function () {
         dismissLiveCard(key);
       });
@@ -1849,6 +1845,45 @@ export function handleWidgetUpdate(data) {
     state.livePanel.classList.add("visible");
   }
 
+/** Render a status-* widget as an inline indicator in the status bar. */
+export function handleStatusWidget(key, content) {
+    var statusBar = document.getElementById("pi-extension-status");
+    if (!statusBar) {return;}
+
+    if (content === null || content === undefined) {
+      // Remove status indicator
+      var existingStatus = statusBar.querySelector('[data-status-key="' + key + '"]');
+      if (existingStatus) {existingStatus.remove();}
+      // Also clean up any legacy live-card
+      var legacy = state.widgetCards[key];
+      if (legacy) {legacy.remove(); delete state.widgetCards[key];}
+      delete state.liveCards[key];
+      return;
+    }
+
+    // Parse markdown content: **key** value → bold key + value
+    var displayText = content;
+    var match = content.match(/^\*\*(.+?)\*\*\s*(.*)/);
+    var label = match ? match[1] : key;
+    var value = match ? match[2] : content;
+
+    var existingEl = statusBar.querySelector('[data-status-key="' + key + '"]');
+    if (existingEl) {
+      existingEl.textContent = label + ": " + value;
+    } else {
+      var span = document.createElement("span");
+      span.className = "pi-extension-status-item";
+      span.setAttribute("data-status-key", key);
+      span.textContent = label + ": " + value;
+      statusBar.appendChild(span);
+    }
+
+    // Clean up any legacy live-card
+    var legacy = state.widgetCards[key];
+    if (legacy) {legacy.remove(); delete state.widgetCards[key];}
+    delete state.liveCards[key];
+  }
+
 export function clearWidgetCards() {
     for (var key in state.widgetCards) {
       if (state.widgetCards.hasOwnProperty(key)) {
@@ -1856,6 +1891,27 @@ export function clearWidgetCards() {
       }
     }
     state.widgetCards = {};
+  }
+
+  // ═══ Interactive Dialog Bridge ═══════════════════════════
+
+export function handleShowDialog(data) {
+    if (!data || !data.id) {return;}
+    var dlg = new Dialog({
+      dialogType: data.dialogType || "confirm",
+      id: data.id,
+      prompt: data.prompt || "",
+      options: data.options || [],
+      defaultValue: data.defaultValue || "",
+    });
+    // Mount in a dedicated overlay container below the status bar
+    var container = document.getElementById("dialog-overlay");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "dialog-overlay";
+      document.body.appendChild(container);
+    }
+    dlg.mount(container);
   }
 
   // ═══ #8: Slash Command Autocomplete ═══════════════════════
@@ -1911,16 +1967,16 @@ export function updateSlashAutocomplete(filter) {
     state.slashAutocompleteOpen = true;
     state.slashSelectedIdx = Math.min(state.slashSelectedIdx, matches.length - 1);
 
-    var html = "";
+    var result = "";
     for (var i = 0; i < matches.length; i++) {
       var sc = matches[i];
-      html +=
-        '<div class="slash-item' + (i === state.slashSelectedIdx ? " selected" : "") + '" data-index="' + i + '" data-cmd="' + escapeHtml(sc.cmd) + '">' +
-        '<span class="slash-cmd">' + escapeHtml(sc.cmd) + '</span>' +
-        '<span class="slash-desc">' + escapeHtml(sc.desc) + '</span>' +
-        '</div>';
+      result += html`
+        <div class="slash-item${i === state.slashSelectedIdx ? " selected" : ""}" data-index="${i}" data-cmd="${sc.cmd}">
+          <span class="slash-cmd">${sc.cmd}</span>
+          <span class="slash-desc">${sc.desc}</span>
+        </div>`;
     }
-    state.slashAutocomplete.innerHTML = html;
+    state.slashAutocomplete.innerHTML = result;
 
     // Wire click handlers
     var items = state.slashAutocomplete.querySelectorAll(".slash-item");
@@ -1941,19 +1997,45 @@ export function updateSlashAutocomplete(filter) {
   // ═══ #9: Scroll-to-entry ═══════════════════════════════════
   // ═══ #9: Scroll-to-entry ═══════════════════════════════════
 
-export function handleRevealEntry(entryId) {
-    if (!entryId) {return;}
-
-    // Try multiple ID formats: entry-<id>, tool-<id>, bash-<id>
-    var selectors = [
-      "entry-" + entryId,
-      "tool-" + entryId,
-      "bash-" + entryId,
-    ];
+export function handleRevealEntry(entryId, toolCallId) {
+    if (!entryId && !toolCallId) {return;}
     var el = null;
-    for (var i = 0; i < selectors.length; i++) {
-      el = document.getElementById(selectors[i]);
-      if (el) {break;}
+
+    // Strategy 1: exact ID match (entry-{id}, tool-{id}, bash-{id})
+    if (entryId) {
+      var prefixes = ["entry-", "tool-", "bash-"];
+      for (var pi = 0; pi < prefixes.length; pi++) {
+        el = document.getElementById(prefixes[pi] + entryId);
+        if (el) {break;}
+      }
+    }
+
+    // Strategy 2: search by data-entry-id (the entry UUID)
+    if (!el && entryId) {
+      el = document.querySelector('[data-entry-id="' + entryId + '"]');
+    }
+
+    // Strategy 3: search by data-tool-call-id (the SDK tool call ID)
+    // Use entryId first, then toolCallId if provided
+    if (!el && entryId) {
+      el = document.querySelector('[data-tool-call-id="' + entryId + '"]');
+    }
+    if (!el && toolCallId) {
+      el = document.querySelector('[data-tool-call-id="' + toolCallId + '"]');
+    }
+
+    // Strategy 4: loose match — any element whose ID contains the entryId or toolCallId
+    if (!el) {
+      var searchStr = entryId || toolCallId;
+      if (searchStr) {
+        var allWithId = document.querySelectorAll("[id]");
+        for (var ai = 0; ai < allWithId.length; ai++) {
+          if (allWithId[ai].id.indexOf(searchStr) !== -1) {
+            el = allWithId[ai];
+            break;
+          }
+        }
+      }
     }
 
     if (!el) {return;}
@@ -1980,8 +2062,13 @@ export function handleRevealEntry(entryId) {
 export function handleBashStart(data) {
     // Stop thinking spinner — bash execution means thinking is done
     if (state.currentThinkingEl) {
-      var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
-      if (thSpinner) {thSpinner.remove();}
+      var _tb3 = state.currentThinkingEl._component;
+      if (_tb3) {
+        _tb3.update({ content: _tb3._rawText || "", done: true });
+      } else {
+        var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
+        if (thSpinner) {thSpinner.remove();}
+      }
     }
 
     var callId = data.toolCallId;
@@ -2019,7 +2106,10 @@ export function handleBashOutput(data) {
     }
     state.bashOutputs[callId] = (state.bashOutputs[callId] || "") + (data.output || "");
     var outEl = block.querySelector(".bash-output");
-    if (outEl) {morphRender(outEl, escapeHtml(state.bashOutputs[callId]));}
+    if (outEl) {
+      morphRender(outEl, escapeHtml(state.bashOutputs[callId]));
+      outEl.scrollTop = outEl.scrollHeight;
+    }
     scrollToBottom();
   }
 
@@ -2060,22 +2150,38 @@ export function handleDebugCommand() {
     hideWelcome();
     var summary = window.__piDebug.summary() as { chat: any; dupes: string[]; orphanBash: string[]; orphanTool: string[]; lastEvents: any[]; lastDomChanges: any[] };
 
+    // Build full text for clipboard copy + console dump
+    var copyText = "Pi Code GUI — Debug Dump\n" +
+      "==========================\n\n" +
+      "Chat Container:\n" + JSON.stringify(summary.chat, null, 2) + "\n\n" +
+      "Tracker State:\n" +
+      "state.bashBlocks: " + JSON.stringify(Object.keys(state.bashBlocks)) + "\n" +
+      "state.currentToolBlocks: " + JSON.stringify(Object.keys(state.currentToolBlocks)) + "\n" +
+      "state.bashOutputs: " + JSON.stringify(Object.keys(state.bashOutputs)) + "\n" +
+      "Duplicates: " + JSON.stringify(summary.dupes) + "\n" +
+      "Orphan bash: " + JSON.stringify(summary.orphanBash) + "\n" +
+      "Orphan tool: " + JSON.stringify(summary.orphanTool) + "\n\n" +
+      "Last 20 Events:\n" + JSON.stringify(summary.lastEvents, null, 2) + "\n\n" +
+      "Queue / Steer State:\n" +
+      "state.isStreaming: " + state.isStreaming + "\n" +
+      "state.queueMode: " + state.queueMode + "\n" +
+      "pending-queue-indicator exists: " + !!document.getElementById("pending-queue-indicator") + "\n" +
+      "queue events (" + ((window.__piDebug._queueEvents || []).length) + "): " + JSON.stringify((window.__piDebug._queueEvents || []).slice(-10), null, 2) + "\n\n" +
+      "Last 20 DOM Mutations:\n" + JSON.stringify(summary.lastDomChanges, null, 2) + "\n";
+
     // Also log to console so DevTools users can inspect without copy-paste
     console.log("[pi-debug] === Webview State Dump ===");
-    console.log("[pi-debug] Chat structure:", JSON.stringify(summary.chat, null, 2));
-    console.log("[pi-debug] Dupes (in both trackers):", summary.dupes);
-    console.log("[pi-debug] Orphan state.bashBlocks:", summary.orphanBash);
-    console.log("[pi-debug] Orphan toolBlocks:", summary.orphanTool);
-    console.log("[pi-debug] Last events:", JSON.stringify(summary.lastEvents, null, 2));
-    console.log("[pi-debug] Last DOM changes:", JSON.stringify(summary.lastDomChanges, null, 2));
-    console.log("[pi-debug] Full event log (-100):", JSON.stringify(debugEventLog.slice(-100), null, 2));
+    console.log(copyText);
 
     var el = document.createElement("div");
     el.className = "message assistant";
+
     el.innerHTML =
       '<div class="message-content">' +
       '<details class="thinking-block" open>' +
-      '<summary>🔍 Debug: Webview State</summary>' +
+      '<summary>🔍 Debug: Webview State ' +
+      '<button class="debug-copy-all-btn" type="button" title="Copy all debug output">📋 Copy All</button>' +
+      '</summary>' +
       '<div class="debug-output">' +
 
       '<h4>Chat Container</h4>' +
@@ -2118,6 +2224,23 @@ export function handleDebugCommand() {
       '</div>' +
       '</details>' +
       '</div>';
+
+    // Wire Copy All button
+    var copyBtn = el.querySelector(".debug-copy-all-btn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation(); // don't toggle the details element
+        navigator.clipboard.writeText(copyText).then(function () {
+          copyBtn.textContent = "✓ Copied!";
+          setTimeout(function () { copyBtn.textContent = "📋 Copy All"; }, 2000);
+        }, function () {
+          copyBtn.textContent = "✗ Failed";
+          setTimeout(function () { copyBtn.textContent = "📋 Copy All"; }, 2000);
+        });
+      });
+    }
+
     state.chatContainer.appendChild(el);
     scrollToBottom();
   }

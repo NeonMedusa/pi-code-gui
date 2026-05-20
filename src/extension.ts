@@ -170,9 +170,10 @@ export async function activate(context: vscode.ExtensionContext) {
   // or falls back to reading the selected tree item from the session tree view
   // (for right-click context menu usage where args are not auto-populated).
   context.subscriptions.push(
-    vscode.commands.registerCommand("pi-code-gui.revealEntry", (sessionId?: string | SessionTreeItem, entryId?: string) => {
+    vscode.commands.registerCommand("pi-code-gui.revealEntry", (sessionId?: string | SessionTreeItem, entryId?: string, toolCallId?: string) => {
       let sw: SessionWindow | undefined;
       let id = entryId;
+      let tcId = toolCallId;
 
       // Handle context menu: VS Code passes the tree item as first arg
       if (sessionId instanceof SessionTreeItem) {
@@ -180,6 +181,7 @@ export async function activate(context: vscode.ExtensionContext) {
         if (cmdArgs && cmdArgs.length >= 2) {
           sw = sessions.find((s) => s.id === cmdArgs[0]);
           id = cmdArgs[1] as string;
+          tcId = cmdArgs.length >= 3 ? cmdArgs[2] as string : undefined;
         }
       } else if (typeof sessionId === "string") {
         sw = sessions.find((s) => s.id === sessionId);
@@ -195,6 +197,7 @@ export async function activate(context: vscode.ExtensionContext) {
             if (cmdArgs && cmdArgs.length >= 2) {
               sw = sessions.find((s) => s.id === cmdArgs[0])!;
               id = cmdArgs[1] as string;
+              tcId = cmdArgs.length >= 3 ? cmdArgs[2] as string : undefined;
             }
           }
         }
@@ -202,7 +205,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
       if (sw && id) {
         sw.webviewPanel.show();
-        sw.webviewPanel.postMessage({ type: "revealEntry", entryId: id });
+        sw.webviewPanel.postMessage({ type: "revealEntry", entryId: id, toolCallId: tcId || "" });
       }
     }),
   );
@@ -1434,7 +1437,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
       const item = new SessionTreeItem(label, type, {
         command: "pi-code-gui.revealEntry",
         title: "Show in Chat",
-        arguments: [sw.id, entry.id],
+        arguments: [sw.id, entry.id, entry.message?.toolCallId ?? ""],
       });
       item.tooltip = tooltip;
       // Tag message entries so we can restrict fork/clone context menus

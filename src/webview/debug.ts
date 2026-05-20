@@ -115,26 +115,49 @@ export function summary() {
   const el = debugEventLog.slice(-30);
   const dl = debugDomLog.slice(-30);
 
+  // Duplicates: same toolCallId in BOTH bashBlocks and currentToolBlocks
   const bKeys = new Set(Object.keys(state.bashBlocks));
   const tKeys = new Set(Object.keys(state.currentToolBlocks));
-  const dupes = [];
-  const orphanBash = [];
-  const orphanTool = [];
-  bKeys.forEach((k) => {
-    if (tKeys.has(k)) {dupes.push(k);}
-  });
-  bKeys.forEach((k) => {
-    if (!tKeys.has(k)) {orphanBash.push(k);}
-  });
-  tKeys.forEach((k) => {
-    if (!bKeys.has(k)) {orphanTool.push(k);}
-  });
+  const dupes: string[] = [];
+  bKeys.forEach((k) => { if (tKeys.has(k)) { dupes.push(k); } });
+
+  // True orphans: toolCallIds that have a DOM element in the chat
+  // but aren't tracked in EITHER currentToolBlocks or bashBlocks.
+  const realOrphans: string[] = [];
+  if (state.chatContainer) {
+    const container = state.chatContainer;
+    for (let i = 0; i < container.children.length; i++) {
+      const child = container.children[i];
+      // Extract call ID from id="tool-call_..." or id="bash-call_..."
+      const idMatch = child.id.match(/(?:tool|bash)-(call_\w+)/);
+      if (idMatch) {
+        const callId = idMatch[1];
+        if (!bKeys.has(callId) && !tKeys.has(callId)) {
+          realOrphans.push(callId);
+        }
+      }
+      // Also check entry-id format: entry-call_...
+      const entryMatch = child.id.match(/entry-(call_\w+)/);
+      if (entryMatch) {
+        const callId = entryMatch[1];
+        if (!bKeys.has(callId) && !tKeys.has(callId)) {
+          realOrphans.push(callId);
+        }
+      }
+    }
+  }
+
+  // Orphan bash blocks: in bashBlocks but not currentToolBlocks
+  // (these should normally be promoted, but may be legitimate if bash-end
+  // hasn't arrived yet).
+  const orphanBash: string[] = [];
+  bKeys.forEach((k) => { if (!tKeys.has(k)) { orphanBash.push(k); } });
 
   return {
     chat: s,
     dupes,
     orphanBash,
-    orphanTool,
+    orphanTool: realOrphans,
     lastEvents: el,
     lastDomChanges: dl,
   };

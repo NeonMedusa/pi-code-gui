@@ -3,288 +3,450 @@
 // ═══════════════════════════════════════════════════════════════════
 //
 // This file is the single source of truth for every message that
-// crosses the postMessage bridge.  Both src/pi-service.ts (extension)
+// crosses the postMessage bridge. Both src/pi-service.ts (extension)
 // and src/webview-panel.ts (webview loader) import from here.
 //
-// When a message shape changes, tsc catches it on BOTH sides.
+// All messages are validated at runtime via Zod schemas.
+// TypeScript types are derived from schemas with z.output<typeof S>.
+//
+// When a message shape changes, update the schema — tsc and runtime
+// validation catch mismatches on BOTH sides.
 
-// ── Extension → Webview messages ────────────────────────────────
+import { z } from "zod";
 
-export interface StreamDeltaData {
-  delta: string;
-}
+// ═══ Shared data schemas ════════════════════════════════════
 
-export interface ThinkingDeltaData {
-  delta: string;
-  done?: boolean;
-}
+const ImageContentSchema = z.object({
+  type: z.literal("image"),
+  source: z.object({
+    type: z.literal("base64"),
+    mediaType: z.string(),
+    data: z.string(),
+  }),
+});
 
-export interface ToolStartData {
-  toolName: string;
-  toolCallId: string;
-  args: Record<string, unknown>;
-  entryId?: string;
-  fromMessage?: boolean;
-}
+const TextContentItemSchema = z.object({
+  type: z.literal("text"),
+  text: z.string(),
+});
 
-export interface ToolUpdateData {
-  toolCallId: string;
-  toolName?: string;
-  partialResult: {
-    content?: Array<{ type: string; text: string }>;
-  };
-}
+const ContentArraySchema = z.array(
+  z.union([TextContentItemSchema, z.object({ type: z.string(), text: z.string() })]),
+);
 
-export interface ToolEndData {
-  toolCallId: string;
-  toolName: string;
-  result?: {
-    content?: Array<{ type: string; text: string }>;
-    details?: Record<string, unknown>;
-  };
-  isError: boolean;
-  entryId?: string;
-}
+// ═══ Extension → Webview schemas ═══════════════════════════
 
-export interface StatusUpdateData {
-  model?: string;
-  thinkingLevel?: string;
-  effort?: string;
-  usage?: {
-    input: number;
-    output: number;
-    cost: number;
-    contextPercent: number;
-  };
-  isStreaming?: boolean;
-  ready?: boolean;
-  reset?: boolean;
-}
-
-export interface ChatMessageData {
-  role: "user" | "assistant";
-  content: string;
-  entryId?: string;
-}
-
-export interface AssistantStartData {
-  messageId: string;
-  entryId?: string;
-}
-
-export interface AssistantEndData {
-  stopReason?: string;
-  errorMessage?: string;
-  toolCalls?: string[];
-}
-
-export interface CompactionSummaryMessageData {
-  summary: string;
-  tokensBefore: number;
-  timestamp?: number;
-  entryId?: string;
-}
-
-export interface QueueUpdateData {
-  steering: string[];
-  followUp: string[];
-}
-
-export interface BatchStartData {
-  hasEntries?: boolean;
-}
-
-export interface BatchEndData {
-  hasEntries?: boolean;
-}
-
-export interface BashStartData {
-  toolCallId: string;
-  command: string;
-  entryId?: string;
-}
-
-export interface BashOutputData {
-  toolCallId: string;
-  output: string;
-}
-
-export interface BashEndData {
-  toolCallId: string;
-  command: string;
-  exitCode: number;
-  cancelled: boolean;
-  output: string;
-  isError: boolean;
-  entryId?: string;
-}
-
-export interface CustomMessageData {
-  customType: string;
-  content: string | Array<{ type: string; text: string }>;
-  timestamp?: number;
-  entryId?: string;
-}
-
-export interface WidgetUpdateData {
-  key: string;
-  content: string | null; // null = remove widget
-}
-
-export interface ScopedModelsUpdateData {
-  models: Array<{ id: string; name: string }>;
-}
-
-export interface SettingsUpdateData {
-  autoCompaction: boolean;
-  autoRetry: boolean;
-  showImages: boolean;
-}
-
-export interface SlashCommandsUpdateData {
-  commands: Array<{ cmd: string; desc: string }>;
-}
-
-export interface ErrorData {
-  message: string;
-}
-
-export interface CompactionStartData {
-  reason?: string;
-}
-
-export interface CompactionEndData {
-  reason?: string;
-  aborted?: boolean;
-  willRetry?: boolean;
-  result?: unknown;
-  errorMessage?: string;
-}
-
-export interface AutoRetryStartData {
-  attempt: number;
-  maxAttempts: number;
-  delayMs: number;
-  errorMessage?: string;
-}
-
-export interface AutoRetryEndData {
-  success: boolean;
-  attempt: number;
-  finalError?: string;
-}
-
-export interface ThinkingLevelChangedData {
-  level: string;
-}
-
-export interface UserMessagesListData {
-  messages: Array<{ text: string }>;
-}
-
-export interface AgentEndData {
-  messages?: unknown[];
-}
-
-export interface TurnStartData {
-  // Currently empty in pi-service.ts
-}
-
-export interface TurnEndData {
-  message?: {
-    role?: string;
-    content?: string;
-    errorMessage?: string;
-  };
-  toolResults?: unknown[];
-}
-
-// ── Discriminated union: extension → webview ────────────────────
-
-export type ExtensionToWebview =
+const ExtensionToWebviewSchema = z.discriminatedUnion("type", [
   // Agent lifecycle
-  | { type: "agent-start"; data?: undefined }
-  | { type: "agent-end"; data?: AgentEndData }
+  z.object({ type: z.literal("agent-start"), data: z.undefined().optional() }),
+  z.object({
+    type: z.literal("agent-end"),
+    data: z
+      .object({ messages: z.array(z.unknown()).optional() })
+      .optional(),
+  }),
+
   // Turn lifecycle
-  | { type: "turn-start"; data?: TurnStartData }
-  | { type: "turn-end"; data?: TurnEndData }
+  z.object({ type: z.literal("turn-start"), data: z.unknown().optional() }),
+  z.object({
+    type: z.literal("turn-end"),
+    data: z
+      .object({
+        message: z
+          .object({
+            role: z.string().optional(),
+            content: z.union([z.string(), z.array(z.unknown())]).optional(),
+            errorMessage: z.string().optional(),
+          })
+          .optional(),
+        toolResults: z.array(z.unknown()).optional(),
+      })
+      .optional(),
+  }),
+
   // Message lifecycle
-  | { type: "chat-message"; data: ChatMessageData }
-  | { type: "assistant-start"; data: AssistantStartData }
-  | { type: "assistant-end"; data: AssistantEndData }
-  | { type: "stream-delta"; data: StreamDeltaData }
-  | { type: "thinking-delta"; data: ThinkingDeltaData }
+  z.object({
+    type: z.literal("chat-message"),
+    data: z.object({
+      role: z.enum(["user", "assistant"]),
+      content: z.string(),
+      entryId: z.string().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal("assistant-start"),
+    data: z.object({
+      messageId: z.string().optional(),
+      entryId: z.string().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal("assistant-end"),
+    data: z
+      .object({
+        stopReason: z.string().optional(),
+        errorMessage: z.string().optional(),
+        toolCalls: z.array(z.string()).optional(),
+      })
+      .optional(),
+  }),
+  z.object({
+    type: z.literal("stream-delta"),
+    data: z.object({ delta: z.string() }),
+  }),
+  z.object({
+    type: z.literal("thinking-delta"),
+    data: z.object({
+      delta: z.string(),
+      done: z.boolean().optional(),
+    }),
+  }),
+
   // Tool lifecycle
-  | { type: "tool-start"; data: ToolStartData }
-  | { type: "tool-update"; data: ToolUpdateData }
-  | { type: "tool-end"; data: ToolEndData }
+  z.object({
+    type: z.literal("tool-start"),
+    data: z.object({
+      toolName: z.string(),
+      toolCallId: z.string(),
+      args: z.record(z.string(), z.unknown()),
+      entryId: z.string().optional(),
+      fromMessage: z.boolean().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal("tool-update"),
+    data: z.object({
+      toolCallId: z.string(),
+      toolName: z.string().optional(),
+      partialResult: z.object({
+        content: ContentArraySchema.optional(),
+      }),
+    }),
+  }),
+  z.object({
+    type: z.literal("tool-end"),
+    data: z.object({
+      toolCallId: z.string(),
+      toolName: z.string(),
+      result: z
+        .object({
+          content: ContentArraySchema.optional(),
+          details: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional(),
+      isError: z.boolean(),
+      entryId: z.string().optional(),
+    }),
+  }),
+
   // Bash execution
-  | { type: "bash-start"; data: BashStartData }
-  | { type: "bash-output"; data: BashOutputData }
-  | { type: "bash-end"; data: BashEndData }
+  z.object({
+    type: z.literal("bash-start"),
+    data: z.object({
+      toolCallId: z.string(),
+      command: z.string(),
+      entryId: z.string().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal("bash-output"),
+    data: z.object({
+      toolCallId: z.string(),
+      output: z.string(),
+    }),
+  }),
+  z.object({
+    type: z.literal("bash-end"),
+    data: z.object({
+      toolCallId: z.string(),
+      command: z.string(),
+      exitCode: z.number(),
+      cancelled: z.boolean(),
+      output: z.string(),
+      isError: z.boolean(),
+      entryId: z.string().optional(),
+    }),
+  }),
+
   // Status & Settings
-  | { type: "status-update"; data: StatusUpdateData }
-  | { type: "status"; data?: StatusUpdateData }
-  | { type: "queue-update"; data: QueueUpdateData }
+  z.object({
+    type: z.literal("status-update"),
+    data: z
+      .object({
+        model: z.string().optional(),
+        thinkingLevel: z.string().optional(),
+        effort: z.string().optional(),
+        usage: z
+          .object({
+            input: z.number(),
+            output: z.number(),
+            cost: z.number(),
+            contextPercent: z.number().nullable(),
+          })
+          .optional(),
+        isStreaming: z.boolean().optional(),
+        ready: z.boolean().optional(),
+        reset: z.boolean().optional(),
+        sessionId: z.string().optional(),
+        contextBudget: z.number().optional(),
+      }),
+  }),
+  z.object({
+    type: z.literal("status"),
+    data: z
+      .object({
+        model: z.string().optional(),
+        thinkingLevel: z.string().optional(),
+        effort: z.string().optional(),
+        ready: z.boolean().optional(),
+      })
+      .optional(),
+  }),
+  z.object({
+    type: z.literal("queue-update"),
+    data: z.object({
+      steering: z.array(z.string()),
+      followUp: z.array(z.string()),
+    }),
+  }),
+
   // Compaction & Retry
-  | { type: "compaction-start"; data: CompactionStartData }
-  | { type: "compaction-end"; data: CompactionEndData }
-  | { type: "compaction-summary-message"; data: CompactionSummaryMessageData }
-  | { type: "auto-retry-start"; data: AutoRetryStartData }
-  | { type: "auto-retry-end"; data: AutoRetryEndData }
+  z.object({
+    type: z.literal("compaction-start"),
+    data: z.object({ reason: z.string().optional() }).optional(),
+  }),
+  z.object({
+    type: z.literal("compaction-end"),
+    data: z
+      .object({
+        reason: z.string().optional(),
+        aborted: z.boolean().optional(),
+        willRetry: z.boolean().optional(),
+        result: z.unknown().optional(),
+        errorMessage: z.string().optional(),
+      })
+      .optional(),
+  }),
+  z.object({
+    type: z.literal("compaction-summary-message"),
+    data: z.object({
+      summary: z.string(),
+      tokensBefore: z.number(),
+      timestamp: z.number().optional(),
+      entryId: z.string().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal("auto-retry-start"),
+    data: z.object({
+      attempt: z.number(),
+      maxAttempts: z.number(),
+      delayMs: z.number(),
+      errorMessage: z.string().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal("auto-retry-end"),
+    data: z.object({
+      success: z.boolean(),
+      attempt: z.number(),
+      finalError: z.string().optional(),
+    }),
+  }),
+
   // Batch replay
-  | { type: "batch-start"; data: BatchStartData }
-  | { type: "batch-end"; data: BatchEndData }
+  z.object({
+    type: z.literal("batch-start"),
+    data: z.object({ hasEntries: z.boolean().optional() }).optional(),
+  }),
+  z.object({
+    type: z.literal("batch-end"),
+    data: z.object({ hasEntries: z.boolean().optional() }).optional(),
+  }),
+
   // Thinking
-  | { type: "thinking-level-changed"; data: ThinkingLevelChangedData }
+  z.object({
+    type: z.literal("thinking-level-changed"),
+    data: z.object({ level: z.string() }),
+  }),
+
   // Custom messages (extensions)
-  | { type: "custom-message"; data: CustomMessageData }
+  z.object({
+    type: z.literal("custom-message"),
+    data: z.object({
+      customType: z.string(),
+      content: z.union([z.string(), ContentArraySchema]),
+      timestamp: z.number().optional(),
+      entryId: z.string().optional(),
+      display: z.boolean().optional(),
+      details: z.record(z.string(), z.unknown()).optional(),
+    }),
+  }),
+
   // User messages list
-  | { type: "user-messages-list"; data: UserMessagesListData }
+  z.object({
+    type: z.literal("user-messages-list"),
+    data: z.object({
+      messages: z.array(
+        z.object({ id: z.string().optional(), text: z.string(), timestamp: z.number().optional() }),
+      ),
+    }),
+  }),
+
   // Scoped models
-  | { type: "scoped-models-update"; data: ScopedModelsUpdateData }
+  z.object({
+    type: z.literal("scoped-models-update"),
+    data: z.object({
+      models: z.array(z.object({ provider: z.string(), id: z.string(), thinkingLevel: z.string() })),
+    }),
+  }),
+
   // Settings
-  | { type: "settings-update"; data: SettingsUpdateData }
+  z.object({
+    type: z.literal("settings-update"),
+    data: z.object({
+      autoCompaction: z.boolean(),
+      autoRetry: z.boolean(),
+      showImages: z.boolean(),
+    }),
+  }),
+
   // Scroll to entry
-  | { type: "revealEntry"; entryId: string }
+  z.object({ type: z.literal("revealEntry"), entryId: z.string(), toolCallId: z.string().optional() }),
+
   // Error
-  | { type: "error"; data: ErrorData }
-  // Commands
-  | { type: "sessionReset" }
-  | { type: "insertCommand"; command: string }
+  z.object({
+    type: z.literal("error"),
+    data: z.object({ message: z.string() }),
+  }),
+
+  // Extension host commands
+  z.object({ type: z.literal("sessionReset") }),
+  z.object({ type: z.literal("insertCommand"), command: z.string() }),
+
   // Slash commands from extensions
-  | { type: "slash-commands-update"; data: SlashCommandsUpdateData }
+  z.object({
+    type: z.literal("slash-commands-update"),
+    data: z.object({
+      commands: z.array(z.object({ cmd: z.string(), desc: z.string() })),
+    }),
+  }),
+
   // Extension widget bridge
-  | { type: "widget-update"; data: WidgetUpdateData };
+  z.object({
+    type: z.literal("widget-update"),
+    data: z.object({
+      key: z.string(),
+      content: z.string().nullable(),
+    }),
+  }),
 
-// ── Webview → Extension messages ────────────────────────────────
+  // Message renderer registration (extension → webview)
+  z.object({
+    type: z.literal("registerMessageRenderer"),
+    data: z.object({
+      customType: z.string(),
+      sourceCode: z.string(),
+    }),
+  }),
 
-export interface PromptData {
-  text: string;
-  images?: Array<{
-    type: "image";
-    source: {
-      type: "base64";
-      mediaType: string;
-      data: string;
-    };
-  }>;
-  mode?: string; // "steer" | "queue"
+  // Interactive dialog (extension → webview)
+  z.object({
+    type: z.literal("show_dialog"),
+    data: z.object({
+      dialogType: z.enum(["select", "confirm", "input"]),
+      id: z.string(),
+      prompt: z.string(),
+      options: z.array(z.string()).optional(),
+      defaultValue: z.string().optional(),
+    }),
+  }),
+]);
+
+// ═══ Webview → Extension schemas ═══════════════════════════
+
+const WebviewToExtensionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("prompt"),
+    text: z.string(),
+    images: z.array(ImageContentSchema).optional(),
+    mode: z.enum(["steer", "queue"]).optional(),
+  }),
+  z.object({ type: z.literal("abort") }),
+  z.object({ type: z.literal("slashCommand"), command: z.string() }),
+  z.object({ type: z.literal("pickModel") }),
+  z.object({ type: z.literal("pickThinkingLevel") }),
+  z.object({ type: z.literal("pickEffort") }),
+  z.object({ type: z.literal("pickContextBudget") }),
+  z.object({ type: z.literal("getSettings") }),
+  z.object({ type: z.literal("toggleAutoCompaction") }),
+  z.object({ type: z.literal("toggleAutoRetry") }),
+  z.object({ type: z.literal("toggleShowImages") }),
+  z.object({ type: z.literal("openUrl"), url: z.string() }),
+  z.object({ type: z.literal("openFile"), path: z.string() }),
+  z.object({ type: z.literal("promoteToSteer"), text: z.string() }),
+  z.object({ type: z.literal("clearQueue") }),
+  z.object({ type: z.literal("resendUserMessage"), text: z.string() }),
+  z.object({ type: z.literal("extension_ui_response"), id: z.string(), value: z.unknown() }),
+]);
+
+// ═══ Derived TypeScript types ═════════════════════════════
+
+/** All message types sent from extension host to webview. */
+export type ExtensionToWebview = z.output<typeof ExtensionToWebviewSchema>;
+
+/** All message types sent from webview to extension host. */
+export type WebviewToExtension = z.output<typeof WebviewToExtensionSchema>;
+
+/** PiServiceEvent — alias for ExtensionToWebview (all events flowing through emit()). */
+export type PiServiceEvent = ExtensionToWebview;
+
+// ═══ Validation utilities ═════════════════════════════════
+
+export interface ValidationResult<T> {
+  success: true;
+  data: T;
+  error?: undefined;
 }
 
-export type WebviewToExtension =
-  | { type: "prompt"; text: string; images?: PromptData["images"]; mode?: string }
-  | { type: "abort" }
-  | { type: "slashCommand"; command: string }
-  | { type: "pickModel" }
-  | { type: "pickThinkingLevel" }
-  | { type: "pickEffort" }
-  | { type: "pickContextBudget" }
-  | { type: "getSettings" }
-  | { type: "toggleAutoCompaction" }
-  | { type: "toggleAutoRetry" }
-  | { type: "toggleShowImages" }
-  | { type: "openUrl"; url: string }
-  | { type: "promoteToSteer"; text: string }
-  | { type: "clearQueue" }
-  | { type: "resendUserMessage"; text: string };
+export interface ValidationError {
+  success: false;
+  data?: undefined;
+  error: string;
+}
+
+/**
+ * Validate an incoming extension→webview message.
+ * Returns the parsed message or an error string.
+ * Unknown fields are stripped (zod strips by default in v4).
+ */
+export function validateExtensionToWebview(
+  msg: unknown,
+): ValidationResult<ExtensionToWebview> | ValidationError {
+  const result = ExtensionToWebviewSchema.safeParse(msg);
+  if (result.success) {
+    return { success: true, data: result.data };
+  }
+  return { success: false, error: result.error.message };
+}
+
+/**
+ * Validate an outgoing webview→extension message.
+ */
+export function validateWebviewToExtension(
+  msg: unknown,
+): ValidationResult<WebviewToExtension> | ValidationError {
+  const result = WebviewToExtensionSchema.safeParse(msg);
+  if (result.success) {
+    return { success: true, data: result.data };
+  }
+  return { success: false, error: result.error.message };
+}
+
+/**
+ * Schema-only validation (for emit() — logs + notifies but does not
+ * block the event from dispatching to maintain backward compat).
+ */
+export function isExtensionToWebview(msg: unknown): msg is ExtensionToWebview {
+  return ExtensionToWebviewSchema.safeParse(msg).success;
+}

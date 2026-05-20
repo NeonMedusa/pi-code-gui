@@ -111,8 +111,9 @@ export function highlightCode(code: string, lang: string): string {
   try {
     const result = hljs.highlight(code, { language: hljsLang });
     return result.value;
-  } catch {
+  } catch (e) {
     // If highlighting fails (e.g. illegal syntax), return escaped text
+    console.warn("[pi-gui] highlightCode failed for lang=" + lang + ":", e);
     return escapeHtml(code);
   }
 }
