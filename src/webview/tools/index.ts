@@ -607,7 +607,7 @@ export const bashToolRenderer = {
   // ═══ Message Renderer Registry ════════════════════════════
   // ═══ Tool Lifecycle ════════════════════════════════════
 
-export function handleToolStart(data) {
+export function handleToolStart(data: any) {
     hideWelcome();
 
     // Stop thinking spinner — tool execution means thinking is done
@@ -711,7 +711,7 @@ export function handleToolStart(data) {
     scrollToBottom();
   }
 
-export function handleToolUpdate(data) {
+export function handleToolUpdate(data: any) {
     // Ensure thinking spinner stays hidden during tool execution
     if (state.currentThinkingEl) {
       var _tb2 = state.currentThinkingEl._component;
@@ -731,7 +731,7 @@ export function handleToolUpdate(data) {
     scrollToBottom();
   }
 
-export function handleToolEnd(data) {
+export function handleToolEnd(data: any) {
     var callId = data.toolCallId;
     var entry = state.currentToolBlocks[callId];
     logEvent("tool-end", {

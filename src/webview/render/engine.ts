@@ -207,7 +207,7 @@ export function resetChat() {
   updateStreamingState();
 }
 
-export function scrollToBottom() {
+export function scrollToBottom(): void {
   if (!state.hasScrolledUp) {
     requestAnimationFrame(function () {
       state.chatContainer.scrollTop = state.chatContainer.scrollHeight;
@@ -215,7 +215,7 @@ export function scrollToBottom() {
   }
 }
 
-export function updateStreamingState() {
+export function updateStreamingState(): void {
   if (state.isStreaming || state.isCompacting || state.isRetrying) {
     state.sendButton.textContent = "Steer";
     state.sendButton.title = "Steer (interrupt current request)";

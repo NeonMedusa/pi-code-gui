@@ -96,9 +96,9 @@ export interface AppState {
   // ── DOM refs (always populated by initState before any handler runs)
   chatContainer: HTMLElement;
   promptInput: HTMLTextAreaElement;
-  sendButton: HTMLElement;
-  abortButton: HTMLElement;
-  steerDropdown: HTMLElement;
+  sendButton: HTMLButtonElement;
+  abortButton: HTMLButtonElement;
+  steerDropdown: HTMLButtonElement;
   welcome: HTMLElement | null;
   attachmentBar: HTMLElement;
   userMsgOverlay: HTMLElement;
@@ -207,9 +207,9 @@ export const state: AppState = {
 export function initState(doc: Document): void {
   state.chatContainer = doc.getElementById("chat-container")!;
   state.promptInput = doc.getElementById("prompt-input") as HTMLTextAreaElement;
-  state.sendButton = doc.getElementById("send-button")!;
-  state.abortButton = doc.getElementById("abort-button")!;
-  state.steerDropdown = doc.getElementById("steer-dropdown")!;
+  state.sendButton = doc.getElementById("send-button") as HTMLButtonElement;
+  state.abortButton = doc.getElementById("abort-button") as HTMLButtonElement;
+  state.steerDropdown = doc.getElementById("steer-dropdown") as HTMLButtonElement;
   state.welcome = doc.getElementById("welcome")!;
   state.attachmentBar = doc.getElementById("attachment-bar")!;
   state.userMsgOverlay = doc.getElementById("user-msg-overlay")!;
