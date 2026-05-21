@@ -13,6 +13,26 @@ function reverseFind<T>(arr: T[], pred: (el: T) => boolean): T | undefined {
   return undefined;
 }
 
+/**
+ * Dynamic import with retry — handles the race where npm is still populating
+ * node_modules when the extension host first activates.
+ */
+async function importWithRetry(
+  modulePath: string,
+  maxAttempts: number,
+  delayMs: number,
+): Promise<any> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await import(modulePath);
+    } catch (e: any) {
+      if (attempt === maxAttempts) { throw e; }
+      piWarn(`importWithRetry: attempt ${attempt}/${maxAttempts} failed for ${modulePath}: ${e.message}`);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}
+
 // ── Types for the dynamically loaded SDK ──────────────────
 
 interface PiSdk {
@@ -384,7 +404,7 @@ export class PiService {
   static async listSessions(cwd: string): Promise<any[]> {
     try {
       const piRoot = resolvePiPackagePath();
-      const SDK = await import(path.join(piRoot, "dist/index.js"));
+      const SDK = await importWithRetry(path.join(piRoot, "dist/index.js"), 3, 300);
       const cfg = vscode.workspace.getConfiguration("pi-code-gui");
       const sessionDir = cfg.get<string>("sessionDir")?.trim() || undefined;
       const sessions = await SDK.SessionManager.list(cwd, sessionDir);
@@ -416,14 +436,16 @@ export class PiService {
 
     // ── Step 2: Load SDK modules ───────────────────────
     try {
-      this.SDK = (await import(path.join(this._piRoot, "dist/index.js"))) as PiSdk;
+      this.SDK = (await importWithRetry(
+        path.join(this._piRoot, "dist/index.js"), 5, 500
+      )) as PiSdk;
     } catch (e: any) {
       return { success: false, error: `Failed to load pi-coding-agent: ${e.message ?? e}` };
     }
 
     try {
-      this.AI = (await import(
-        path.join(this._piRoot, "node_modules/@earendil-works/pi-ai/dist/index.js")
+      this.AI = (await importWithRetry(
+        path.join(this._piRoot, "node_modules/@earendil-works/pi-ai/dist/index.js"), 5, 500
       )) as PiAi;
     } catch (e: any) {
       const msg = e.message ?? String(e);
@@ -442,10 +464,15 @@ export class PiService {
       }
       return { success: false, error: `Failed to load pi-ai: ${msg}` };
     }
-    // Load typebox for defineTool usage
+    // Load typebox for defineTool usage (with retry — npm install may still
+    // be populating node_modules when the extension host first activates).
     let Type: any;
     try {
-      const Typebox = await import(path.join(this._piRoot, "node_modules/typebox/build/index.mjs"));
+      const Typebox = await importWithRetry(
+        path.join(this._piRoot, "node_modules/typebox/build/index.mjs"),
+        5,  // max attempts
+        500 // delay ms between attempts
+      );
       Type = Typebox.Type ?? Typebox;
     } catch (e: any) {
       return { success: false, error: `Failed to load typebox: ${e.message ?? e}` };
@@ -1286,22 +1313,51 @@ export class PiService {
 
     // Handle slash commands at the PiService level before forwarding to
     // session.prompt(). Builtin commands (from the SDK's BUILTIN_SLASH_COMMANDS
-    // list) map to PiService methods. Extension commands (/tldr etc.) are
-    // handled by session.prompt()'s _tryExecuteExtensionCommand. Unknown
-    // commands fall through to the LLM.
+    // list) map to PiService methods.
+    //
+    // IMPORTANT: unhandled slash commands (extension commands like /tldr,
+    // and unknown commands) MUST go through session.prompt() even during
+    // streaming.  The SDK executes extension commands immediately regardless
+    // of agent state, while steer()/followUp() explicitly reject them
+    // ("extension commands cannot be queued").
     if (text.startsWith("/")) {
+      // Emit the command as a user message so it always appears in the
+      // conversation transcript.  Slash commands don't generate user-message
+      // events through the normal session.prompt() path (builtins are
+      // handled locally, extensions are intercepted by _tryExecuteExtensionCommand).
+      this.emit({ type: "chat-message", data: { role: "user", content: text } });
+
       const handled = await this.tryHandleCommand(text);
       if (handled) { return; }
+      // Extension command or unknown slash — execute immediately via prompt(),
+      // bypassing the steer/queue path below.
+      await this.session.prompt(text);
+      return;
     }
 
     if (mode === "steer" || mode === "queue") {
       if (images && images.length > 0) {
         throw new Error("Cannot attach images while agent is streaming");
       }
-      if (mode === "queue") {
-        this.session.followUp(text);
-      } else {
-        this.session.steer(text);
+      try {
+        if (mode === "queue") {
+          await this.session.followUp(text);
+        } else {
+          await this.session.steer(text);
+        }
+      } catch (e: any) {
+        // steer/followUp reject extension commands and prompt templates
+        // during streaming — surface the error rather than swallowing it.
+        const msg = e?.message ?? String(e);
+        piWarn(`sendPrompt ${mode} failed: ${msg}`);
+        this.emit({
+          type: "custom-message",
+          data: {
+            customType: "error",
+            content: `${mode === "steer" ? "Steer" : "Queue"} failed: ${msg}`,
+            timestamp: Date.now(),
+          },
+        });
       }
     } else {
       const opts: any = {};
