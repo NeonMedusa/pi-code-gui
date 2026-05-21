@@ -26,7 +26,7 @@ type ToolResult = {
   text?: string;
 };
 type ToolEl = HTMLElement & {
-  _toolBlock?: unknown;
+  _toolBlock?: ToolBlock;
   _writeState?: { content: string; lang?: string; rawPath?: string };
   _writePending?: string | null;
   _writeRafId?: number | null;
@@ -65,7 +65,7 @@ export const writeToolRenderer = {
       block._writeState = { lang: lang, content: "", rawPath: rawPath };
 
       if (typeof fileContent === "string" && fileContent) {
-        block._writeState.content = fileContent;
+        block._writeState!.content = fileContent;
         renderWriteContentBlock(block);
       }
 
@@ -136,12 +136,12 @@ export function processWriteUpdate(el: ToolEl, text: string) {
     try {
       var args = JSON.parse(text);
       if (args.content && typeof args.content === "string") {
-        el._writeState.content = args.content;
+        el._writeState!.content = args.content;
         renderWriteContentBlock(el);
       }
       if (args.path) {
-        el._writeState.rawPath = args.path;
-        el._writeState.lang = getLangFromPath(args.path);
+        el._writeState!.rawPath = args.path;
+        el._writeState!.lang = getLangFromPath(args.path);
         var pathEl = el.querySelector(".tool-path");
         if (pathEl) {pathEl.textContent = args.path;}
       }
@@ -150,7 +150,7 @@ export function processWriteUpdate(el: ToolEl, text: string) {
       // Expected during streaming; only log if it persists (not a real error).
       var match = text.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
       if (match) {
-        el._writeState.content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+        el._writeState!.content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "\t");
         renderWriteContentBlock(el);
       }
     }
@@ -668,13 +668,13 @@ export function handleToolStart(data) {
           pathEl.setAttribute("data-path", newPath);
         }
         // Also update internal state so lang/syntax highlighting work
-        if (block._readState && !block._readState.rawPath) {
-          block._readState.rawPath = newPath;
-          block._readState.lang = getLangFromPath(newPath);
+        if (block._readState && !block._readState!.rawPath) {
+          block._readState!.rawPath = newPath;
+          block._readState!.lang = getLangFromPath(newPath);
         }
-        if (block._writeState && !block._writeState.rawPath) {
-          block._writeState.rawPath = newPath;
-          block._writeState.lang = getLangFromPath(newPath);
+        if (block._writeState && !block._writeState!.rawPath) {
+          block._writeState!.rawPath = newPath;
+          block._writeState!.lang = getLangFromPath(newPath);
         }
         // Update ToolBlock component if present
         var tb = block._toolBlock;

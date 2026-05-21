@@ -306,11 +306,11 @@ export function handleAgentEnd() {
   // ═══ Turn Lifecycle ════════════════════════════════════
   // ═══ Turn Lifecycle ════════════════════════════════════
 
-export function handleTurnStart(data) {
+export function handleTurnStart(data: Record<string, unknown>) {
     hideWelcome();
   }
 
-export function handleTurnEnd(data) {
+export function handleTurnEnd(data: Record<string, unknown>) {
     if (data && data.message && data.message.role === "assistant" && data.message.errorMessage) {
       if (state.currentAssistantEl) {
         addErrorToElement(state.currentAssistantEl, data.message.errorMessage);
@@ -321,7 +321,7 @@ export function handleTurnEnd(data) {
   // ═══ Message Lifecycle ═════════════════════════════════
   // ═══ Message Lifecycle ═════════════════════════════════
 
-export function handleChatMessage(data) {
+export function handleChatMessage(data: Record<string, unknown>) {
     // Dedup: skip if same role+content as last user message
     if (data.role === "user" && data.content === state.lastUserMessageContent) {return;}
     if (data.role === "user") {
@@ -356,7 +356,7 @@ export function handleChatMessage(data) {
     scrollToBottom();
   }
 
-export function handleAssistantStart(data) {
+export function handleAssistantStart(data: Record<string, unknown>) {
     hideWelcome();
     removeWorkingIndicator();
 
@@ -371,7 +371,7 @@ export function handleAssistantStart(data) {
     scrollToBottom();
   }
 
-export function handleAssistantEnd(data) {
+export function handleAssistantEnd(data: Record<string, unknown>) {
     // Finalize the assistant message
     if (state.currentAssistantEl) {
       // Flush any pending batched renders before finalizing
@@ -508,7 +508,7 @@ export function _flushStreamRender() {
     }
   }
 
-export function handleStreamDelta(data) {
+export function handleStreamDelta(data: Record<string, unknown>) {
     hideWelcome();
     if (!state.currentAssistantEl) {
       // Safety: create container if assistant-start was missed
@@ -567,7 +567,7 @@ export function _flushThinkingRender() {
     }
   }
 
-export function handleThinkingDelta(data) {
+export function handleThinkingDelta(data: Record<string, unknown>) {
     if (data.done) {
       _flushThinkingRender();
       // Finalize: update component with done=true (removes spinner, sets button)
@@ -619,7 +619,7 @@ export function sbModelText(modelId) {
     return "\u03C0 " + short;
   }
 
-export function handleStatusUpdate(data) {
+export function handleStatusUpdate(data: Record<string, unknown>) {
     if (data.reset) {return;}
 
     if (sbModel && data.model) {
@@ -643,7 +643,7 @@ export function handleStatusUpdate(data) {
     setSbDot(data.state.isStreaming ? "streaming" : "idle");
   }
 
-export function handleStatus(data) {
+export function handleStatus(data: Record<string, unknown>) {
     if (data.ready) {
       state.promptInput.disabled = false;
       state.sendButton.disabled = false;
@@ -665,14 +665,14 @@ export function handleStatus(data) {
     }
   }
 
-export function handleBatchStart(data) {
+export function handleBatchStart(data: Record<string, unknown>) {
     state._inBatch = true;
     // If restoring history, hide state.welcome immediately — no flash
     if (data.hasEntries) { hideWelcome(); }
     document.body.classList.add("no-animate");
   }
 
-export function handleBatchEnd(data) {
+export function handleBatchEnd(data: Record<string, unknown>) {
     state._inBatch = false;
     document.body.classList.remove("no-animate");
     // Force-scroll to bottom after batch replay.  Triple-rAF ensures
@@ -693,7 +693,7 @@ export function handleBatchEnd(data) {
     });
   }
 
-export function handleQueueUpdate(data) {
+export function handleQueueUpdate(data: Record<string, unknown>) {
     // Track for /debug inspection
     (window.__piDebug._queueEvents = window.__piDebug._queueEvents || []).push({
       ts: Date.now(),
@@ -765,14 +765,14 @@ export function handleQueueUpdate(data) {
     }
   }
 
-export function handleCompactionStart(data) {
+export function handleCompactionStart(data: Record<string, unknown>) {
     state.isCompacting = true;
     removeCompactionIndicator();
     addCompactionIndicator(data.reason === "manual" ? "Compacting..." : "Auto-compacting...");
     updateStreamingState();
   }
 
-export function handleCompactionEnd(data) {
+export function handleCompactionEnd(data: Record<string, unknown>) {
     state.isCompacting = false;
     removeCompactionIndicator();
     if (data.aborted) {
@@ -785,14 +785,14 @@ export function handleCompactionEnd(data) {
     updateStreamingState();
   }
 
-export function handleAutoRetryStart(data) {
+export function handleAutoRetryStart(data: Record<string, unknown>) {
     state.isRetrying = true;
     removeRetryIndicator();
     addRetryIndicator(data.attempt, data.maxAttempts, data.delayMs);
     updateStreamingState();
   }
 
-export function handleAutoRetryEnd(data) {
+export function handleAutoRetryEnd(data: Record<string, unknown>) {
     state.isRetrying = false;
     removeRetryIndicator();
     if (!data.success) {
@@ -801,7 +801,7 @@ export function handleAutoRetryEnd(data) {
     updateStreamingState();
   }
 
-export function handleThinkingLevelChanged(data) {
+export function handleThinkingLevelChanged(data: Record<string, unknown>) {
     if (sbThinking && data.level) {
       sbThinking.textContent = "thinking: " + data.level;
     }
@@ -809,7 +809,7 @@ export function handleThinkingLevelChanged(data) {
 
   // ═══ Error Handling ════════════════════════════════════
 
-export function handleError(data) {
+export function handleError(data: Record<string, unknown>) {
     hideWelcome();
     removeWorkingIndicator();
     removeCompactionIndicator();
@@ -830,7 +830,7 @@ export function handleError(data) {
   // ═══ UI Helpers — Indicators ═══════════════════════════
   // ═══ UI Helpers — Indicators ═══════════════════════════
 
-export function addWorkingIndicator() {
+export function addWorkingIndicator(): void {
     var existing = document.getElementById("working-indicator");
     if (existing) {return;}
     var el = document.createElement("div");
@@ -851,7 +851,7 @@ export function addWorkingIndicator() {
     }, 300);
   }
 
-export function removeWorkingIndicator() {
+export function removeWorkingIndicator(): void {
     var el = document.getElementById("working-indicator");
     if (el) {
       if (el._spinnerInterval) {clearInterval(el._spinnerInterval);}
@@ -1459,7 +1459,7 @@ export function resizePromptInput() {
     state.promptInput.style.overflowY = state.promptInput.scrollHeight > maxHeight ? "auto" : "hidden";
   }
 
-export function handleInsertCommand(command) {
+export function handleInsertCommand(command: string) {
     state.promptInput.value = command + " ";
     state.promptInput.focus();
     resizePromptInput();
@@ -1468,7 +1468,7 @@ export function handleInsertCommand(command) {
   // ═══ #1: Compaction Summary Message ═══════════════════════
   // ═══ #1: Compaction Summary Message ═══════════════════════
 
-export function handleCompactionSummaryMessage(data) {
+export function handleCompactionSummaryMessage(data: Record<string, unknown>) {
     hideWelcome();
     var el = document.createElement("div");
     el.className = "compaction-summary";
@@ -1496,7 +1496,7 @@ export function handleCompactionSummaryMessage(data) {
 
   // ═══ #2: User Message Selector ════════════════════════════
 
-export function handleUserMessagesList(data) {
+export function handleUserMessagesList(data: Record<string, unknown>) {
     state.userMessageHistory = (data.messages || []).reverse();
   }
 
@@ -1551,14 +1551,14 @@ export function closeUserMsgSelector() {
 
   // ═══ #3: Settings Panel ═══════════════════════════════════
 
-export function handleSettingsUpdate(data) {
+export function handleSettingsUpdate(data: Record<string, unknown>) {
     if (data) {
       state.settingsState = data;
       renderSettingsPanel();
     }
   }
 
-export function handleScopedModelsUpdate(data) {
+export function handleScopedModelsUpdate(data: Record<string, unknown>) {
     if (data && data.models) {
       state.scopedModels = data.models;
       renderScopedModels();
@@ -1678,7 +1678,7 @@ export function renderInlineCustomMessage(data) {
     scrollToBottom();
   }
 
-export function handleCustomMessage(data) {
+export function handleCustomMessage(data: Record<string, unknown>) {
     hideWelcome();
     var customType = data.customType || "custom";
 
@@ -1764,7 +1764,7 @@ export function clearLivePanel() {
 
 
 /** Bridge: extension host registers a renderer by source code. */
-export function handleRegisterMessageRenderer(data) {
+export function handleRegisterMessageRenderer(data: Record<string, unknown>) {
     if (!data.customType || !data.sourceCode) {return;}
     try {
       // CSP blocks eval().  Inject a <script nonce> tag instead.
@@ -1791,7 +1791,7 @@ export function handleRegisterMessageRenderer(data) {
     }
   }
 
-export function handleWidgetUpdate(data) {
+export function handleWidgetUpdate(data: Record<string, unknown>) {
     if (!data || !data.key) {return;}
 
     var key = data.key;
@@ -1844,7 +1844,7 @@ export function handleWidgetUpdate(data) {
   }
 
 /** Render a status-* widget as an inline indicator in the status bar. */
-export function handleStatusWidget(key, content) {
+export function handleStatusWidget(key: string, content: string | null) {
     var statusBar = document.getElementById("pi-extension-status");
     if (!statusBar) {return;}
 
@@ -1893,7 +1893,7 @@ export function clearWidgetCards() {
 
   // ═══ Interactive Dialog Bridge ═══════════════════════════
 
-export function handleShowDialog(data) {
+export function handleShowDialog(data: Record<string, unknown>) {
     if (!data || !data.id) {return;}
     var dlg = new Dialog({
       dialogType: data.dialogType || "confirm",
@@ -2144,7 +2144,7 @@ export function handleBashEnd(data: Record<string, unknown>) {
   //
   // Also dumps the same data to console.log for DevTools inspection.
 
-export function handleDebugCommand() {
+export function handleDebugCommand(): void {
     hideWelcome();
     var summary = window.__piDebug.summary() as { chat: any; dupes: string[]; orphanBash: string[]; orphanTool: string[]; lastEvents: any[]; lastDomChanges: any[] };
 
