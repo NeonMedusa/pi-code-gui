@@ -6,7 +6,7 @@
 // Internal helpers (syntax highlighters, parseDiffLine, etc.)
 // stay private; only the public API is exported.
 
-import { state } from "../state.js";
+import { state, type AppState } from "../state.js";
 import { logEvent, logDom } from "../debug.js";
 import { highlightCode } from "../highlight.js";
 import { html, safe } from "./html.js";
@@ -15,7 +15,7 @@ import { ThinkingBlock } from "../components/thinking-block.js";
 
 // ═══ Utilities ══════════════════════════════════════════════
 
-export function formatTokens(count) {
+export function formatTokens(count: number): string {
   if (!count || count === 0) {return "0";}
   if (count < 1000) {return count.toString();}
   if (count < 10000) {return (count / 1000).toFixed(1) + "k";}
@@ -24,26 +24,26 @@ export function formatTokens(count) {
   return Math.round(count / 1000000) + "M";
 }
 
-export function escapeHtml(text) {
+export function escapeHtml(text: string): string {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
 }
 
-export function truncate(text, maxLen) {
+export function truncate(text: string, maxLen: number): string {
   if (!text || text.length <= maxLen) {return text || "";}
   return text.substring(0, maxLen) + "...";
 }
 
-export function shortenPath(filePath) {
+export function shortenPath(filePath: string): string {
   if (!filePath) {return "";}
   return filePath;
 }
 
-export function getLangFromPath(filePath) {
+export function getLangFromPath(filePath: string): string | undefined {
   if (!filePath) {return undefined;}
-  const ext = filePath.split(".").pop().toLowerCase();
-  const extToLang = {
+  const ext = filePath.split(".").pop()!.toLowerCase();
+  const extToLang: Record<string, string> = {
     ts: "typescript", tsx: "typescript",
     js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript",
     py: "python", rs: "rust", go: "go", java: "java",
@@ -62,7 +62,7 @@ export function getLangFromPath(filePath) {
   return extToLang[ext];
 }
 
-export function getCompactReadLabel(filePath) {
+export function getCompactReadLabel(filePath: string): { kind: string; label: string } | undefined {
   if (!filePath) {return undefined;}
   const name = filePath.split("/").pop() || filePath;
   if (name === "SKILL.md") {
@@ -79,7 +79,7 @@ export function getCompactReadLabel(filePath) {
   return undefined;
 }
 
-export function formatToolError(text, toolName) {
+export function formatToolError(text: string, toolName: string): string {
   if (!text) {return text;}
   if (text.indexOf("Validation failed for tool") !== -1) {
     const issues = [];
@@ -113,37 +113,37 @@ export function formatToolError(text, toolName) {
 
 // ═══ Tool Renderer Registry ═════════════════════════════════
 
-export function registerToolRenderer(toolName, renderer) {
-  state.toolRenderers[toolName] = renderer;
+export function registerToolRenderer(toolName: string, renderer: unknown): void {
+  state.toolRenderers[toolName] = renderer as AppState['toolRenderers'][string];
 }
 
-export function getToolRenderer(toolName) {
+export function getToolRenderer(toolName: string): AppState['toolRenderers'][string] | null {
   return state.toolRenderers[toolName] || null;
 }
 
 // ═══ DOM Helpers ═══════════════════════════════════════════
 
-export function morphRender(el, html) {
+export function morphRender(el: HTMLElement, html: string): void {
   if (!el || html === undefined || html === null) {return;}
   const temp = document.createElement("div");
   temp.innerHTML = html;
-  window.morphdom(el, temp, { childrenOnly: true });
+  (window as unknown as { morphdom: typeof morphdom }).morphdom(el, temp, { childrenOnly: true });
 }
 
-export function createMessageEl(role) {
+export function createMessageEl(role: string): HTMLElement {
   const el = document.createElement("div");
   el.className = "message " + role;
   el.innerHTML = '<div class="message-content"></div>';
   return el;
 }
 
-export function createThinkingBlock(content) {
+export function createThinkingBlock(content: string): HTMLElement {
   const tb = new ThinkingBlock({ content: content || "" });
-  tb.el._component = tb; // attach for later updating
+  (tb.el as HTMLElement & { _component?: unknown })._component = tb;
   return tb.el;
 }
 
-export function createToolBlock(toolName, toolCallId, status, args) {
+export function createToolBlock(toolName: string, toolCallId: string, status: string, args?: Record<string, unknown>): HTMLElement {
   const block = document.createElement("div");
   block.className = "tool-block";
   block.id = "tool-" + toolCallId;
@@ -231,7 +231,7 @@ export function updateStreamingState() {
 
 // ═══ Markdown Rendering ════════════════════════════════════
 
-export function renderMarkdown(text) {
+export function renderMarkdown(text: string): string {
   if (!text) {return "";}
   if (!state._markedAvailable) {
     return escapeHtml(text).replace(/\n/g, "<br>");
@@ -241,7 +241,7 @@ export function renderMarkdown(text) {
 }
 
 /** Like renderMarkdown but safe for untrusted content (escapes raw HTML). */
-export function renderMarkdownSafe(text) {
+export function renderMarkdownSafe(text: string): string {
   if (!text) {return "";}
   if (!state._markedAvailable) {
     return escapeHtml(text).replace(/\n/g, "<br>");
@@ -253,10 +253,10 @@ export function renderMarkdownSafe(text) {
   return postProcessMarkedHTML(html);
 }
 
-function postProcessMarkedHTML(html) {
+function postProcessMarkedHTML(html: string): string {
   return html.replace(
     /<pre><code(?: class="language-(\w*)")?>([\s\S]*?)<\/code><\/pre>/g,
-    function (m, lang, code) {
+    function (m: string, lang: string, code: string) {
       const decoded = code
         .replace(/&amp;/g, "&")
         .replace(/&lt;/g, "<")
@@ -268,12 +268,12 @@ function postProcessMarkedHTML(html) {
   );
 }
 
-export function renderCodeBlockHTML(code, lang) {
+export function renderCodeBlockHTML(code: string, lang: string): string {
   const cb = new CodeBlock({ code, lang, showHeader: true, showCopy: true });
   return cb.el.outerHTML;
 }
 
-export function renderFileContent(content, lang) {
+export function renderFileContent(content: string, lang: string): string {
   if (!content) {return "";}
   const trimmed = content.replace(/\r\n?/g, "\n").replace(/\n+$/, "");
   if (!trimmed) {return "";}
@@ -283,82 +283,90 @@ export function renderFileContent(content, lang) {
 
 // ═══ Block-level Rendering (for structured streaming) ══════
 
-export function renderBlock(token) {
-  let el;
+// Token shapes from marked.lexer() — loosely typed because the
+// recursive structure makes narrow types mostly boilerplate.
+type MarkedToken = Record<string, unknown> & { type: string; raw?: string };
+type MarkedTokens = MarkedToken[];
+
+export function renderBlock(token: MarkedToken): Node {
+  let el: HTMLElement;
   try {
   switch (token.type) {
     case "heading":
-      el = document.createElement("h" + token.depth);
-      el.innerHTML = renderInline(token.tokens);
+      el = document.createElement("h" + (token.depth as number));
+      el.innerHTML = renderInline((token.tokens as MarkedTokens) ?? []);
       return el;
     case "paragraph":
       el = document.createElement("p");
-      el.innerHTML = renderInline(token.tokens);
+      el.innerHTML = renderInline((token.tokens as MarkedTokens) ?? []);
       return el;
     case "code": {
-      // Use renderCodeBlockHTML which returns the outerHTML string.
-      // The morphRender fix handles the wrapper properly without nesting.
       const wrapper = document.createElement("div");
-      wrapper.innerHTML = renderCodeBlockHTML(token.text, token.lang || "");
-      return wrapper.firstChild;
+      wrapper.innerHTML = renderCodeBlockHTML((token.text as string) || "", (token.lang as string) || "");
+      return wrapper.firstChild!;
     }
     case "list":
       el = document.createElement(token.ordered ? "ol" : "ul");
-      for (let i = 0; i < token.items.length; i++) {
-        const li = document.createElement("li");
-        li.innerHTML = renderInline(token.items[i].tokens);
-        el.appendChild(li);
+      const items = token.items as Array<{ tokens: MarkedTokens }> | undefined;
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          const li = document.createElement("li");
+          li.innerHTML = renderInline(items[i].tokens);
+          el.appendChild(li);
+        }
       }
       return el;
     case "table":
       return renderTableBlock(token);
     case "blockquote":
       el = document.createElement("blockquote");
-      for (let j = 0; j < token.tokens.length; j++) {
-        el.appendChild(renderBlock(token.tokens[j]));
+      const btokens = token.tokens as MarkedTokens | undefined;
+      if (btokens) {
+        for (let j = 0; j < btokens.length; j++) {
+          el.appendChild(renderBlock(btokens[j]!));
+        }
       }
       return el;
     case "hr":
       return document.createElement("hr");
     case "space":
-      // Return an empty span instead of a TextNode.
-      // TextNodes aren't in container.children (Elements only),
-      // which causes patchBlockList to mis-index and morph the wrong
-      // elements — the root cause of streaming content jitter.
       return document.createElement("span");
     default:
       el = document.createElement("div");
-      el.textContent = token.raw || "";
+      el.textContent = (token.raw as string) || "";
       return el;
   }
   } catch (e) {
     console.warn("[pi-gui] renderBlock failed for type=" + token.type + ":", e);
     const fallback = document.createElement("div");
-    fallback.textContent = token.raw || "";
+    fallback.textContent = (token.raw as string) || "";
     return fallback;
   }
 }
 
-function renderTableBlock(token) {
+function renderTableBlock(token: MarkedToken): HTMLTableElement {
   const table = document.createElement("table");
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
-  for (let h = 0; h < token.header.length; h++) {
+  const header = token.header as Array<{ tokens: MarkedTokens }>;
+  const align = token.align as string[];
+  for (let h = 0; h < header.length; h++) {
     const th = document.createElement("th");
-    th.style.textAlign = token.align[h] || "left";
-    th.innerHTML = renderInline(token.header[h].tokens);
+    th.style.textAlign = align[h] || "left";
+    th.innerHTML = renderInline(header[h].tokens);
     headerRow.appendChild(th);
   }
   thead.appendChild(headerRow);
   table.appendChild(thead);
-  if (token.rows.length > 0) {
+  const rows = token.rows as Array<Array<{ tokens: MarkedTokens }>>;
+  if (rows.length > 0) {
     const tbody = document.createElement("tbody");
-    for (let r = 0; r < token.rows.length; r++) {
+    for (let r = 0; r < rows.length; r++) {
       const tr = document.createElement("tr");
-      for (let c = 0; c < token.rows[r].length; c++) {
+      for (let c = 0; c < rows[r].length; c++) {
         const td = document.createElement("td");
-        td.style.textAlign = token.align[c] || "left";
-        td.innerHTML = renderInline(token.rows[r][c].tokens);
+        td.style.textAlign = align[c] || "left";
+        td.innerHTML = renderInline(rows[r][c].tokens);
         tr.appendChild(td);
       }
       tbody.appendChild(tr);
@@ -368,7 +376,7 @@ function renderTableBlock(token) {
   return table;
 }
 
-export function renderInline(tokens) {
+export function renderInline(tokens: MarkedTokens | undefined): string {
   if (!tokens || tokens.length === 0) {return "";}
   let result = "";
   for (let i = 0; i < tokens.length; i++) {
@@ -414,7 +422,7 @@ export function renderInline(tokens) {
 // ═══ Token-diff Streaming ═════════════════════════════════
 
 /** Diff prev/new token lists and patch the DOM container efficiently. */
-export function patchBlockList(container, prevTokens, newTokens) {
+export function patchBlockList(container: HTMLElement, prevTokens: unknown[], newTokens: unknown[]): void {
   if (!state._markedAvailable) {
     const raw = container.getAttribute("data-raw") || "";
     morphRender(container, renderMarkdown(raw));

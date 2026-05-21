@@ -114,7 +114,7 @@ interface WebviewEventData {
 
 // Allow dynamic properties on HTMLElement for component state
 interface HTMLElement {
-  _component?: { update(props: Record<string, unknown>): void; [key: string]: unknown };
+  _component?: unknown;
   _rawText?: string;
   _toolBlock?: { update(props: Record<string, unknown>): void; getContentEl(): HTMLElement; getResultEl(): HTMLElement; getHeaderEl(): HTMLElement; getPathEl(): HTMLElement | null; getStatusEl(): HTMLElement };
   _writeState?: { content: string; lang?: string; rawPath?: string };

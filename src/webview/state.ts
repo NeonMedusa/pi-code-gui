@@ -99,7 +99,7 @@ export interface AppState {
   sendButton: HTMLElement;
   abortButton: HTMLElement;
   steerDropdown: HTMLElement;
-  welcome: HTMLElement;
+  welcome: HTMLElement | null;
   attachmentBar: HTMLElement;
   userMsgOverlay: HTMLElement;
   settingsOverlay: HTMLElement;
@@ -190,7 +190,7 @@ export const state: AppState = {
   sendButton: null!,
   abortButton: null!,
   steerDropdown: null!,
-  welcome: null!,
+  welcome: null,
   attachmentBar: null!,
   userMsgOverlay: null!,
   settingsOverlay: null!,
