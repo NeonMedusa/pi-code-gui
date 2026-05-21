@@ -724,7 +724,7 @@ export function handleQueueUpdate(data: any) {
     });
 
     // Follow-up messages — queued, with promote button
-    followUp.forEach(function (m: any, i) {
+    followUp.forEach(function (m: any, i: number) {
       result += html`<div class="queue-row">
         <span class="queue-label">Queue:</span>
         <span class="queue-text">${m}</span>
@@ -742,7 +742,7 @@ export function handleQueueUpdate(data: any) {
     // Wire promote buttons
     el.querySelectorAll(".queue-promote-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        var idx = parseInt(btn.getAttribute("data-idx"), 10);
+        var idx = parseInt(btn.getAttribute("data-idx") || "0", 10);
         var msg = (data.followUp || [])[idx];
         if (msg) {
           // Promote: clear all queues, then re-steer this message
@@ -1129,7 +1129,7 @@ export function renderAttachments(): void {
     e.preventDefault();
 
     // Capture any text from the clipboard too
-    var pastedText = e.clipboardData.getData("text/plain") || "";
+    var pastedText = e.clipboardData?.getData("text/plain") || "";
 
     // Process image items
     for (var j = 0; j < imageItems.length; j++) {
@@ -1520,7 +1520,7 @@ export function showUserMessageSelector() {
     var items = state.userMsgOverlay.querySelectorAll(".user-msg-item");
     items.forEach(function (item) {
       item.addEventListener("click", function (this: HTMLElement) {
-        var idx = parseInt(this.getAttribute("data-idx"), 10);
+        var idx = parseInt(this.getAttribute("data-idx") || "0", 10);
         if (idx >= 0 && idx < state.userMessageHistory.length) {
           var text = state.userMessageHistory[idx].text;
           state.promptInput.value = text;
@@ -1825,7 +1825,7 @@ export function handleWidgetUpdate(data: any) {
     // Create or update widget card
     var card = state.widgetCards[key];
     if (card) {
-      card.querySelector(".live-card-content").innerHTML = renderMarkdown(content);
+      (card as HTMLElement).querySelector(".live-card-content")!.innerHTML = renderMarkdown(content);
     } else {
       card = document.createElement("div");
       card.className = "live-card";
@@ -1835,7 +1835,7 @@ export function handleWidgetUpdate(data: any) {
         <div class="live-card-label">${key}</div>
         <button class="live-card-close" title="Dismiss">&times;</button>
         <div class="live-card-content">${safe(renderMarkdown(content))}</div>`;
-      card.querySelector(".live-card-close").addEventListener("click", function () {
+      (card as HTMLElement).querySelector(".live-card-close")!.addEventListener("click", function () {
         dismissLiveCard(key);
       });
       state.livePanel.appendChild(card);
@@ -2084,9 +2084,9 @@ export function handleBashStart(data: Record<string, unknown>) {
 
     var block = bashToolRenderer.create({
       toolName: "bash",
-      toolCallId: callId,
+      toolCallId: callId as string,
       args: { command: data.command || "" },
-      entryId: data.entryId,
+      entryId: data.entryId as string,
       fromMessage: false,
     });
     state.chatContainer.appendChild(block as HTMLElement);
@@ -2125,7 +2125,7 @@ export function handleBashEnd(data: Record<string, unknown>) {
       content: data.output ? [{ type: "text", text: data.output }] : [],
       details: { exitCode: data.exitCode, cancelled: data.cancelled },
     };
-    bashToolRenderer.finalize(block, result, data.isError, data.entryId);
+    bashToolRenderer.finalize(block as any, result as any, data.isError as boolean, data.entryId as any);
     delete state.currentToolBlocks[callId as string];
     delete state.bashBlocks[callId as string];
     delete state.bashOutputs[callId as string];
@@ -2232,11 +2232,11 @@ export function handleDebugCommand(): void {
         e.preventDefault();
         e.stopPropagation(); // don't toggle the details element
         navigator.clipboard.writeText(copyText).then(function () {
-          copyBtn.textContent = "✓ Copied!";
-          setTimeout(function () { copyBtn.textContent = "📋 Copy All"; }, 2000);
+          copyBtn!.textContent = "✓ Copied!";
+          setTimeout(function () { copyBtn!.textContent = "📋 Copy All"; }, 2000);
         }, function () {
-          copyBtn.textContent = "✗ Failed";
-          setTimeout(function () { copyBtn.textContent = "📋 Copy All"; }, 2000);
+          copyBtn!.textContent = "✗ Failed";
+          setTimeout(function () { copyBtn!.textContent = "📋 Copy All"; }, 2000);
         });
       });
     }

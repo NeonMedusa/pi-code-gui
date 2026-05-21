@@ -43,13 +43,13 @@ export const writeToolRenderer = {
       hideWelcome();
       var rawPath = data.args && (data.args.path || data.args.file_path || data.args.filePath);
       var fileContent = data.args && data.args.content;
-      var lang = rawPath ? getLangFromPath(rawPath) : undefined;
+      var lang = rawPath ? getLangFromPath(rawPath as string) : undefined;
 
       var tb = new ToolBlock({
         toolName: "write",
         toolCallId: data.toolCallId,
         entryId: data.entryId,
-        filePath: rawPath || undefined,
+        filePath: (rawPath as string) || undefined,
         status: "running",
       });
       var block = tb.el as unknown as ToolEl;
@@ -160,12 +160,12 @@ export function renderWriteContentBlock(el: ToolEl) {
     // Fixed-size scrollable container — same height active and done.
     // The code block is rendered at full natural height inside a scroll-view
     // that caps the visible area.  Auto-scrolls to bottom during streaming.
-    var scrollView = tc.querySelector(".tool-scroll-view");
+    var scrollView = tc!.querySelector(".tool-scroll-view");
     if (!scrollView) {
       tc.innerHTML = '<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;"></div>';
       scrollView = tc.querySelector(".tool-scroll-view");
       var cbComp = new CodeBlock({ code: content, lang: lang, showHeader: true, showCopy: true });
-      cbComp.mount(scrollView);
+      cbComp.mount(scrollView!);
     } else {
       // Persist the .code-block so scroll state survives across renders
       var cb = scrollView!.querySelector(".code-block");
@@ -208,7 +208,7 @@ export const editToolRenderer = {
         toolName: "edit",
         toolCallId: data.toolCallId,
         entryId: data.entryId,
-        filePath: rawPath || undefined,
+        filePath: (rawPath as string) || undefined,
         status: "running",
         pathExtra: editLabel,
       });
@@ -217,7 +217,7 @@ export const editToolRenderer = {
 
       if (Array.isArray(edits) && edits.length > 0) {
         block._editEdits = edits;
-        block._editLang = rawPath ? getLangFromPath(rawPath) : undefined;
+        block._editLang = rawPath ? getLangFromPath(rawPath as string) : undefined;
         renderEditPreviews(block, edits);
       }
 
@@ -312,7 +312,7 @@ export function renderEditPreviews(el: ToolEl, edits: Array<{ oldText: string; n
     var needsScroll = edits.length > 3;
     var scrollStyle = needsScroll ? "max-height:15rem;overflow-y:auto;" : "";
 
-    var scrollView = tc.querySelector(".tool-scroll-view");
+    var scrollView = tc!.querySelector(".tool-scroll-view");
     if (!scrollView) {
       tc.innerHTML = html`<div class="tool-scroll-view" style="${scrollStyle}">${safe(result)}</div>`;
       scrollView = tc.querySelector(".tool-scroll-view");
@@ -359,7 +359,7 @@ export const readToolRenderer = {
         toolName: "read",
         toolCallId: data.toolCallId,
         entryId: data.entryId,
-        filePath: rawPath || undefined,
+        filePath: (rawPath as string) || undefined,
         status: "running",
         pathExtra: rangeLabel,
       });
@@ -375,7 +375,7 @@ export const readToolRenderer = {
       }
 
       // Store path, offset, and language for result rendering
-      (block as any)._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath) : undefined, compact: compact, offset: offset };
+      (block as any)._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath as string) : undefined, compact: compact, offset: offset };
 
       return block;
     },
@@ -502,7 +502,7 @@ export const defaultToolRenderer = {
         .map(function (c: { type: string; text: string }) { return c.text; })
         .join("\n");
       if (!text) {return;}
-      var lines = text.split("\n");
+      var lines = (text as string).split("\n");
       var displayText = lines.length > 60 ? "...\n" + lines.slice(-60).join("\n") : text;
       morphRender(tr, renderToolResult(displayText));
     },
@@ -526,10 +526,10 @@ export const defaultToolRenderer = {
       var tr = el.querySelector(".tool-result");
       if (tr) {
         if (isError) {
-          var displayText = formatToolError(text, el.querySelector(".tool-name") ? el.querySelector(".tool-name").textContent : "");
+          var displayText = formatToolError(text as string, (el.querySelector(".tool-name") as HTMLElement) ? (el.querySelector(".tool-name") as HTMLElement).textContent || "" : "");
           tr.innerHTML = html`<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;margin-top:4px;">${displayText}</div>`;
         } else {
-          var lines = text.split("\n");
+          var lines = (text as string).split("\n");
           tr.innerHTML = lines.length > 50 ? renderToolResultTruncated(text) : renderToolResult(text);
         }
       }
@@ -547,8 +547,8 @@ export const bashToolRenderer = {
       block.setAttribute("data-tool-call-id", data.toolCallId);
       if (data.entryId) { block.setAttribute("data-entry-id", data.entryId); }
       block.setAttribute("data-status", "running");
-      var cmd = data.args && data.args.command ? data.args.command : "";
-      if (cmd.length > 120) {cmd = cmd.slice(0, 120) + "\u2026";}
+      var cmd = (data.args?.command as string) || "";
+      if ((cmd as string).length > 120) {cmd = cmd!.slice(0, 120) + "\u2026";}
       block.innerHTML = html`
         <div class="bash-header">$ ${cmd}</div>
         <div class="bash-output"></div>
@@ -642,7 +642,7 @@ export function handleToolStart(data: any) {
         state.currentToolBlocks[callId] = { el: existingBash, renderer: bashToolRenderer };
       }
       // Update status on whichever block we have
-      var block = existingTool ? (existingTool.el || existingTool) : existingBash;
+      var block = existingTool ? ((existingTool as any).el || existingTool) : existingBash;
       if (block && block.getAttribute && block.getAttribute("data-status") === "pending") {
         block.setAttribute("data-status", "running");
         var statusEl = block.querySelector(".tool-status");
