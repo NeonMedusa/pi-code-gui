@@ -40,7 +40,9 @@
     "Chat"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onCommand:pi-code-gui.addSession",
+    "onCommand:pi-code-gui.revealEntry"
   ],
   "main": "./dist/extension.js",
   "contributes": {
