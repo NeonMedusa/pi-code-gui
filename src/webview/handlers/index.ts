@@ -48,7 +48,9 @@ export function getMessageRenderer(customType) {
   // Expose for pi extensions to register custom message renderers
   window.__piRegisterMessageRenderer = registerMessageRenderer;
 
-  // Default message renderer: creates a collapsible live-panel card
+  // Default message renderer: creates a collapsible live-panel card.
+  // Each invocation creates a NEW card — notifications and custom messages
+  // stack rather than silently replacing each other.
 export function defaultMessageRenderer(data) {
     var customType = data.customType || "custom";
     var content = "";
@@ -61,42 +63,37 @@ export function defaultMessageRenderer(data) {
         .join("\n");
     }
 
-    // Live-updating card: replace content in-place
-    if (state.liveCards[customType]) {
-      var existingEl = state.liveCards[customType];
-      var existingLc = existingEl._component;
-      if (existingLc) {
-        existingLc.update({ cardType: customType, label: customType, content: renderMarkdown(content) });
-      } else {
-        existingEl.querySelector(".live-card-content").innerHTML = renderMarkdown(content);
-        existingEl.classList.add("live-card-collapsed");
-        existingEl.querySelector(".live-card-content").style.display = "none";
-        var exp = existingEl.querySelector(".live-card-expando");
-        if (exp) { exp.textContent = "\u25B8"; }
-      }
-      return;
-    }
-
     var label = customType;
     if (customType === "extension-notify") {
       label = content.split("\n")[0].split("  ")[0].substring(0, 60);
     }
     if (customType === "error") { label = "Error"; }
 
-    return createLiveCard(customType, label, content);
+    // Unique key so cards stack instead of overwriting each other.
+    var key = customType + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+    return createLiveCard(key, customType, label, content);
   }
 
-  /** Create a collapsible live-panel card. Returns the card element. */
-export function createLiveCard(customType, label, content) {
+  /** Create a collapsible live-panel card. Returns the card element.
+   *  @param key Unique key for storage and dismissal.
+   *  Backward compat: if called with 3 args (old signature), auto-generates key. */
+export function createLiveCard(key, customType, label, content) {
+    // Backward compat: old 3-arg call createLiveCard(customType, label, content)
+    if (content === undefined) {
+      content = label;
+      label = customType;
+      customType = key;
+      key = customType + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+    }
     var lc = new LiveCard({
       cardType: customType,
       label: label,
       content: renderMarkdown(content),
-      onDismiss: function () { dismissLiveCard(customType); },
+      onDismiss: function () { dismissLiveCard(key); },
     });
     lc.el._component = lc; // attach for later updating
     state.livePanel.appendChild(lc.el);
-    state.liveCards[customType] = lc.el;
+    state.liveCards[key] = lc.el;
     state.livePanel.classList.add("visible");
     return lc.el;
   }
@@ -118,7 +115,8 @@ export function createLiveCard(customType, label, content) {
       if (!vr.success) {
         console.warn("[pi-gui] Webview message validation failed:", vr.error, "msg:", JSON.stringify(msg).substring(0, 300));
         // Show a visible diagnostic notification
-        var diag = createLiveCard("pi-gui-diagnostic", "Protocol Error",
+        var diagKey = "pi-gui-diagnostic-" + Date.now();
+        var diag = createLiveCard(diagKey, "pi-gui-diagnostic", "Protocol Error",
           "Message validation error for type `" + (msg.type || "unknown") + "`:\n```\n" +
           vr.error.substring(0, 500) + "\n```");
         // Don't block — fall through to existing handler for backward compat

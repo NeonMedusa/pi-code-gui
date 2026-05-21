@@ -30,11 +30,19 @@ if [ -n "${GIT_SIGNING_KEY:-}" ]; then
 fi
 
 # ── pi-coding-agent ──────────────────────────────────
-echo "==> pi-coding-agent (latest)"
-if npm install -g @earendil-works/pi-coding-agent@latest >/dev/null 2>&1; then
-    echo "    pi $(pi --version 2>/dev/null || echo '(version unknown)') → $(command -v pi)"
+# Check for updates instead of reinstalling every start.  npm install -g is
+# destructive (removes old files before writing new ones), which races with
+# the VS Code extension host activating and importing from node_modules.
+echo "==> pi-coding-agent"
+CURRENT=$(pi --version 2>/dev/null || echo "0.0.0")
+LATEST=$(npm view @earendil-works/pi-coding-agent version 2>/dev/null || echo "")
+if [ -n "$LATEST" ] && [ "$CURRENT" != "$LATEST" ]; then
+    echo "    updating: $CURRENT → $LATEST"
+    npm install -g @earendil-works/pi-coding-agent@latest >/dev/null 2>&1 && \
+        echo "    pi $LATEST → $(command -v pi)" || \
+        echo "    warn: pi install/update failed (network?) — existing pi still works"
 else
-    echo "    warn: pi install/update failed (network?) — existing pi (if any) still works"
+    echo "    pi $CURRENT (up to date)"
 fi
 
 # ── pi packages ──────────────────────────────────────

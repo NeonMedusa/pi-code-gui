@@ -1,5 +1,23 @@
 # Change Log
 
+## [0.0.32] — Live panel stacking, slash command fixes, startup resilience
+
+### Fixed
+- **Live panel notifications** now stack as separate dismissible cards instead
+  of silently overwriting each other. Applies to `notify()`, `sendCustomMessage`,
+  and protocol validation errors.
+- **Extension slash commands** (`/tldr` etc.) now execute immediately during
+  streaming via `session.prompt()` instead of being routed through
+  `steer()`/`followUp()` which the SDK rejects ("extension commands cannot be
+  queued"). Commands also appear in the conversation transcript.
+- **Steer/queue errors** are now surfaced as live-panel notifications instead
+  of becoming unhandled promise rejections.
+- **SDK/TypeBox imports** retry up to 5 times on startup, handling the race
+  where `npm install` populates `node_modules` concurrently with extension
+  activation.
+- **Dev container** no longer reinstalls `pi-coding-agent` on every start —
+  only updates when a newer version exists.
+
 ## [0.0.31] — Read block polish, truncation affordance
 
 ### Changed
