@@ -26,7 +26,7 @@ type ToolResult = {
   text?: string;
 };
 type ToolEl = HTMLElement & {
-  _toolBlock?: ToolBlock;
+  _toolBlock?: unknown;
   _writeState?: { content: string; lang?: string; rawPath?: string };
   _writePending?: string | null;
   _writeRafId?: number | null;
@@ -60,7 +60,7 @@ export const writeToolRenderer = {
         filePath: rawPath || undefined,
         status: "running",
       });
-      var block = tb.el;
+      var block = tb.el as unknown as ToolEl;
       block._toolBlock = tb; // attach component for update/finalize
       block._writeState = { lang: lang, content: "", rawPath: rawPath };
 
@@ -81,13 +81,13 @@ export const writeToolRenderer = {
 
       // rAF-batched: accumulate latest args JSON, flush once per frame.
       // Prevents bursty re-renders when write-tool args stream token by token.
-      el._writePending = text;
-      if (!el._writeRafId) {
-        el._writeRafId = requestAnimationFrame(function () {
+      (el as any)._writePending = text;
+      if (!(el as any)._writeRafId) {
+        (el as any)._writeRafId = requestAnimationFrame(function () {
           el._writeRafId = null;
           if (el._writePending) {
             processWriteUpdate(el, el._writePending);
-            el._writePending = null;
+            (el as any)._writePending = null;
           }
         });
       }
@@ -95,7 +95,7 @@ export const writeToolRenderer = {
     finalize: function (el: ToolEl, result: ToolResult, isError: boolean, entryId?: string) {
       // Flush any pending rAF render
       if (el._writeRafId) { cancelAnimationFrame(el._writeRafId); el._writeRafId = null; }
-      if (el._writePending) { processWriteUpdate(el, el._writePending); el._writePending = null; }
+      if (el._writePending) { processWriteUpdate(el, el._writePending); (el as any)._writePending = null; }
 
       var tb = el._toolBlock;
       if (tb) {
@@ -136,12 +136,12 @@ export function processWriteUpdate(el: ToolEl, text: string) {
     try {
       var args = JSON.parse(text);
       if (args.content && typeof args.content === "string") {
-        el._writeState!.content = args.content;
+        (el as any)._writeState.content = args.content;
         renderWriteContentBlock(el);
       }
       if (args.path) {
         el._writeState!.rawPath = args.path;
-        el._writeState!.lang = getLangFromPath(args.path);
+        (el as any)._writeState.lang = getLangFromPath(args.path);
         var pathEl = el.querySelector(".tool-path");
         if (pathEl) {pathEl.textContent = args.path;}
       }
@@ -194,7 +194,7 @@ export function renderWriteContentBlock(el: ToolEl) {
     }
 
     if (active) {
-      scrollView.scrollTop = scrollView.scrollHeight;
+      scrollView!.scrollTop = scrollView!.scrollHeight;
     }
   }
 
@@ -220,7 +220,7 @@ export const editToolRenderer = {
         status: "running",
         pathExtra: editLabel,
       });
-      var block = tb.el;
+      var block = tb.el as unknown as ToolEl;
       block._toolBlock = tb;
 
       if (Array.isArray(edits) && edits.length > 0) {
@@ -243,7 +243,7 @@ export const editToolRenderer = {
         var args = JSON.parse(text);
         var edits = args.edits;
         if (Array.isArray(edits) && edits.length > 0) {
-          el._editEdits = edits;
+          (el as any)._editEdits = edits;
           // Update edit count in header
           var editLabel = edits.length > 1 ? " (" + edits.length + " edits)" : "";
           var pathEl = el.querySelector(".tool-path");
@@ -271,7 +271,7 @@ export const editToolRenderer = {
       }
 
       // Re-render previews to collapse to max 3 now that streaming is done
-      if (el._editEdits) { renderEditPreviews(el, el._editEdits); }
+      if (el._editEdits) { renderEditPreviews(el as any, (el as any)._editEdits); }
 
       var text = "";
       if (result && result.content) {
@@ -302,7 +302,7 @@ export function renderEditPreviews(el: ToolEl, edits: Array<{ oldText: string; n
     var tc = el.querySelector(".tool-content");
     if (!tc) {return;}
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
-    var lang = el._editLang;
+    var lang = (el as any)._editLang;
     // Build edit previews inline (no surrounding whitespace).
     var result = "";
 
@@ -325,12 +325,12 @@ export function renderEditPreviews(el: ToolEl, edits: Array<{ oldText: string; n
       tc.innerHTML = html`<div class="tool-scroll-view" style="${scrollStyle}">${safe(result)}</div>`;
       scrollView = tc.querySelector(".tool-scroll-view");
     } else {
-      scrollView.setAttribute("style", scrollStyle);
+      scrollView!.setAttribute("style", scrollStyle);
       scrollView.innerHTML = result;
     }
 
     if (active && scrollView) {
-      scrollView.scrollTop = scrollView.scrollHeight;
+      scrollView!.scrollTop = scrollView!.scrollHeight;
       requestAnimationFrame(function () {
         var blocks = scrollView.querySelectorAll(".edit-old, .edit-new");
         for (var b = 0; b < blocks.length; b++) {
@@ -357,11 +357,11 @@ export const readToolRenderer = {
       var limit = data.args && data.args.limit;
       var rangeLabel = "";
       if (offset !== undefined) {
-        rangeLabel = ":" + offset;
-        if (limit !== undefined) {rangeLabel += "-" + (offset + limit - 1);}
+        rangeLabel = ":" + (offset as number);
+        if (limit !== undefined) {rangeLabel += "-" + ((offset as number) + (limit as number) - 1);}
       }
 
-      var compact = getCompactReadLabel(rawPath);
+      var compact = getCompactReadLabel(rawPath as string);
 
       var tb = new ToolBlock({
         toolName: "read",
@@ -371,7 +371,7 @@ export const readToolRenderer = {
         status: "running",
         pathExtra: rangeLabel,
       });
-      var block = tb.el;
+      var block = tb.el as unknown as ToolEl;
       block._toolBlock = tb;
 
       // Add compact label below header if applicable
@@ -439,13 +439,13 @@ export const readToolRenderer = {
       text = text.replace(/\n?\[Truncated[^\]]*\](?:\n|$)/g, "");
       text = text.replace(/\n?\[\d+ more lines in file[^\]]*\](?:\n|$)/g, "");
 
-      var readState = el._readState || {};
+      var readState = (el as any)._readState || {};
       var lang = readState.lang;
 
       // Syntax-highlighted code in a scrollable container when tall.
       // No expand/collapse — just native scroll.
-      tr.style.maxHeight = "20rem";
-      tr.style.overflowY = "auto";
+      (tr as HTMLElement).style.maxHeight = "20rem";
+      (tr as HTMLElement).style.overflowY = "auto";
       tr.innerHTML = "";
       var cb = new CodeBlock({ code: text, lang: lang, showHeader: true, showCopy: true });
       cb.mount(tr);

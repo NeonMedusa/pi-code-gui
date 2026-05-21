@@ -7,6 +7,18 @@ declare function acquireVsCodeApi(): {
   setState(state: unknown): void;
 };
 
+// Override querySelector to return HTMLElement instead of Element.
+// In the webview, all querySelector results are HTML elements.
+interface ParentNode {
+  querySelector<E extends HTMLElement = HTMLElement>(selectors: string): E | null;
+  querySelectorAll<E extends HTMLElement = HTMLElement>(selectors: string): NodeListOf<E>;
+}
+
+interface Element {
+  querySelector<E extends HTMLElement = HTMLElement>(selectors: string): E | null;
+  querySelectorAll<E extends HTMLElement = HTMLElement>(selectors: string): NodeListOf<E>;
+}
+
 // External libraries loaded as globals
 declare let marked: {
   parse(text: string): string;

@@ -1658,9 +1658,10 @@ export function renderInlineCustomMessage(data: any) {
         });
       } else if (renderer) {
         var body = existing.querySelector(".custom-message-body");
-        if (body) { body.innerHTML = ""; renderer(data, body, escapeHtml); }
+        var bodyEl = existing.querySelector(".custom-message-body") as HTMLElement;
+        if (bodyEl) { bodyEl.innerHTML = ""; renderer(data, bodyEl, escapeHtml); }
       } else {
-        existing.querySelector(".custom-message-body").innerHTML = renderMarkdown(content);
+        (existing.querySelector(".custom-message-body") as HTMLElement).innerHTML = renderMarkdown(content);
       }
       return;
     }
@@ -1769,7 +1770,7 @@ export function handleRegisterMessageRenderer(data: any) {
     if (!data.customType || !data.sourceCode) {return;}
     try {
       // CSP blocks eval().  Inject a <script nonce> tag instead.
-      var nonce = document.querySelector("script[nonce]")?.getAttribute("nonce");
+      var nonce = (document.querySelector("script[nonce]") as HTMLScriptElement | null)?.getAttribute("nonce");
       if (!nonce) {
         console.warn("[pi-gui] Cannot register renderer: no CSP nonce found");
         return;
@@ -1852,10 +1853,10 @@ export function handleStatusWidget(key: string, content: string | null) {
     if (content === null || content === undefined) {
       // Remove status indicator
       var existingStatus = statusBar.querySelector('[data-status-key="' + key + '"]');
-      if (existingStatus) {existingStatus.remove();}
+      if (existingStatus) {(existingStatus as HTMLElement).remove();}
       // Also clean up any legacy live-card
       var legacy = state.widgetCards[key];
-      if (legacy) {legacy.remove(); delete state.widgetCards[key];}
+      if (legacy) {(legacy as HTMLElement).remove(); delete state.widgetCards[key];}
       delete state.liveCards[key as string];
       return;
     }
@@ -1879,7 +1880,7 @@ export function handleStatusWidget(key: string, content: string | null) {
 
     // Clean up any legacy live-card
     var legacy = state.widgetCards[key];
-    if (legacy) {legacy.remove(); delete state.widgetCards[key];}
+    if (legacy) {(legacy as HTMLElement).remove(); delete state.widgetCards[key];}
     delete state.liveCards[key as string];
   }
 
@@ -2039,7 +2040,7 @@ export function handleRevealEntry(entryId: string, toolCallId: string) {
 
     if (!el) {return;}
 
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
     (el as HTMLElement).style.transition = "background 0.2s, box-shadow 0.2s";
     (el as HTMLElement).style.background = "var(--vscode-list-hoverBackground)";
     (el as HTMLElement).style.boxShadow = "0 0 0 2px var(--vscode-focusBorder)";
@@ -2226,7 +2227,7 @@ export function handleDebugCommand(): void {
 
     // Wire Copy All button
     var copyBtn = el.querySelector(".debug-copy-all-btn");
-    if (copyBtn) {
+    if (copyBtn!) {
       copyBtn.addEventListener("click", function (e) {
         e.preventDefault();
         e.stopPropagation(); // don't toggle the details element
