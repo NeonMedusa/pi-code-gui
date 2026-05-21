@@ -1,55 +1,49 @@
 // ── Debug infrastructure ────────────────────────────────────
-//
-// Tracks every inbound message, DOM mutations, and internal
-// state so we can answer "why did a block disappear?" without
-// copy-pasting massive DOM trees.
-//
-// Exposes window.__piDebug for DevTools inspection and the
-// /debug slash command.
 
 import { state } from "./state.js";
 
 // ── Debug state ───────────────────────────────────────────────
-let debugEventLog = []; // [{ ts, type, dataKeys, callId, stackDepth }]
+const debugEventLog: Array<{ ts: number; type: string; dataKeys: string[]; callId: string; id: string; fromMessage: boolean; toolName: string; stackDepth: number }> = [];
 const debugMaxEvents = 500;
-let debugDomLog = []; // [{ ts, action, elInfo }]
+const debugDomLog: Array<{ ts: number; action: string; tag: string; id: string; classes: string; status: string; text: string; parentId: string }> = [];
 const debugMaxDomLog = 200;
-let debugEnabled = true; // toggle via /debug on|off
+let debugEnabled = true;
 
 // ── Queue event tracking ─────────────────────────────────────
-let _queueEvents = [];
+const _queueEvents: Array<{ ts: number; steering: number; followUp: number; streaming: boolean }> = [];
 
 // ── MutationObserver ──────────────────────────────────────────
-let debugObserver = null;
+let debugObserver: MutationObserver | null = null;
 
-export function logEvent(type, data) {
+export function logEvent(type: string, data: Record<string, unknown> | undefined): void {
   if (!debugEnabled) {return;}
   const entry = {
     ts: Date.now(),
     type,
     dataKeys: data ? Object.keys(data).slice(0, 10) : [],
-    callId: data ? (data.toolCallId || data.entryId || "") : "",
-    id: data ? (data.entryId || data.toolCallId || "") : "",
+    callId: data ? (data.toolCallId || data.entryId || "") as string : "",
+    id: data ? (data.entryId || data.toolCallId || "") as string : "",
     fromMessage: data ? !!data.fromMessage : false,
-    toolName: data ? (data.toolName || "") : "",
-    stackDepth: new Error().stack ? new Error().stack.split("\n").length : 0,
+    toolName: data ? (data.toolName || "") as string : "",
+    stackDepth: (() => { const s = new Error().stack; return s ? s.split("\n").length : 0; })(),
   };
   debugEventLog.push(entry);
   if (debugEventLog.length > debugMaxEvents) {debugEventLog.shift();}
 }
 
-export function logDom(action, el) {
-  if (!debugEnabled || !el || !el.tagName) {return;}
+export function logDom(action: string, el: Node | null): void {
+  if (!debugEnabled || !el || !(el as HTMLElement).tagName) {return;}
+  const htmlEl = el as HTMLElement;
   const entry = {
     ts: Date.now(),
     action,
-    tag: el.tagName.toLowerCase(),
-    id: el.id || "",
-    classes: el.className || "",
-    status: el.getAttribute ? el.getAttribute("data-status") : "",
-    text: (el.textContent || "").slice(0, 80),
-    parentId: el.parentElement
-      ? el.parentElement.id || el.parentElement.className
+    tag: htmlEl.tagName.toLowerCase(),
+    id: htmlEl.id || "",
+    classes: htmlEl.className || "",
+    status: htmlEl.getAttribute ? htmlEl.getAttribute("data-status") || "" : "",
+    text: (htmlEl.textContent || "").slice(0, 80),
+    parentId: htmlEl.parentElement
+      ? htmlEl.parentElement.id || htmlEl.parentElement.className || ""
       : "",
   };
   debugDomLog.push(entry);
@@ -57,23 +51,23 @@ export function logDom(action, el) {
 }
 
 /** Snapshot all children of chatContainer for debugging. */
-export function dumpChatStructure() {
-  const children = [];
+export function dumpChatStructure(): Record<string, unknown> {
+  const children: unknown[] = [];
   const { chatContainer, bashBlocks, currentToolBlocks, bashOutputs } = state;
 
   if (!chatContainer) {return { totalChildren: 0, children: [] };}
 
   for (let i = 0; i < chatContainer.children.length; i++) {
-    const c = chatContainer.children[i];
-    let bashDetail = null;
+    const c = chatContainer.children[i] as HTMLElement;
+    let bashDetail: Record<string, unknown> | null = null;
     if (c.className && c.className.indexOf("bash-execution") !== -1) {
       const header = c.querySelector(".bash-header");
       const output = c.querySelector(".bash-output");
       const footer = c.querySelector(".bash-footer");
       bashDetail = {
-        headerText: header ? header.textContent.slice(0, 120) : "MISSING",
+        headerText: header ? header.textContent?.slice(0, 120) : "MISSING",
         outputLen: output ? output.innerHTML.length : -1,
-        outputText: output ? output.textContent.slice(0, 200) : "MISSING",
+        outputText: output ? output.textContent?.slice(0, 200) : "MISSING",
         footerText: footer ? footer.textContent : "MISSING",
         offsetHeight: c.offsetHeight,
         computedDisplay:
@@ -110,25 +104,21 @@ export function dumpChatStructure() {
   };
 }
 
-export function summary() {
+export function summary(): Record<string, unknown> {
   const s = dumpChatStructure();
   const el = debugEventLog.slice(-30);
   const dl = debugDomLog.slice(-30);
 
-  // Duplicates: same toolCallId in BOTH bashBlocks and currentToolBlocks
   const bKeys = new Set(Object.keys(state.bashBlocks));
   const tKeys = new Set(Object.keys(state.currentToolBlocks));
   const dupes: string[] = [];
   bKeys.forEach((k) => { if (tKeys.has(k)) { dupes.push(k); } });
 
-  // True orphans: toolCallIds that have a DOM element in the chat
-  // but aren't tracked in EITHER currentToolBlocks or bashBlocks.
   const realOrphans: string[] = [];
-  if (state.chatContainer) {
-    const container = state.chatContainer;
+  const container = state.chatContainer;
+  if (container) {
     for (let i = 0; i < container.children.length; i++) {
-      const child = container.children[i];
-      // Extract call ID from id="tool-call_..." or id="bash-call_..."
+      const child = container.children[i] as HTMLElement;
       const idMatch = child.id.match(/(?:tool|bash)-(call_\w+)/);
       if (idMatch) {
         const callId = idMatch[1];
@@ -136,7 +126,6 @@ export function summary() {
           realOrphans.push(callId);
         }
       }
-      // Also check entry-id format: entry-call_...
       const entryMatch = child.id.match(/entry-(call_\w+)/);
       if (entryMatch) {
         const callId = entryMatch[1];
@@ -147,9 +136,6 @@ export function summary() {
     }
   }
 
-  // Orphan bash blocks: in bashBlocks but not currentToolBlocks
-  // (these should normally be promoted, but may be legitimate if bash-end
-  // hasn't arrived yet).
   const orphanBash: string[] = [];
   bKeys.forEach((k) => { if (!tKeys.has(k)) { orphanBash.push(k); } });
 
@@ -163,38 +149,42 @@ export function summary() {
   };
 }
 
-// ── Public debug API (attached to window for DevTools) ────────
+// ── Public debug API ────────────────────────────────────────
 
 window.__piDebug = {
-  enabled(on) {
+  enabled(on: boolean): boolean {
     debugEnabled = on;
     return debugEnabled;
   },
   dumpState: dumpChatStructure,
-  eventLog(n) {
+  eventLog(n?: number): unknown[] {
     return debugEventLog.slice(-(n || 50));
   },
-  domLog(n) {
+  domLog(n?: number): unknown[] {
     return debugDomLog.slice(-(n || 50));
   },
-  bashBlocks() {
-    return Object.keys(state.bashBlocks).map((k) => ({
-      id: k,
-      status: state.bashBlocks[k].getAttribute
-        ? state.bashBlocks[k].getAttribute("data-status")
-        : "?",
-      tag: state.bashBlocks[k].tagName,
-    }));
+  bashBlocks(): unknown[] {
+    return Object.keys(state.bashBlocks).map((k) => {
+      const el = state.bashBlocks[k];
+      return {
+        id: k,
+        status: el && typeof el.getAttribute === "function"
+          ? el.getAttribute("data-status")
+          : "?",
+        tag: el?.tagName,
+      };
+    });
   },
-  toolBlocks() {
+  toolBlocks(): unknown[] {
     return Object.keys(state.currentToolBlocks).map((k) => {
       const e = state.currentToolBlocks[k];
-      const el = e.el || e;
+      if (!e) { return { id: k, status: "MISSING", tag: "?", hasRenderer: false }; }
+      const el = "tagName" in e ? e as HTMLElement : e.el;
       return {
         id: k,
         status: el.getAttribute ? el.getAttribute("data-status") : "?",
         tag: el.tagName,
-        hasRenderer: !!e.renderer,
+        hasRenderer: !("tagName" in e) && !!e.renderer,
       };
     });
   },
@@ -204,9 +194,9 @@ window.__piDebug = {
 
 // ── MutationObserver setup ───────────────────────────────────
 
-export function initDebugObserver() {
+export function initDebugObserver(): void {
   if (typeof MutationObserver === "undefined") {return;}
-  debugObserver = new MutationObserver((mutations) => {
+  debugObserver = new MutationObserver((mutations: MutationRecord[]) => {
     if (!debugEnabled) {return;}
     mutations.forEach((m) => {
       for (let i = 0; i < m.addedNodes.length; i++) {
@@ -222,5 +212,4 @@ export function initDebugObserver() {
   }
 }
 
-// Expose for debug access
 export { debugEventLog, debugEnabled };

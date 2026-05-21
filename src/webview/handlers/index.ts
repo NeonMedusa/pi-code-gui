@@ -37,11 +37,11 @@ import {
   // renderers that produce DOM for the live panel.
 
 
-export function registerMessageRenderer(customType, rendererFn) {
+export function registerMessageRenderer(customType: string, rendererFn: (data: any, container: HTMLElement, ...args: any[]) => void) {
     state.messageRenderers[customType] = rendererFn;
   }
 
-export function getMessageRenderer(customType) {
+export function getMessageRenderer(customType: string) {
     return state.messageRenderers[customType];
   }
 
@@ -51,15 +51,15 @@ export function getMessageRenderer(customType) {
   // Default message renderer: creates a collapsible live-panel card.
   // Each invocation creates a NEW card — notifications and custom messages
   // stack rather than silently replacing each other.
-export function defaultMessageRenderer(data) {
+export function defaultMessageRenderer(data: any) {
     var customType = data.customType || "custom";
     var content = "";
     if (typeof data.content === "string") {
       content = data.content;
     } else if (Array.isArray(data.content)) {
       content = data.content
-        .filter(function (c) { return c.type === "text"; })
-        .map(function (c) { return c.text; })
+        .filter(function (c: any) { return c.type === "text"; })
+        .map(function (c: any) { return c.text; })
         .join("\n");
     }
 
@@ -77,7 +77,7 @@ export function defaultMessageRenderer(data) {
   /** Create a collapsible live-panel card. Returns the card element.
    *  @param key Unique key for storage and dismissal.
    *  Backward compat: if called with 3 args (old signature), auto-generates key. */
-export function createLiveCard(key, customType, label, content) {
+export function createLiveCard(key: string, customType: string, label: string, content: string) {
     // Backward compat: old 3-arg call createLiveCard(customType, label, content)
     if (content === undefined) {
       content = label;
@@ -93,7 +93,7 @@ export function createLiveCard(key, customType, label, content) {
     });
     lc.el._component = lc; // attach for later updating
     state.livePanel.appendChild(lc.el);
-    state.liveCards[key] = lc.el;
+    state.liveCards[key as string] = lc.el;
     state.livePanel.classList.add("visible");
     return lc.el;
   }
@@ -220,7 +220,7 @@ export function handleAgentEnd() {
     setSbDot("idle");
     // Stop thinking spinner (safety net) — use component API if available
     if (state.currentThinkingEl) {
-      var tb = state.currentThinkingEl._component;
+      var tb = state.currentThinkingEl._component as any;
       if (tb) {
         tb.update({ content: tb._rawText || "", done: true });
       } else {
@@ -275,7 +275,7 @@ export function handleAgentEnd() {
     // Finalize any pending tool blocks
     Object.keys(state.currentToolBlocks).forEach(function (id) {
       var entry = state.currentToolBlocks[id];
-      var block = entry.el || entry;
+      var block = (entry as any).el || entry;
       if (block && block.getAttribute("data-status") === "running") {
         var statusEl = block.querySelector(".tool-status");
         if (statusEl) {
@@ -289,13 +289,13 @@ export function handleAgentEnd() {
 
     // Also finalize any dangling bash blocks that were never closed
     Object.keys(state.bashBlocks).forEach(function (id) {
-      var block = state.bashBlocks[id];
+      var block = state.bashBlocks[id as string];
       if (block && block.getAttribute && block.getAttribute("data-status") === "running") {
         logEvent("agent-end:ORPHAN-BASH", { toolCallId: id, inDOM: !!block.parentElement });
         block.setAttribute("data-status", "done");
         var footer = block.querySelector(".bash-footer");
         if (footer) { footer.innerHTML = '<span class="exit-code">exit: -</span> <span>(ended)</span>'; }
-        delete state.bashBlocks[id];
+        delete state.bashBlocks[id as string];
         delete state.bashOutputs[id];
       }
     });
@@ -306,11 +306,11 @@ export function handleAgentEnd() {
   // ═══ Turn Lifecycle ════════════════════════════════════
   // ═══ Turn Lifecycle ════════════════════════════════════
 
-export function handleTurnStart(data) {
+export function handleTurnStart(data: any) {
     hideWelcome();
   }
 
-export function handleTurnEnd(data) {
+export function handleTurnEnd(data: any) {
     if (data && data.message && data.message.role === "assistant" && data.message.errorMessage) {
       if (state.currentAssistantEl) {
         addErrorToElement(state.currentAssistantEl, data.message.errorMessage);
@@ -321,7 +321,7 @@ export function handleTurnEnd(data) {
   // ═══ Message Lifecycle ═════════════════════════════════
   // ═══ Message Lifecycle ═════════════════════════════════
 
-export function handleChatMessage(data) {
+export function handleChatMessage(data: any) {
     // Dedup: skip if same role+content as last user message
     if (data.role === "user" && data.content === state.lastUserMessageContent) {return;}
     if (data.role === "user") {
@@ -356,7 +356,7 @@ export function handleChatMessage(data) {
     scrollToBottom();
   }
 
-export function handleAssistantStart(data) {
+export function handleAssistantStart(data: any) {
     hideWelcome();
     removeWorkingIndicator();
 
@@ -371,7 +371,7 @@ export function handleAssistantStart(data) {
     scrollToBottom();
   }
 
-export function handleAssistantEnd(data) {
+export function handleAssistantEnd(data: any) {
     // Finalize the assistant message
     if (state.currentAssistantEl) {
       // Flush any pending batched renders before finalizing
@@ -405,9 +405,9 @@ export function handleAssistantEnd(data) {
           addErrorToElement(state.currentAssistantEl, data.errorMessage || "Operation aborted");
           // Mark any pending tool blocks as errored
           if (data.toolCalls) {
-            data.toolCalls.forEach(function (tcId) {
-              var entry = state.currentToolBlocks[tcId];
-              var block = entry ? (entry.el || entry) : null;
+            data.toolCalls.forEach(function (tcId: string) {
+              var entry = state.currentToolBlocks[tcId as string];
+              var block = entry ? ((entry as any).el || entry) : null;
               if (block) {
                 var statusEl = block.querySelector(".tool-status");
                 if (statusEl) {
@@ -415,7 +415,7 @@ export function handleAssistantEnd(data) {
                   statusEl.className = "tool-status error";
                 }
                 block.setAttribute("data-status", "error");
-                delete state.currentToolBlocks[tcId];
+                delete state.currentToolBlocks[tcId as string];
               }
             });
           }
@@ -436,7 +436,7 @@ export function handleAssistantEnd(data) {
   // all prior completed blocks are untouched. This avoids O(n²)
   // full-content re-renders during streaming.
 
-export function _scheduleStreamRender(contentEl) {
+export function _scheduleStreamRender(contentEl: HTMLElement) {
     if (state._streamRafId) {return;}
     state._streamContentEl = contentEl;
     state._streamRafId = requestAnimationFrame(function () {
@@ -508,7 +508,7 @@ export function _flushStreamRender() {
     }
   }
 
-export function handleStreamDelta(data) {
+export function handleStreamDelta(data: any) {
     hideWelcome();
     if (!state.currentAssistantEl) {
       // Safety: create container if assistant-start was missed
@@ -535,7 +535,7 @@ export function handleStreamDelta(data) {
   // Uses textContent (no HTML parse) for efficiency, batched
   // per animation frame like stream deltas.
 
-export function _scheduleThinkingRender(el) {
+export function _scheduleThinkingRender(el: HTMLElement) {
     if (state._thinkingRafId) {return;}
     state._thinkingEl = el;
     state._thinkingRafId = requestAnimationFrame(function () {
@@ -543,7 +543,7 @@ export function _scheduleThinkingRender(el) {
       if (!state._thinkingEl) {return;}
       var el = state._thinkingEl;
       state._thinkingEl = null;
-      var tb = el._component;
+      var tb = el._component as any;
       if (tb) {
         tb.update({ content: tb._rawText || "" });
         tb.scrollToBottom();
@@ -559,7 +559,7 @@ export function _flushThinkingRender() {
       if (state._thinkingEl) {
         var el = state._thinkingEl;
         state._thinkingEl = null;
-        var tb = el._component;
+        var tb = el._component as any;
         if (tb) {
           tb.update({ content: tb._rawText || "" });
         }
@@ -567,12 +567,12 @@ export function _flushThinkingRender() {
     }
   }
 
-export function handleThinkingDelta(data) {
+export function handleThinkingDelta(data: any) {
     if (data.done) {
       _flushThinkingRender();
       // Finalize: update component with done=true (removes spinner, sets button)
       if (state.currentThinkingEl && state.currentThinkingEl._component) {
-        var tb = state.currentThinkingEl._component;
+        var tb = state.currentThinkingEl._component as any;
         tb.update({ content: tb._rawText || "", done: true });
       }
       return;
@@ -587,7 +587,7 @@ export function handleThinkingDelta(data) {
     var el = state.currentThinkingEl;
     if (el && el._component) {
       // Accumulate raw text, render once per frame via the component
-      var tb = el._component;
+      var tb = el._component as any;
       tb._rawText = (tb._rawText || "") + data.delta;
       _scheduleThinkingRender(el);
     }
@@ -604,12 +604,12 @@ let sbThinking = document.getElementById("pi-sb-thinking");
 let sbEffort = document.getElementById("pi-sb-effort");
 let sbUsage = document.getElementById("pi-sb-usage");
 
-export function setSbDot(state) {
+export function setSbDot(state: string) {
     if (!sbDot) {return;}
     sbDot.textContent = state === "streaming" ? "\u25CF" : "\u25CB";
   }
 
-export function sbModelText(modelId) {
+export function sbModelText(modelId: string) {
     var short = modelId || "Pi";
     // Shorten known prefixes for compact display
     if (short.startsWith("anthropic/")) {short = short.slice(10);}
@@ -619,7 +619,7 @@ export function sbModelText(modelId) {
     return "\u03C0 " + short;
   }
 
-export function handleStatusUpdate(data) {
+export function handleStatusUpdate(data: any) {
     if (data.reset) {return;}
 
     if (sbModel && data.model) {
@@ -643,7 +643,7 @@ export function handleStatusUpdate(data) {
     setSbDot(data.state.isStreaming ? "streaming" : "idle");
   }
 
-export function handleStatus(data) {
+export function handleStatus(data: any) {
     if (data.ready) {
       state.promptInput.disabled = false;
       state.sendButton.disabled = false;
@@ -665,14 +665,14 @@ export function handleStatus(data) {
     }
   }
 
-export function handleBatchStart(data) {
+export function handleBatchStart(data: any) {
     state._inBatch = true;
     // If restoring history, hide state.welcome immediately — no flash
     if (data.hasEntries) { hideWelcome(); }
     document.body.classList.add("no-animate");
   }
 
-export function handleBatchEnd(data) {
+export function handleBatchEnd(data: any) {
     state._inBatch = false;
     document.body.classList.remove("no-animate");
     // Force-scroll to bottom after batch replay.  Triple-rAF ensures
@@ -693,7 +693,7 @@ export function handleBatchEnd(data) {
     });
   }
 
-export function handleQueueUpdate(data) {
+export function handleQueueUpdate(data: any) {
     // Track for /debug inspection
     (window.__piDebug._queueEvents = window.__piDebug._queueEvents || []).push({
       ts: Date.now(),
@@ -717,14 +717,14 @@ export function handleQueueUpdate(data) {
     var result = "";
 
     // Steering messages — already interrupting, show with label
-    steering.forEach(function (m) {
+    steering.forEach(function (m: any) {
       result += html`<div class="queue-row">
         <span class="queue-label">Steer:</span>
         <span class="queue-text">${m}</span></div>`;
     });
 
     // Follow-up messages — queued, with promote button
-    followUp.forEach(function (m, i) {
+    followUp.forEach(function (m: any, i: number) {
       result += html`<div class="queue-row">
         <span class="queue-label">Queue:</span>
         <span class="queue-text">${m}</span>
@@ -742,7 +742,7 @@ export function handleQueueUpdate(data) {
     // Wire promote buttons
     el.querySelectorAll(".queue-promote-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        var idx = parseInt(btn.getAttribute("data-idx"), 10);
+        var idx = parseInt(btn.getAttribute("data-idx") || "0", 10);
         var msg = (data.followUp || [])[idx];
         if (msg) {
           // Promote: clear all queues, then re-steer this message
@@ -765,14 +765,14 @@ export function handleQueueUpdate(data) {
     }
   }
 
-export function handleCompactionStart(data) {
+export function handleCompactionStart(data: any) {
     state.isCompacting = true;
     removeCompactionIndicator();
     addCompactionIndicator(data.reason === "manual" ? "Compacting..." : "Auto-compacting...");
     updateStreamingState();
   }
 
-export function handleCompactionEnd(data) {
+export function handleCompactionEnd(data: any) {
     state.isCompacting = false;
     removeCompactionIndicator();
     if (data.aborted) {
@@ -785,14 +785,14 @@ export function handleCompactionEnd(data) {
     updateStreamingState();
   }
 
-export function handleAutoRetryStart(data) {
+export function handleAutoRetryStart(data: any) {
     state.isRetrying = true;
     removeRetryIndicator();
     addRetryIndicator(data.attempt, data.maxAttempts, data.delayMs);
     updateStreamingState();
   }
 
-export function handleAutoRetryEnd(data) {
+export function handleAutoRetryEnd(data: any) {
     state.isRetrying = false;
     removeRetryIndicator();
     if (!data.success) {
@@ -801,7 +801,7 @@ export function handleAutoRetryEnd(data) {
     updateStreamingState();
   }
 
-export function handleThinkingLevelChanged(data) {
+export function handleThinkingLevelChanged(data: any) {
     if (sbThinking && data.level) {
       sbThinking.textContent = "thinking: " + data.level;
     }
@@ -809,7 +809,7 @@ export function handleThinkingLevelChanged(data) {
 
   // ═══ Error Handling ════════════════════════════════════
 
-export function handleError(data) {
+export function handleError(data: any) {
     hideWelcome();
     removeWorkingIndicator();
     removeCompactionIndicator();
@@ -830,7 +830,7 @@ export function handleError(data) {
   // ═══ UI Helpers — Indicators ═══════════════════════════
   // ═══ UI Helpers — Indicators ═══════════════════════════
 
-export function addWorkingIndicator() {
+export function addWorkingIndicator(): void {
     var existing = document.getElementById("working-indicator");
     if (existing) {return;}
     var el = document.createElement("div");
@@ -851,7 +851,7 @@ export function addWorkingIndicator() {
     }, 300);
   }
 
-export function removeWorkingIndicator() {
+export function removeWorkingIndicator(): void {
     var el = document.getElementById("working-indicator");
     if (el) {
       if (el._spinnerInterval) {clearInterval(el._spinnerInterval);}
@@ -859,7 +859,7 @@ export function removeWorkingIndicator() {
     }
   }
 
-export function addCompactionIndicator(message) {
+export function addCompactionIndicator(message: string) {
     var existing = document.getElementById("compaction-indicator");
     if (existing) {existing.remove();}
     var el = document.createElement("div");
@@ -889,7 +889,7 @@ export function removeCompactionIndicator() {
     }
   }
 
-export function addRetryIndicator(attempt, maxAttempts, delayMs) {
+export function addRetryIndicator(attempt: number, maxAttempts: number, delayMs: number) {
     var existing = document.getElementById("retry-indicator");
     if (existing) {existing.remove();}
     var el = document.createElement("div");
@@ -933,7 +933,7 @@ export function removeRetryIndicator() {
   // ═══ UI Helpers — Chat additions ═══════════════════════
   // ═══ UI Helpers — Chat additions ═══════════════════════
 
-export function addStatusMessage(message) {
+export function addStatusMessage(message: string) {
     var el = document.createElement("div");
     el.className = "message assistant";
     el.innerHTML = html`<div class="message-content muted">${message}</div>`;
@@ -987,7 +987,7 @@ export function showQuickstartGuide() {
     state.chatContainer.appendChild(el);
   }
 
-export function addErrorMessage(message) {
+export function addErrorMessage(message: string) {
     var el = document.createElement("div");
     el.className = "message assistant";
 
@@ -1027,7 +1027,7 @@ export function addErrorMessage(message) {
     scrollToBottom();
   }
 
-export function addErrorToElement(parentEl, message) {
+export function addErrorToElement(parentEl: HTMLElement, message: string) {
     if (!parentEl) {return;}
     var errorEl = document.createElement("div");
     errorEl.className = 'message-content error'; errorEl.style.cssText = 'margin-top: 8px; padding: 4px 0;';
@@ -1053,7 +1053,7 @@ export function clearAttachments() {
     renderAttachments();
   }
 
-export function removeAttachment(id) {
+export function removeAttachment(id: string) {
     var idx = state.attachments.findIndex(function (a) { return a.id === id; });
     if (idx === -1) {return;}
     var att = state.attachments[idx];
@@ -1062,7 +1062,7 @@ export function removeAttachment(id) {
     renderAttachments();
   }
 
-export function renderAttachments() {
+export function renderAttachments(): void {
     if (!state.attachmentBar) {return;}
 
     if (state.attachments.length === 0) {
@@ -1100,7 +1100,7 @@ export function renderAttachments() {
     // Delegate click events for remove buttons
     state.attachmentBar.querySelectorAll(".att-remove").forEach(function (btn) {
       btn.addEventListener("click", function (e) {
-        var id = e.target.getAttribute("data-att-id");
+        var id = (e.target as HTMLElement).getAttribute("data-att-id");
         if (id) {removeAttachment(id);}
       });
     });
@@ -1109,7 +1109,8 @@ export function renderAttachments() {
   // ── Paste handler ──────────────────────────────────────
 
   state.promptInput.addEventListener("paste", function (e) {
-    var items = e.clipboardData.items;
+    var items = e.clipboardData?.items;
+    if (!items) {return;}
     if (!items) {return;}
 
     var imageItems = [];
@@ -1128,7 +1129,7 @@ export function renderAttachments() {
     e.preventDefault();
 
     // Capture any text from the clipboard too
-    var pastedText = e.clipboardData.getData("text/plain") || "";
+    var pastedText = e.clipboardData?.getData("text/plain") || "";
 
     // Process image items
     for (var j = 0; j < imageItems.length; j++) {
@@ -1184,7 +1185,7 @@ export function renderAttachments() {
           reader.onload = function () {
             var att = state.attachments.find(function (a) { return a.id === attId; });
             if (att) {
-              att.data = reader.result;
+              att.data = reader.result as string;
             }
             renderAttachments();
           };
@@ -1214,7 +1215,7 @@ export function renderAttachments() {
 
   // ── Send prompt ───────────────────────────────────────
 
-export function sendPrompt() {
+export function sendPrompt(): void {
     console.log("[pi-gui] sendPrompt called");
     var text = state.promptInput.value.trim();
     if (!text && state.attachments.length === 0) {return;}
@@ -1334,7 +1335,7 @@ let sbSettings = document.getElementById("pi-sb-settings");
       window.__vscode.postMessage({ type: "openUrl", url: (target as HTMLAnchorElement).href });
     }
     // Close overlays when clicking outside (except the status bar gear)
-    if (state.settingsOpen && !state.settingsOverlay.contains(target) && target !== sbSettings && !sbSettings.contains(target)) {
+    if (state.settingsOpen && !state.settingsOverlay.contains(target) && target !== sbSettings && !sbSettings?.contains(target)) {
       closeAllOverlays();
     }
     if (state.userMsgSelectorOpen && !state.userMsgOverlay.contains(target) && target !== state.promptInput) {
@@ -1451,7 +1452,7 @@ let sbSettings = document.getElementById("pi-sb-settings");
     }
   });
 
-export function resizePromptInput() {
+export function resizePromptInput(): void {
     var maxHeight = 100;
     state.promptInput.style.height = "auto";
     var newHeight = Math.min(state.promptInput.scrollHeight, maxHeight);
@@ -1459,7 +1460,7 @@ export function resizePromptInput() {
     state.promptInput.style.overflowY = state.promptInput.scrollHeight > maxHeight ? "auto" : "hidden";
   }
 
-export function handleInsertCommand(command) {
+export function handleInsertCommand(command: string) {
     state.promptInput.value = command + " ";
     state.promptInput.focus();
     resizePromptInput();
@@ -1468,7 +1469,7 @@ export function handleInsertCommand(command) {
   // ═══ #1: Compaction Summary Message ═══════════════════════
   // ═══ #1: Compaction Summary Message ═══════════════════════
 
-export function handleCompactionSummaryMessage(data) {
+export function handleCompactionSummaryMessage(data: any) {
     hideWelcome();
     var el = document.createElement("div");
     el.className = "compaction-summary";
@@ -1483,12 +1484,12 @@ export function handleCompactionSummaryMessage(data) {
 
     // Wire toggle
     var toggle = document.getElementById(summaryId + "-toggle");
-    var content = document.getElementById(summaryId + "-content");
-    if (toggle && content) {
+    var contentEl2 = document.getElementById(summaryId + "-content");
+    if (toggle && contentEl2) {
       toggle.addEventListener("click", function () {
-        var visible = content.style.display !== "none";
-        content.style.display = visible ? "none" : "block";
-        toggle.textContent = visible ? "Compacted from " + tokenStr + " tokens (click to expand)" : "Compacted from " + tokenStr + " tokens";
+      var visible = contentEl2 && contentEl2.style.display !== "none";
+      if (contentEl2) { contentEl2.style.display = visible ? "none" : "block"; }
+      if (toggle) { toggle.textContent = visible ? "Compacted from " + tokenStr + " tokens (click to expand)" : "Compacted from " + tokenStr + " tokens"; }
       });
     }
     scrollToBottom();
@@ -1496,7 +1497,7 @@ export function handleCompactionSummaryMessage(data) {
 
   // ═══ #2: User Message Selector ════════════════════════════
 
-export function handleUserMessagesList(data) {
+export function handleUserMessagesList(data: any) {
     state.userMessageHistory = (data.messages || []).reverse();
   }
 
@@ -1518,8 +1519,8 @@ export function showUserMessageSelector() {
     // Click handlers
     var items = state.userMsgOverlay.querySelectorAll(".user-msg-item");
     items.forEach(function (item) {
-      item.addEventListener("click", function () {
-        var idx = parseInt(this.getAttribute("data-idx"), 10);
+      item.addEventListener("click", function (this: HTMLElement) {
+        var idx = parseInt(this.getAttribute("data-idx") || "0", 10);
         if (idx >= 0 && idx < state.userMessageHistory.length) {
           var text = state.userMessageHistory[idx].text;
           state.promptInput.value = text;
@@ -1533,7 +1534,7 @@ export function showUserMessageSelector() {
 
 export function highlightUserMsgItem() {
     var items = state.userMsgOverlay.querySelectorAll(".user-msg-item");
-    items.forEach(function (item, i) {
+    items.forEach(function (item: any, i: number) {
       if (i === state.userMsgSelectedIdx) {
         item.classList.add("selected");
         item.scrollIntoView({ block: "nearest" });
@@ -1551,14 +1552,14 @@ export function closeUserMsgSelector() {
 
   // ═══ #3: Settings Panel ═══════════════════════════════════
 
-export function handleSettingsUpdate(data) {
+export function handleSettingsUpdate(data: any) {
     if (data) {
       state.settingsState = data;
       renderSettingsPanel();
     }
   }
 
-export function handleScopedModelsUpdate(data) {
+export function handleScopedModelsUpdate(data: any) {
     if (data && data.models) {
       state.scopedModels = data.models;
       renderScopedModels();
@@ -1582,7 +1583,7 @@ export function renderSettingsPanel() {
 
     for (var i = 0; i < toggles.length; i++) {
       var t = toggles[i];
-      var on = state.settingsState[t.key];
+      var on = (state.settingsState as Record<string, boolean>)[t.key];
       result += html`
         <div class="settings-row">
           <span>${t.label}</span>
@@ -1635,18 +1636,18 @@ export function closeAllOverlays() {
  * cards in-place when the same customType reappears (polling).
  * Action buttons with data-command execute slash commands.
  */
-export function renderInlineCustomMessage(data) {
+export function renderInlineCustomMessage(data: any) {
     var customType = data.customType || "custom";
     var content = typeof data.content === "string"
       ? data.content
-      : (Array.isArray(data.content) ? data.content.filter(function (c) { return c.type === "text"; }).map(function (c) { return c.text; }).join("\n") : "");
+      : (Array.isArray(data.content) ? data.content.filter(function (c: any) { return c.type === "text"; }).map(function (c: any) { return c.text; }).join("\n") : "");
 
     // Check for existing card to update in-place (polling refresh)
     var existing = state.chatContainer.querySelector('[data-custom-type="' + customType + '"]');
     var renderer = getMessageRenderer(customType);
 
     if (existing) {
-      var existingIc = existing._component;
+      var existingIc = existing._component as any;
       if (existingIc) {
         existingIc.update({
           customType: customType,
@@ -1657,9 +1658,10 @@ export function renderInlineCustomMessage(data) {
         });
       } else if (renderer) {
         var body = existing.querySelector(".custom-message-body");
-        if (body) { body.innerHTML = ""; renderer(data, body, escapeHtml); }
+        var bodyEl = existing.querySelector(".custom-message-body") as HTMLElement;
+        if (bodyEl) { bodyEl.innerHTML = ""; renderer(data, bodyEl, escapeHtml); }
       } else {
-        existing.querySelector(".custom-message-body").innerHTML = renderMarkdown(content);
+        (existing.querySelector(".custom-message-body") as HTMLElement).innerHTML = renderMarkdown(content);
       }
       return;
     }
@@ -1674,11 +1676,11 @@ export function renderInlineCustomMessage(data) {
     });
     ic.el._component = ic; // attach for later updating
 
-    state.chatContainer.appendChild(ic.el);
+    state.chatContainer.appendChild(ic.el as HTMLElement);
     scrollToBottom();
   }
 
-export function handleCustomMessage(data) {
+export function handleCustomMessage(data: any) {
     hideWelcome();
     var customType = data.customType || "custom";
 
@@ -1694,7 +1696,7 @@ export function handleCustomMessage(data) {
       if (typeof data.content === "string") {
         infoContent = data.content;
       } else if (Array.isArray(data.content)) {
-        infoContent = data.content.filter(function (c) { return c.type === "text"; }).map(function (c) { return c.text; }).join("\n");
+        infoContent = data.content.filter(function (c: any) { return c.type === "text"; }).map(function (c: any) { return c.text; }).join("\n");
       }
       if (infoContent) {
         var infoEl = document.createElement("div");
@@ -1717,11 +1719,11 @@ export function handleCustomMessage(data) {
     defaultMessageRenderer(data);
   }
 
-export function dismissLiveCard(key) {
-    var card = state.liveCards[key];
+export function dismissLiveCard(key: string) {
+    var card = state.liveCards[key as string];
     if (card) {
       card.remove();
-      delete state.liveCards[key];
+      delete state.liveCards[key as string];
     }
     var widgetCard = state.widgetCards[key];
     if (widgetCard) {
@@ -1735,13 +1737,13 @@ export function dismissLiveCard(key) {
     }
   }
 
-export function clearLivePanel() {
+export function clearLivePanel(): void {
     // Only clear transient cards (non-widget cards).
     // Widget cards persist until the extension explicitly clears them.
     var toRemove = [];
     for (var key in state.liveCards) {
       if (state.liveCards.hasOwnProperty(key)) {
-        var card = state.liveCards[key];
+        var card = state.liveCards[key as string];
         if (card && card.getAttribute("data-widget") !== "true") {
           toRemove.push(key);
         }
@@ -1764,11 +1766,11 @@ export function clearLivePanel() {
 
 
 /** Bridge: extension host registers a renderer by source code. */
-export function handleRegisterMessageRenderer(data) {
+export function handleRegisterMessageRenderer(data: any) {
     if (!data.customType || !data.sourceCode) {return;}
     try {
       // CSP blocks eval().  Inject a <script nonce> tag instead.
-      var nonce = document.querySelector("script[nonce]")?.getAttribute("nonce");
+      var nonce = (document.querySelector("script[nonce]") as HTMLScriptElement | null)?.getAttribute("nonce");
       if (!nonce) {
         console.warn("[pi-gui] Cannot register renderer: no CSP nonce found");
         return;
@@ -1791,7 +1793,7 @@ export function handleRegisterMessageRenderer(data) {
     }
   }
 
-export function handleWidgetUpdate(data) {
+export function handleWidgetUpdate(data: any) {
     if (!data || !data.key) {return;}
 
     var key = data.key;
@@ -1811,7 +1813,7 @@ export function handleWidgetUpdate(data) {
         delete state.widgetCards[key];
       }
       // Also remove from state.liveCards
-      delete state.liveCards[key];
+      delete state.liveCards[key as string];
       // Hide panel if empty
       var remaining = state.livePanel.querySelectorAll(".live-card");
       if (remaining.length === 0) {
@@ -1823,7 +1825,7 @@ export function handleWidgetUpdate(data) {
     // Create or update widget card
     var card = state.widgetCards[key];
     if (card) {
-      card.querySelector(".live-card-content").innerHTML = renderMarkdown(content);
+      (card as HTMLElement).querySelector(".live-card-content")!.innerHTML = renderMarkdown(content);
     } else {
       card = document.createElement("div");
       card.className = "live-card";
@@ -1833,29 +1835,29 @@ export function handleWidgetUpdate(data) {
         <div class="live-card-label">${key}</div>
         <button class="live-card-close" title="Dismiss">&times;</button>
         <div class="live-card-content">${safe(renderMarkdown(content))}</div>`;
-      card.querySelector(".live-card-close").addEventListener("click", function () {
+      (card as HTMLElement).querySelector(".live-card-close")!.addEventListener("click", function () {
         dismissLiveCard(key);
       });
       state.livePanel.appendChild(card);
       state.widgetCards[key] = card;
-      state.liveCards[key] = card;
+      state.liveCards[key as string] = card;
     }
     state.livePanel.classList.add("visible");
   }
 
 /** Render a status-* widget as an inline indicator in the status bar. */
-export function handleStatusWidget(key, content) {
+export function handleStatusWidget(key: string, content: string | null) {
     var statusBar = document.getElementById("pi-extension-status");
     if (!statusBar) {return;}
 
     if (content === null || content === undefined) {
       // Remove status indicator
       var existingStatus = statusBar.querySelector('[data-status-key="' + key + '"]');
-      if (existingStatus) {existingStatus.remove();}
+      if (existingStatus) {(existingStatus as HTMLElement).remove();}
       // Also clean up any legacy live-card
       var legacy = state.widgetCards[key];
-      if (legacy) {legacy.remove(); delete state.widgetCards[key];}
-      delete state.liveCards[key];
+      if (legacy) {(legacy as HTMLElement).remove(); delete state.widgetCards[key];}
+      delete state.liveCards[key as string];
       return;
     }
 
@@ -1878,8 +1880,8 @@ export function handleStatusWidget(key, content) {
 
     // Clean up any legacy live-card
     var legacy = state.widgetCards[key];
-    if (legacy) {legacy.remove(); delete state.widgetCards[key];}
-    delete state.liveCards[key];
+    if (legacy) {(legacy as HTMLElement).remove(); delete state.widgetCards[key];}
+    delete state.liveCards[key as string];
   }
 
 export function clearWidgetCards() {
@@ -1893,7 +1895,7 @@ export function clearWidgetCards() {
 
   // ═══ Interactive Dialog Bridge ═══════════════════════════
 
-export function handleShowDialog(data) {
+export function handleShowDialog(data: any) {
     if (!data || !data.id) {return;}
     var dlg = new Dialog({
       dialogType: data.dialogType || "confirm",
@@ -1921,8 +1923,8 @@ export function handleShowDialog(data) {
 
   // Full slash command list (builtins + extensions, with extensions first for dedup)
 export function getSlashCommands() {
-    var all = [];
-    var seen = {};
+    var all: Array<{ cmd: string; desc: string }> = [];
+    var seen: Record<string, boolean> = {};
     // Extensions come first so they take precedence
     state.extensionSlashCommands.forEach(function (sc) {
       seen[sc.cmd] = true;
@@ -1938,7 +1940,7 @@ export function getSlashCommands() {
 
   // Slash commands that should be handled locally (not sent to LLM)
 
-export function handleSlashCommandsUpdate(data) {
+export function handleSlashCommandsUpdate(data: any) {
     if (data && data.commands && Array.isArray(data.commands)) {
       state.extensionSlashCommands = data.commands;
       // Re-filter autocomplete if it's currently open
@@ -1948,7 +1950,7 @@ export function handleSlashCommandsUpdate(data) {
     }
   }
 
-export function updateSlashAutocomplete(filter) {
+export function updateSlashAutocomplete(filter: string) {
     if (!filter || filter.length === 0) {
       state.slashAutocomplete.classList.remove("visible");
       state.slashAutocompleteOpen = false;
@@ -1979,7 +1981,7 @@ export function updateSlashAutocomplete(filter) {
     // Wire click handlers
     var items = state.slashAutocomplete.querySelectorAll(".slash-item");
     items.forEach(function (item) {
-      item.addEventListener("click", function () {
+      item.addEventListener("click", function (this: HTMLElement) {
         var cmd = item.getAttribute("data-cmd");
         if (cmd) {
           state.promptInput.value = cmd + " ";
@@ -1995,9 +1997,9 @@ export function updateSlashAutocomplete(filter) {
   // ═══ #9: Scroll-to-entry ═══════════════════════════════════
   // ═══ #9: Scroll-to-entry ═══════════════════════════════════
 
-export function handleRevealEntry(entryId, toolCallId) {
+export function handleRevealEntry(entryId: string, toolCallId: string) {
     if (!entryId && !toolCallId) {return;}
-    var el = null;
+    var el: HTMLElement | null = null;
 
     // Strategy 1: exact ID match (entry-{id}, tool-{id}, bash-{id})
     if (entryId) {
@@ -2038,15 +2040,15 @@ export function handleRevealEntry(entryId, toolCallId) {
 
     if (!el) {return;}
 
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.style.transition = "background 0.2s, box-shadow 0.2s";
-    el.style.background = "var(--vscode-list-hoverBackground)";
-    el.style.boxShadow = "0 0 0 2px var(--vscode-focusBorder)";
-    el.style.borderRadius = "4px";
+    (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+    (el as HTMLElement).style.transition = "background 0.2s, box-shadow 0.2s";
+    (el as HTMLElement).style.background = "var(--vscode-list-hoverBackground)";
+    (el as HTMLElement).style.boxShadow = "0 0 0 2px var(--vscode-focusBorder)";
+    (el as HTMLElement).style.borderRadius = "4px";
     setTimeout(function () {
-      el.style.background = "";
-      el.style.boxShadow = "";
-      el.style.borderRadius = "";
+      (el as HTMLElement).style.background = "";
+      (el as HTMLElement).style.boxShadow = "";
+      (el as HTMLElement).style.borderRadius = "";
     }, 2500);
   }
 
@@ -2057,10 +2059,10 @@ export function handleRevealEntry(entryId, toolCallId) {
   // with the extension host's bash-* event stream.  They delegate
   // to the bash tool renderer registered in the tool renderer registry.
 
-export function handleBashStart(data) {
+export function handleBashStart(data: Record<string, unknown>) {
     // Stop thinking spinner — bash execution means thinking is done
     if (state.currentThinkingEl) {
-      var _tb3 = state.currentThinkingEl._component;
+      var _tb3 = state.currentThinkingEl._component as any;
       if (_tb3) {
         _tb3.update({ content: _tb3._rawText || "", done: true });
       } else {
@@ -2072,61 +2074,61 @@ export function handleBashStart(data) {
     var callId = data.toolCallId;
 
     // DEDUP: If tool-start already created a block for this callId, don't create a second.
-    if (state.currentToolBlocks[callId]) {
-      var entry = state.currentToolBlocks[callId];
-      state.bashBlocks[callId] = entry.el || entry;
-      state.bashOutputs[callId] = state.bashOutputs[callId] || "";
+    if (state.currentToolBlocks[callId as string]) {
+      var entry = state.currentToolBlocks[callId as string];
+      state.bashBlocks[callId as string] = (entry as any).el || entry;
+      state.bashOutputs[callId as string] = state.bashOutputs[callId as string] || "";
       return;
     }
-    if (state.bashBlocks[callId]) {return;}
+    if (state.bashBlocks[callId as string]) {return;}
 
     var block = bashToolRenderer.create({
       toolName: "bash",
-      toolCallId: callId,
+      toolCallId: callId as string,
       args: { command: data.command || "" },
-      entryId: data.entryId,
+      entryId: data.entryId as string,
       fromMessage: false,
     });
-    state.chatContainer.appendChild(block);
-    state.bashBlocks[callId] = block;
-    state.bashOutputs[callId] = "";
+    state.chatContainer.appendChild(block as HTMLElement);
+    state.bashBlocks[callId as string] = block;
+    state.bashOutputs[callId as string] = "";
     state.chatContainer.scrollTop = state.chatContainer.scrollHeight;
     scrollToBottom();
   }
 
-export function handleBashOutput(data) {
+export function handleBashOutput(data: Record<string, unknown>) {
     var callId = data.toolCallId;
-    var block = state.bashBlocks[callId];
+    var block = state.bashBlocks[callId as string];
     if (!block) {
-      var entry = state.currentToolBlocks[callId];
-      block = entry ? (entry.el || entry) : null;
+      var entry = state.currentToolBlocks[callId as string];
+      block = entry ? ((entry as any).el || entry) : null;
       if (!block) {return;}
     }
-    state.bashOutputs[callId] = (state.bashOutputs[callId] || "") + (data.output || "");
+    state.bashOutputs[callId as string] = (state.bashOutputs[callId as string] || "") + (data.output || "");
     var outEl = block.querySelector(".bash-output");
     if (outEl) {
-      morphRender(outEl, escapeHtml(state.bashOutputs[callId]));
+      morphRender(outEl, escapeHtml(state.bashOutputs[callId as string]));
       outEl.scrollTop = outEl.scrollHeight;
     }
     scrollToBottom();
   }
 
-export function handleBashEnd(data) {
+export function handleBashEnd(data: Record<string, unknown>) {
     var callId = data.toolCallId;
-    var block = state.bashBlocks[callId];
+    var block = state.bashBlocks[callId as string];
     if (!block) {
-      var entry = state.currentToolBlocks[callId];
-      block = entry ? (entry.el || entry) : null;
+      var entry = state.currentToolBlocks[callId as string];
+      block = entry ? ((entry as any).el || entry) : null;
       if (!block) {return;}
     }
     var result = {
       content: data.output ? [{ type: "text", text: data.output }] : [],
       details: { exitCode: data.exitCode, cancelled: data.cancelled },
     };
-    bashToolRenderer.finalize(block, result, data.isError, data.entryId);
-    delete state.currentToolBlocks[callId];
-    delete state.bashBlocks[callId];
-    delete state.bashOutputs[callId];
+    bashToolRenderer.finalize(block as any, result as any, data.isError as boolean, data.entryId as any);
+    delete state.currentToolBlocks[callId as string];
+    delete state.bashBlocks[callId as string];
+    delete state.bashOutputs[callId as string];
     scrollToBottom();
   }
 
@@ -2144,7 +2146,7 @@ export function handleBashEnd(data) {
   //
   // Also dumps the same data to console.log for DevTools inspection.
 
-export function handleDebugCommand() {
+export function handleDebugCommand(): void {
     hideWelcome();
     var summary = window.__piDebug.summary() as { chat: any; dupes: string[]; orphanBash: string[]; orphanTool: string[]; lastEvents: any[]; lastDomChanges: any[] };
 
@@ -2225,16 +2227,16 @@ export function handleDebugCommand() {
 
     // Wire Copy All button
     var copyBtn = el.querySelector(".debug-copy-all-btn");
-    if (copyBtn) {
+    if (copyBtn!) {
       copyBtn.addEventListener("click", function (e) {
         e.preventDefault();
         e.stopPropagation(); // don't toggle the details element
         navigator.clipboard.writeText(copyText).then(function () {
-          copyBtn.textContent = "✓ Copied!";
-          setTimeout(function () { copyBtn.textContent = "📋 Copy All"; }, 2000);
+          copyBtn!.textContent = "✓ Copied!";
+          setTimeout(function () { copyBtn!.textContent = "📋 Copy All"; }, 2000);
         }, function () {
-          copyBtn.textContent = "✗ Failed";
-          setTimeout(function () { copyBtn.textContent = "📋 Copy All"; }, 2000);
+          copyBtn!.textContent = "✗ Failed";
+          setTimeout(function () { copyBtn!.textContent = "📋 Copy All"; }, 2000);
         });
       });
     }

@@ -7,15 +7,27 @@ declare function acquireVsCodeApi(): {
   setState(state: unknown): void;
 };
 
+// Override querySelector to return HTMLElement instead of Element.
+// In the webview, all querySelector results are HTML elements.
+interface ParentNode {
+  querySelector<E extends HTMLElement = HTMLElement>(selectors: string): E | null;
+  querySelectorAll<E extends HTMLElement = HTMLElement>(selectors: string): NodeListOf<E>;
+}
+
+interface Element {
+  querySelector<E extends HTMLElement = HTMLElement>(selectors: string): E | null;
+  querySelectorAll<E extends HTMLElement = HTMLElement>(selectors: string): NodeListOf<E>;
+}
+
 // External libraries loaded as globals
-declare var marked: {
+declare let marked: {
   parse(text: string): string;
   lexer(text: string): Array<{ type: string; raw: string; [key: string]: unknown }>;
   setOptions(opts: Record<string, unknown>): void;
 };
-declare var morphdom: (
+declare let morphdom: (
   from: Node,
-  to: Node,
+  to: Node | string,
   opts?: { childrenOnly?: boolean },
 ) => void;
 
@@ -28,7 +40,7 @@ interface Window {
     domLog(n?: number): unknown[];
     bashBlocks(): unknown[];
     toolBlocks(): unknown[];
-    summary(): unknown;
+    summary(): Record<string, unknown>;
     _queueEvents?: unknown[];
   };
   __piRegisterToolRenderer?: (name: string, renderer: unknown) => void;
@@ -37,15 +49,86 @@ interface Window {
     renderer: (data: unknown, ...args: unknown[]) => void,
   ) => void;
   __vscode: ReturnType<typeof acquireVsCodeApi>;
+  morphdom: typeof morphdom;
 }
 
-// Allow custom properties on HTMLElement
+// Event data shape (from extension host to webview)
+interface WebviewEventData {
+  [key: string]: unknown;
+  message?: string;
+  error?: string;
+  content?: string;
+  display?: boolean;
+  details?: Record<string, unknown>;
+  role?: string;
+  entryId?: string;
+  delta?: string;
+  done?: boolean;
+  toolCallId?: string;
+  toolName?: string;
+  args?: Record<string, unknown>;
+  partialResult?: { content?: Array<{ type: string; text: string }> };
+  result?: {
+    content?: Array<{ type: string; text: string }>;
+    details?: {
+      truncation?: {
+        truncated: boolean;
+        truncatedBy?: string;
+        totalLines: number;
+        outputLines: number;
+        outputBytes: number;
+        maxBytes?: number;
+        maxLines?: number;
+        firstLineExceedsLimit?: boolean;
+      };
+    };
+  };
+  isError?: boolean;
+  command?: string;
+  reason?: string;
+  aborted?: boolean;
+  willRetry?: boolean;
+  errorMessage?: string;
+  success?: boolean;
+  finalError?: string;
+  attempt?: number;
+  maxAttempts?: number;
+  delayMs?: number;
+  steering?: string[];
+  followUp?: string[];
+  level?: string;
+  messages?: Array<{ text: string }>;
+  commands?: Array<{ cmd: string; desc: string }>;
+  customType?: string;
+  timestamp?: number;
+  key?: string;
+  dialogType?: string;
+  id?: string;
+  prompt?: string;
+  options?: string[];
+  defaultValue?: string;
+  hasEntries?: boolean;
+  sourceCode?: string;
+  output?: string;
+  exitCode?: number;
+  cancelled?: boolean;
+  stopReason?: string;
+  toolCalls?: string[];
+  summary?: string;
+  tokensBefore?: number;
+}
+
+// Allow dynamic properties on HTMLElement for component state
 interface HTMLElement {
+  _component?: unknown;
+  _rawText?: string;
+  _toolBlock?: unknown;
   _writeState?: { content: string; lang?: string; rawPath?: string };
   _writePending?: string;
   _writeRafId?: number;
   _editEdits?: unknown[];
-  _readState?: { rawPath: string; lang?: string; compact?: unknown };
+  _editLang?: string;
+  _readState?: { rawPath: string; lang?: string; compact?: unknown; offset?: number };
   _readCollapseState?: {
     previewText: string;
     fullText: string;
@@ -56,4 +139,8 @@ interface HTMLElement {
   };
   _spinnerInterval?: ReturnType<typeof setInterval>;
   _countdownInterval?: ReturnType<typeof setInterval>;
+  _pendingUpdate?: string;
+  _pendingBashRender?: string;
+  _cachedContent?: string;
+  _baselineText?: string;
 }

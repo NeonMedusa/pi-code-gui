@@ -10,6 +10,22 @@ import {
 import { highlightCode } from "../highlight.js";
 import { html, safe } from "../render/html.js";
 import { ToolBlock } from "../components/tool-block.js";
+
+// ── Tool data shapes ─────────────────────────────────────────
+type ToolData = Record<string, unknown> & {
+  toolCallId: string;
+  toolName: string;
+  entryId?: string;
+  args?: Record<string, unknown>;
+  fromMessage?: boolean;
+};
+type ToolPartialResult = { content?: Array<{ type: string; text: string }> };
+type ToolResult = {
+  content?: Array<{ type: string; text: string }>;
+  details?: Record<string, unknown>;
+  text?: string;
+};
+type ToolEl = HTMLElement;
 import { CodeBlock } from "../components/code-block.js";
 
 
@@ -23,59 +39,59 @@ import { CodeBlock } from "../components/code-block.js";
   // error output (matching the pi TUI behaviour).
 
 export const writeToolRenderer = {
-    create: function (data) {
+    create: function (data: ToolData): ToolEl {
       hideWelcome();
       var rawPath = data.args && (data.args.path || data.args.file_path || data.args.filePath);
       var fileContent = data.args && data.args.content;
-      var lang = rawPath ? getLangFromPath(rawPath) : undefined;
+      var lang = rawPath ? getLangFromPath(rawPath as string) : undefined;
 
       var tb = new ToolBlock({
         toolName: "write",
         toolCallId: data.toolCallId,
         entryId: data.entryId,
-        filePath: rawPath || undefined,
+        filePath: (rawPath as string) || undefined,
         status: "running",
       });
-      var block = tb.el;
-      block._toolBlock = tb; // attach component for update/finalize
-      block._writeState = { lang: lang, content: "", rawPath: rawPath };
+      var block = tb.el as unknown as ToolEl;
+      (block as any)._toolBlock = tb; // attach component for update/finalize
+      (block as any)._writeState = { lang: lang, content: "", rawPath: rawPath };
 
       if (typeof fileContent === "string" && fileContent) {
-        block._writeState.content = fileContent;
+        (block as any)._writeState!.content = fileContent;
         renderWriteContentBlock(block);
       }
 
       return block;
     },
-    update: function (el, partialResult) {
+    update: function (el: ToolEl, partialResult: ToolPartialResult) {
       if (!partialResult || !partialResult.content) {return;}
       var text = partialResult.content
-        .filter(function (c) { return c.type === "text"; })
-        .map(function (c) { return c.text; })
+        .filter(function (c: { type: string; text: string }) { return c.type === "text"; })
+        .map(function (c: { type: string; text: string }) { return c.text; })
         .join("\n");
       if (!text) {return;}
 
       // rAF-batched: accumulate latest args JSON, flush once per frame.
       // Prevents bursty re-renders when write-tool args stream token by token.
-      el._writePending = text;
-      if (!el._writeRafId) {
-        el._writeRafId = requestAnimationFrame(function () {
-          el._writeRafId = null;
-          if (el._writePending) {
-            processWriteUpdate(el, el._writePending);
-            el._writePending = null;
+      (el as any)._writePending = text;
+      if (!(el as any)._writeRafId) {
+        (el as any)._writeRafId = requestAnimationFrame(function () {
+          (el as any)._writeRafId = null;
+          if ((el as any)._writePending) {
+            processWriteUpdate(el, (el as any)._writePending);
+            (el as any)._writePending = null;
           }
         });
       }
     },
-    finalize: function (el, result, isError, entryId) {
+    finalize: function (el: ToolEl, result: ToolResult, isError: boolean, entryId?: string) {
       // Flush any pending rAF render
-      if (el._writeRafId) { cancelAnimationFrame(el._writeRafId); el._writeRafId = null; }
-      if (el._writePending) { processWriteUpdate(el, el._writePending); el._writePending = null; }
+      if ((el as any)._writeRafId) { cancelAnimationFrame((el as any)._writeRafId); (el as any)._writeRafId = null; }
+      if ((el as any)._writePending) { processWriteUpdate(el, (el as any)._writePending); (el as any)._writePending = null; }
 
-      var tb = el._toolBlock;
+      var tb = (el as any)._toolBlock;
       if (tb) {
-        tb.update({ status: isError ? "error" : "done", entryId: entryId });
+        (tb as any).update({ status: isError ? "error" : "done", entryId: entryId });
       } else {
         var statusEl = el.querySelector(".tool-status");
         if (statusEl) {
@@ -96,10 +112,10 @@ export const writeToolRenderer = {
       // Only show error output (matching TUI: result hidden on success)
       if (isError && result && result.content) {
         var errorText = result.content
-          .filter(function (c) { return c.type === "text"; })
-          .map(function (c) { return c.text; })
+          .filter(function (c: { type: string; text: string }) { return c.type === "text"; })
+          .map(function (c: { type: string; text: string }) { return c.text; })
           .join("\n");
-        var tr = tb ? tb.getResultEl() : el.querySelector(".tool-result");
+        var tr = tb ? (tb as any).getResultEl() : el.querySelector(".tool-result");
         if (tr && errorText) {
           tr.innerHTML = html`<div style="color:var(--vscode-errorForeground);margin-top:6px;white-space:pre-wrap;font-size:0.85em;">${formatToolError(errorText, "write")}</div>`;
         }
@@ -108,16 +124,16 @@ export const writeToolRenderer = {
   };
 
   /** Process a write tool update from streaming JSON args. */
-export function processWriteUpdate(el, text) {
+export function processWriteUpdate(el: ToolEl, text: string) {
     try {
       var args = JSON.parse(text);
       if (args.content && typeof args.content === "string") {
-        el._writeState.content = args.content;
+        (el as any)._writeState.content = args.content;
         renderWriteContentBlock(el);
       }
       if (args.path) {
-        el._writeState.rawPath = args.path;
-        el._writeState.lang = getLangFromPath(args.path);
+        (el as any)._writeState!.rawPath = args.path;
+        (el as any)._writeState.lang = getLangFromPath(args.path);
         var pathEl = el.querySelector(".tool-path");
         if (pathEl) {pathEl.textContent = args.path;}
       }
@@ -126,17 +142,17 @@ export function processWriteUpdate(el, text) {
       // Expected during streaming; only log if it persists (not a real error).
       var match = text.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
       if (match) {
-        el._writeState.content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+        (el as any)._writeState!.content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "\t");
         renderWriteContentBlock(el);
       }
     }
   }
 
   /** Update the .tool-content area of a write block with highlighted file content. */
-export function renderWriteContentBlock(el) {
+export function renderWriteContentBlock(el: ToolEl) {
     var tc = el.querySelector(".tool-content");
     if (!tc) {return;}
-    var writeState = el._writeState || {};
+    var writeState: any = (el as any)._writeState || {};
     var content = writeState.content || "";
     var lang = writeState.lang;
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
@@ -144,15 +160,15 @@ export function renderWriteContentBlock(el) {
     // Fixed-size scrollable container — same height active and done.
     // The code block is rendered at full natural height inside a scroll-view
     // that caps the visible area.  Auto-scrolls to bottom during streaming.
-    var scrollView = tc.querySelector(".tool-scroll-view");
+    var scrollView = tc!.querySelector(".tool-scroll-view");
     if (!scrollView) {
       tc.innerHTML = '<div class="tool-scroll-view" style="max-height:15rem;overflow-y:auto;"></div>';
       scrollView = tc.querySelector(".tool-scroll-view");
       var cbComp = new CodeBlock({ code: content, lang: lang, showHeader: true, showCopy: true });
-      cbComp.mount(scrollView);
+      cbComp.mount(scrollView!);
     } else {
       // Persist the .code-block so scroll state survives across renders
-      var cb = scrollView.querySelector(".code-block");
+      var cb = scrollView!.querySelector(".code-block");
       if (!cb) {
         scrollView.innerHTML = "";
         var newCb = new CodeBlock({ code: content, lang: lang, showHeader: true, showCopy: true });
@@ -170,7 +186,7 @@ export function renderWriteContentBlock(el) {
     }
 
     if (active) {
-      scrollView.scrollTop = scrollView.scrollHeight;
+      scrollView!.scrollTop = scrollView!.scrollHeight;
     }
   }
 
@@ -181,7 +197,7 @@ export function renderWriteContentBlock(el) {
   // actual computed diff when execution finishes.
 
 export const editToolRenderer = {
-    create: function (data) {
+    create: function (data: ToolData) {
       hideWelcome();
       var rawPath = data.args && (data.args.path || data.args.file_path || data.args.filePath);
       var edits = data.args && data.args.edits;
@@ -192,26 +208,26 @@ export const editToolRenderer = {
         toolName: "edit",
         toolCallId: data.toolCallId,
         entryId: data.entryId,
-        filePath: rawPath || undefined,
+        filePath: (rawPath as string) || undefined,
         status: "running",
         pathExtra: editLabel,
       });
-      var block = tb.el;
-      block._toolBlock = tb;
+      var block = tb.el as unknown as ToolEl;
+      (block as any)._toolBlock = tb;
 
       if (Array.isArray(edits) && edits.length > 0) {
         block._editEdits = edits;
-        block._editLang = rawPath ? getLangFromPath(rawPath) : undefined;
+        block._editLang = rawPath ? getLangFromPath(rawPath as string) : undefined;
         renderEditPreviews(block, edits);
       }
 
       return block;
     },
-    update: function (el, partialResult) {
+    update: function (el: ToolEl, partialResult: ToolPartialResult) {
       if (!partialResult || !partialResult.content) {return;}
       var text = partialResult.content
-        .filter(function (c) { return c.type === "text"; })
-        .map(function (c) { return c.text; })
+        .filter(function (c: { type: string; text: string }) { return c.type === "text"; })
+        .map(function (c: { type: string; text: string }) { return c.text; })
         .join("\n");
       if (!text) {return;}
 
@@ -219,7 +235,7 @@ export const editToolRenderer = {
         var args = JSON.parse(text);
         var edits = args.edits;
         if (Array.isArray(edits) && edits.length > 0) {
-          el._editEdits = edits;
+          (el as any)._editEdits = edits;
           // Update edit count in header
           var editLabel = edits.length > 1 ? " (" + edits.length + " edits)" : "";
           var pathEl = el.querySelector(".tool-path");
@@ -230,10 +246,10 @@ export const editToolRenderer = {
         // JSON incomplete during streaming — expected, not an error
       }
     },
-    finalize: function (el, result, isError, entryId) {
-      var tb = el._toolBlock;
+    finalize: function (el: ToolEl, result: ToolResult, isError: boolean, entryId?: string) {
+      var tb = (el as any)._toolBlock;
       if (tb) {
-        tb.update({ status: isError ? "error" : "done", entryId: entryId });
+        (tb as any).update({ status: isError ? "error" : "done", entryId: entryId });
       } else {
         var statusEl = el.querySelector(".tool-status");
         if (statusEl) {
@@ -247,13 +263,13 @@ export const editToolRenderer = {
       }
 
       // Re-render previews to collapse to max 3 now that streaming is done
-      if (el._editEdits) { renderEditPreviews(el, el._editEdits); }
+      if ((el as any)._editEdits) { renderEditPreviews(el as any, (el as any)._editEdits); }
 
       var text = "";
       if (result && result.content) {
         text = result.content
-          .filter(function (c) { return c.type === "text"; })
-          .map(function (c) { return c.text; })
+          .filter(function (c: { type: string; text: string }) { return c.type === "text"; })
+          .map(function (c: { type: string; text: string }) { return c.text; })
           .join("\n");
       }
       if (!text && result && typeof result.text === "string") {text = result.text;}
@@ -274,11 +290,11 @@ export const editToolRenderer = {
   };
 
   /** Render per-edit mini-diffs into the .tool-content of an edit block. */
-export function renderEditPreviews(el, edits) {
+export function renderEditPreviews(el: ToolEl, edits: Array<{ oldText: string; newText: string }>) {
     var tc = el.querySelector(".tool-content");
     if (!tc) {return;}
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
-    var lang = el._editLang;
+    var lang = (el as any)._editLang;
     // Build edit previews inline (no surrounding whitespace).
     var result = "";
 
@@ -296,19 +312,19 @@ export function renderEditPreviews(el, edits) {
     var needsScroll = edits.length > 3;
     var scrollStyle = needsScroll ? "max-height:15rem;overflow-y:auto;" : "";
 
-    var scrollView = tc.querySelector(".tool-scroll-view");
+    var scrollView = tc!.querySelector(".tool-scroll-view");
     if (!scrollView) {
       tc.innerHTML = html`<div class="tool-scroll-view" style="${scrollStyle}">${safe(result)}</div>`;
       scrollView = tc.querySelector(".tool-scroll-view");
     } else {
-      scrollView.setAttribute("style", scrollStyle);
+      scrollView!.setAttribute("style", scrollStyle);
       scrollView.innerHTML = result;
     }
 
     if (active && scrollView) {
-      scrollView.scrollTop = scrollView.scrollHeight;
+      scrollView!.scrollTop = scrollView!.scrollHeight;
       requestAnimationFrame(function () {
-        var blocks = scrollView.querySelectorAll(".edit-old, .edit-new");
+        var blocks = scrollView!.querySelectorAll(".edit-old, .edit-new");
         for (var b = 0; b < blocks.length; b++) {
           if (blocks[b].scrollHeight > blocks[b].clientHeight) {
             blocks[b].scrollTop = blocks[b].scrollHeight;
@@ -326,50 +342,50 @@ export function renderEditPreviews(el, edits) {
   // for SKILL.md, AGENTS.md, and other resource files.
 
 export const readToolRenderer = {
-    create: function (data) {
+    create: function (data: ToolData) {
       hideWelcome();
       var rawPath = data.args && (data.args.path || data.args.file_path || data.args.filePath);
       var offset = data.args && data.args.offset;
       var limit = data.args && data.args.limit;
       var rangeLabel = "";
       if (offset !== undefined) {
-        rangeLabel = ":" + offset;
-        if (limit !== undefined) {rangeLabel += "-" + (offset + limit - 1);}
+        rangeLabel = ":" + (offset as number);
+        if (limit !== undefined) {rangeLabel += "-" + ((offset as number) + (limit as number) - 1);}
       }
 
-      var compact = getCompactReadLabel(rawPath);
+      var compact = getCompactReadLabel(rawPath as string);
 
       var tb = new ToolBlock({
         toolName: "read",
         toolCallId: data.toolCallId,
         entryId: data.entryId,
-        filePath: rawPath || undefined,
+        filePath: (rawPath as string) || undefined,
         status: "running",
         pathExtra: rangeLabel,
       });
-      var block = tb.el;
-      block._toolBlock = tb;
+      var block = tb.el as unknown as ToolEl;
+      (block as any)._toolBlock = tb;
 
       // Add compact label below header if applicable
       if (compact) {
         var compactEl = document.createElement("div");
         compactEl.className = "compact-label";
         compactEl.textContent = "[" + compact.kind + "] " + compact.label;
-        tb.getHeaderEl().after(compactEl);
+        (tb as any).getHeaderEl().after(compactEl);
       }
 
       // Store path, offset, and language for result rendering
-      block._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath) : undefined, compact: compact, offset: offset };
+      (block as any)._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath as string) : undefined, compact: compact, offset: offset };
 
       return block;
     },
-    update: function (el, partialResult) {
+    update: function (el: ToolEl, partialResult: ToolPartialResult) {
       // Read tool results come via tool-end, not incremental updates
     },
-    finalize: function (el, result, isError, entryId) {
-      var tb = el._toolBlock;
+    finalize: function (el: ToolEl, result: ToolResult, isError: boolean, entryId?: string) {
+      var tb = (el as any)._toolBlock;
       if (tb) {
-        tb.update({ status: isError ? "error" : "done", entryId: entryId });
+        (tb as any).update({ status: isError ? "error" : "done", entryId: entryId });
       } else {
         var statusEl = el.querySelector(".tool-status");
         if (statusEl) {
@@ -385,12 +401,12 @@ export const readToolRenderer = {
       var text = "";
       if (result && result.content) {
         text = result.content
-          .filter(function (c) { return c.type === "text"; })
-          .map(function (c) { return c.text; })
+          .filter(function (c: { type: string; text: string }) { return c.type === "text"; })
+          .map(function (c: { type: string; text: string }) { return c.text; })
           .join("\n");
       }
 
-      var tr = tb ? tb.getResultEl() : el.querySelector(".tool-result");
+      var tr = tb ? (tb as any).getResultEl() : el.querySelector(".tool-result");
       if (!tr) {return;}
 
       if (isError) {
@@ -415,13 +431,13 @@ export const readToolRenderer = {
       text = text.replace(/\n?\[Truncated[^\]]*\](?:\n|$)/g, "");
       text = text.replace(/\n?\[\d+ more lines in file[^\]]*\](?:\n|$)/g, "");
 
-      var readState = el._readState || {};
+      var readState: any = (el as any)._readState || {};
       var lang = readState.lang;
 
       // Syntax-highlighted code in a scrollable container when tall.
       // No expand/collapse — just native scroll.
-      tr.style.maxHeight = "20rem";
-      tr.style.overflowY = "auto";
+      (tr as HTMLElement).style.maxHeight = "20rem";
+      (tr as HTMLElement).style.overflowY = "auto";
       tr.innerHTML = "";
       var cb = new CodeBlock({ code: text, lang: lang, showHeader: true, showCopy: true });
       cb.mount(tr);
@@ -439,10 +455,10 @@ export const readToolRenderer = {
       var contNextOffset = 0;
       var contRemaining = 0;
 
-      if (trunc && trunc.truncated) {
+      if (trunc && (trunc as any).truncated) {
         // Case 1: SDK hard truncation (50KB or 2000 lines)
-        contNextOffset = (readState.offset || 0) + trunc.outputLines;
-        contRemaining = trunc.totalLines - contNextOffset;
+        contNextOffset = (readState.offset || 0) + (trunc as any).outputLines;
+        contRemaining = (trunc as any).totalLines - contNextOffset;
         hasMore = contRemaining > 0;
       } else if (userMoreMatch) {
         // Case 2: User-specified limit with more content in file
@@ -475,22 +491,22 @@ export const readToolRenderer = {
   // ── Default (generic) tool renderer ──────────────────────
 
 export const defaultToolRenderer = {
-    create: function (data) {
+    create: function (data: ToolData) {
       return createToolBlock(data.toolName, data.toolCallId, "pending", data.args);
     },
-    update: function (el, partialResult) {
+    update: function (el: ToolEl, partialResult: ToolPartialResult) {
       var tr = el.querySelector(".tool-result");
       if (!tr || !partialResult || !partialResult.content) {return;}
       var text = partialResult.content
-        .filter(function (c) { return c.type === "text"; })
-        .map(function (c) { return c.text; })
+        .filter(function (c: { type: string; text: string }) { return c.type === "text"; })
+        .map(function (c: { type: string; text: string }) { return c.text; })
         .join("\n");
       if (!text) {return;}
-      var lines = text.split("\n");
+      var lines = (text as string).split("\n");
       var displayText = lines.length > 60 ? "...\n" + lines.slice(-60).join("\n") : text;
       morphRender(tr, renderToolResult(displayText));
     },
-    finalize: function (el, result, isError, entryId) {
+    finalize: function (el: ToolEl, result: ToolResult, isError: boolean, entryId?: string) {
       var statusEl = el.querySelector(".tool-status");
       if (statusEl) {
         statusEl.textContent = isError ? "error" : "done";
@@ -503,17 +519,17 @@ export const defaultToolRenderer = {
       var text = "";
       if (result && result.content) {
         text = result.content
-          .filter(function (c) { return c.type === "text"; })
-          .map(function (c) { return c.text; })
+          .filter(function (c: { type: string; text: string }) { return c.type === "text"; })
+          .map(function (c: { type: string; text: string }) { return c.text; })
           .join("\n");
       }
       var tr = el.querySelector(".tool-result");
       if (tr) {
         if (isError) {
-          var displayText = formatToolError(text, el.querySelector(".tool-name") ? el.querySelector(".tool-name").textContent : "");
+          var displayText = formatToolError(text as string, (el.querySelector(".tool-name") as HTMLElement) ? (el.querySelector(".tool-name") as HTMLElement).textContent || "" : "");
           tr.innerHTML = html`<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;margin-top:4px;">${displayText}</div>`;
         } else {
-          var lines = text.split("\n");
+          var lines = (text as string).split("\n");
           tr.innerHTML = lines.length > 50 ? renderToolResultTruncated(text) : renderToolResult(text);
         }
       }
@@ -523,7 +539,7 @@ export const defaultToolRenderer = {
   // ── Bash tool renderer ───────────────────────────────────
 
 export const bashToolRenderer = {
-    create: function (data) {
+    create: function (data: ToolData) {
       hideWelcome();
       var block = document.createElement("div");
       block.className = "bash-execution";
@@ -531,8 +547,8 @@ export const bashToolRenderer = {
       block.setAttribute("data-tool-call-id", data.toolCallId);
       if (data.entryId) { block.setAttribute("data-entry-id", data.entryId); }
       block.setAttribute("data-status", "running");
-      var cmd = data.args && data.args.command ? data.args.command : "";
-      if (cmd.length > 120) {cmd = cmd.slice(0, 120) + "\u2026";}
+      var cmd = (data.args?.command as string) || "";
+      if ((cmd as string).length > 120) {cmd = cmd!.slice(0, 120) + "\u2026";}
       block.innerHTML = html`
         <div class="bash-header">$ ${cmd}</div>
         <div class="bash-output"></div>
@@ -541,19 +557,19 @@ export const bashToolRenderer = {
       state.bashOutputs[data.toolCallId] = "";
       return block;
     },
-    update: function (el, partialResult) {
+    update: function (el: ToolEl, partialResult: ToolPartialResult) {
       // Only accumulate from bash-output events, not from tool-update.
       // tool-update events contain JSON-serialized args that would
       // leak noise ({}{}{}{}) into the output div.
       // Output is handled exclusively by handleBashOutput.
     },
-    finalize: function (el, result, isError, entryId) {
+    finalize: function (el: ToolEl, result: ToolResult, isError: boolean, entryId?: string) {
       var toolCallId = el.id.replace(/^(entry-|bash-)/, "");
       var text = "";
       if (result && result.content) {
         text = result.content
-          .filter(function (c) { return c.type === "text"; })
-          .map(function (c) { return c.text; })
+          .filter(function (c: { type: string; text: string }) { return c.type === "text"; })
+          .map(function (c: { type: string; text: string }) { return c.text; })
           .join("\n");
       }
       var outEl = el.querySelector(".bash-output");
@@ -583,14 +599,14 @@ export const bashToolRenderer = {
   // ═══ Message Renderer Registry ════════════════════════════
   // ═══ Tool Lifecycle ════════════════════════════════════
 
-export function handleToolStart(data) {
+export function handleToolStart(data: any) {
     hideWelcome();
 
     // Stop thinking spinner — tool execution means thinking is done
     if (state.currentThinkingEl) {
       var _tb = state.currentThinkingEl._component;
       if (_tb) {
-        _tb.update({ content: _tb._rawText || "", done: true });
+        (_tb as any).update({ content: (_tb as any)._rawText || "", done: true });
       } else {
         var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
         if (thSpinner) {thSpinner.remove();}
@@ -626,7 +642,7 @@ export function handleToolStart(data) {
         state.currentToolBlocks[callId] = { el: existingBash, renderer: bashToolRenderer };
       }
       // Update status on whichever block we have
-      var block = existingTool ? (existingTool.el || existingTool) : existingBash;
+      var block = existingTool ? ((existingTool as any).el || existingTool) : existingBash;
       if (block && block.getAttribute && block.getAttribute("data-status") === "pending") {
         block.setAttribute("data-status", "running");
         var statusEl = block.querySelector(".tool-status");
@@ -644,17 +660,17 @@ export function handleToolStart(data) {
           pathEl.setAttribute("data-path", newPath);
         }
         // Also update internal state so lang/syntax highlighting work
-        if (block._readState && !block._readState.rawPath) {
-          block._readState.rawPath = newPath;
-          block._readState.lang = getLangFromPath(newPath);
+        if ((block as any)._readState && !(block as any)._readState!.rawPath) {
+          (block as any)._readState!.rawPath = newPath;
+          (block as any)._readState!.lang = getLangFromPath(newPath);
         }
-        if (block._writeState && !block._writeState.rawPath) {
-          block._writeState.rawPath = newPath;
-          block._writeState.lang = getLangFromPath(newPath);
+        if ((block as any)._writeState && !(block as any)._writeState!.rawPath) {
+          (block as any)._writeState!.rawPath = newPath;
+          (block as any)._writeState!.lang = getLangFromPath(newPath);
         }
         // Update ToolBlock component if present
-        var tb = block._toolBlock;
-        if (tb) { tb.update({ filePath: newPath }); }
+        var tb = (block as any)._toolBlock;
+        if (tb) { (tb as any).update({ filePath: newPath }); }
       }
       if (data.entryId && block && block.id && !block.id.startsWith("entry-")) {
         block.id = "entry-" + data.entryId;
@@ -664,7 +680,7 @@ export function handleToolStart(data) {
 
     // Look up the renderer for this tool name
     var renderer = getToolRenderer(data.toolName);
-    var block = renderer.create(data);
+    var block = (renderer as any).create(data);
     if (!block) { console.warn("[pi-gui] tool renderer returned null for", data.toolName); return; }
 
     if (data.entryId && !block.id.startsWith("entry-")) {
@@ -687,12 +703,12 @@ export function handleToolStart(data) {
     scrollToBottom();
   }
 
-export function handleToolUpdate(data) {
+export function handleToolUpdate(data: any) {
     // Ensure thinking spinner stays hidden during tool execution
     if (state.currentThinkingEl) {
       var _tb2 = state.currentThinkingEl._component;
       if (_tb2) {
-        _tb2.update({ content: _tb2._rawText || "", done: true });
+        (_tb2 as any).update({ content: (_tb2 as any)._rawText || "", done: true });
       } else {
         var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
         if (thSpinner) {thSpinner.remove();}
@@ -701,13 +717,13 @@ export function handleToolUpdate(data) {
 
     var entry = state.currentToolBlocks[data.toolCallId];
     if (!entry) {return;}
-    var block = entry.el || entry;
-    var renderer = entry.renderer || defaultToolRenderer;
-    renderer.update(block, data.partialResult);
+    var block = (entry as any).el || entry;
+    var renderer = (entry as any).renderer || defaultToolRenderer;
+    (renderer as any).update(block, data.partialResult);
     scrollToBottom();
   }
 
-export function handleToolEnd(data) {
+export function handleToolEnd(data: any) {
     var callId = data.toolCallId;
     var entry = state.currentToolBlocks[callId];
     logEvent("tool-end", {
@@ -736,9 +752,9 @@ export function handleToolEnd(data) {
       }
       return;
     }
-    var block = entry.el || entry;
-    var renderer = entry.renderer || defaultToolRenderer;
-    renderer.finalize(block, data.result, data.isError, data.entryId);
+    var block = (entry as any).el || entry;
+    var renderer = (entry as any).renderer || defaultToolRenderer;
+    (renderer as any).finalize(block, data.result, data.isError, data.entryId);
     delete state.currentToolBlocks[callId];
     scrollToBottom();
   }

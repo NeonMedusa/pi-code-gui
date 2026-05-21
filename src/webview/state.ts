@@ -6,78 +6,166 @@
 //
 // DOM refs are populated by initState(document) on startup.
 
-export const state = {
-  // ── Boolean flags ──────────────────────────────────────────
+export interface AppState {
+  // ── Boolean flags
+  isStreaming: boolean;
+  isCompacting: boolean;
+  isRetrying: boolean;
+  _inBatch: boolean;
+
+  // ── DOM element references (current streaming state)
+  currentAssistantEl: HTMLElement | null;
+  currentThinkingEl: HTMLElement | null;
+
+  // ── Tool execution tracking
+  currentToolBlocks: Record<string, { el: HTMLElement; renderer?: unknown } | HTMLElement | undefined>;
+  assistantToolCallIds: Record<string, boolean>;
+
+  // ── Message tracking
+  lastUserMessageContent: string | null;
+  userMessagesSeen: number;
+  userMessageHistory: Array<{ text: string }>;
+
+  // ── Attachments
+  attachments: Array<{
+    id: string;
+    type: string;
+    name: string;
+    mediaType: string;
+    data: string | null;
+    blobUrl: string | null;
+  }>;
+
+  // ── Bash execution blocks
+  bashBlocks: Record<string, HTMLElement>;
+  bashOutputs: Record<string, string>;
+
+  // ── Truncation text store
+  truncationTexts: Record<string, { preview: string; full: string }>;
+  truncationIdx: number;
+
+  // ── Settings
+  settingsState: { autoCompaction: boolean; autoRetry: boolean; showImages: boolean };
+  settingsOpen: boolean;
+
+  // ── Scoped models
+  scopedModels: unknown[];
+
+  // ── Overlay state
+  userMsgSelectorOpen: boolean;
+  userMsgSelectedIdx: number;
+  slashAutocompleteOpen: boolean;
+  slashFilter: string;
+  slashSelectedIdx: number;
+
+  // ── Tool renderer registry
+  toolRenderers: Record<string, {
+    create: (data: Record<string, unknown>) => HTMLElement;
+    update: (el: HTMLElement, partialResult: Record<string, unknown>) => void;
+    finalize: (el: HTMLElement, result: Record<string, unknown>, isError: boolean, entryId?: string) => void;
+  }>;
+
+  // ── Stream rendering (RAF-batched)
+  _streamRafId: number | null;
+  _streamContentEl: HTMLElement | null;
+  _streamPrevTokens: unknown[];
+  _thinkingRafId: number | null;
+  _thinkingEl: HTMLElement | null;
+
+  // ── Scroll tracking
+  hasScrolledUp: boolean;
+
+  // ── Queue/steer mode
+  queueMode: "steer" | "queue";
+
+  // ── Marked availability flag
+  _markedAvailable: boolean;
+
+  // ── Custom message renderer registry
+  messageRenderers: Record<string, (data: unknown, container: HTMLElement, ...rest: unknown[]) => void>;
+
+  // ── Live panel cards
+  liveCards: Record<string, HTMLElement & { _component?: unknown }>;
+  widgetCards: Record<string, HTMLElement>;
+
+  // ── Slash commands
+  builtinSlashCommands: Array<{ cmd: string; desc: string }>;
+  extensionSlashCommands: Array<{ cmd: string; desc: string }>;
+  localSlashCommands: string[];
+
+  // ── DOM refs (always populated by initState before any handler runs)
+  chatContainer: HTMLElement;
+  promptInput: HTMLTextAreaElement;
+  sendButton: HTMLButtonElement;
+  abortButton: HTMLButtonElement;
+  steerDropdown: HTMLButtonElement;
+  welcome: HTMLElement | null;
+  attachmentBar: HTMLElement;
+  userMsgOverlay: HTMLElement;
+  settingsOverlay: HTMLElement;
+  slashAutocomplete: HTMLElement;
+  livePanel: HTMLElement;
+  sbDot: HTMLElement;
+  sbModel: HTMLElement;
+  sbThinking: HTMLElement;
+  sbEffort: HTMLElement;
+  sbUsage: HTMLElement;
+}
+
+export const state: AppState = {
   isStreaming: false,
   isCompacting: false,
   isRetrying: false,
   _inBatch: false,
 
-  // ── DOM element references (current streaming state) ────────
   currentAssistantEl: null,
   currentThinkingEl: null,
 
-  // ── Tool execution tracking ────────────────────────────────
-  currentToolBlocks: {}, // toolCallId -> { el, renderer } or HTMLElement
-  assistantToolCallIds: {}, // toolCallId -> true
+  currentToolBlocks: {},
+  assistantToolCallIds: {},
 
-  // ── Message tracking ───────────────────────────────────────
   lastUserMessageContent: null,
   userMessagesSeen: 0,
   userMessageHistory: [],
 
-  // ── Attachments ────────────────────────────────────────────
   attachments: [],
 
-  // ── Bash execution blocks ──────────────────────────────────
   bashBlocks: {},
   bashOutputs: {},
 
-  // ── Truncation text store ──────────────────────────────────
   truncationTexts: {},
   truncationIdx: 0,
 
-  // ── Settings ───────────────────────────────────────────────
   settingsState: { autoCompaction: true, autoRetry: true, showImages: true },
   settingsOpen: false,
 
-  // ── Scoped models ──────────────────────────────────────────
   scopedModels: [],
 
-  // ── Overlay state ──────────────────────────────────────────
   userMsgSelectorOpen: false,
   userMsgSelectedIdx: 0,
   slashAutocompleteOpen: false,
   slashFilter: "",
   slashSelectedIdx: 0,
 
-  // ── Tool renderer registry ─────────────────────────────────
   toolRenderers: {},
 
-  // ── Stream rendering (RAF-batched) ────────────────────────
   _streamRafId: null,
   _streamContentEl: null,
   _streamPrevTokens: [],
   _thinkingRafId: null,
   _thinkingEl: null,
 
-  // ── Scroll tracking ────────────────────────────────────────
   hasScrolledUp: false,
 
-  // ── Queue/steer mode ───────────────────────────────────────
   queueMode: "steer",
 
-  // ── Marked availability flag ───────────────────────────────
   _markedAvailable: false,
 
-  // ── Custom message renderer registry ───────────────────────
   messageRenderers: {},
 
-  // ── Live panel cards ───────────────────────────────────────
   liveCards: {},
   widgetCards: {},
 
-  // ── Slash commands ─────────────────────────────────────────
   builtinSlashCommands: [
     { cmd: "/compact", desc: "Compact context" },
     { cmd: "/resume", desc: "Resume a previous session" },
@@ -97,51 +185,48 @@ export const state = {
     "/login", "/logout", "/debug", "/model", "/thinking", "/sessions", "/settings",
   ],
 
-  // ── DOM refs (populated by initState) ──────────────────────
-  chatContainer: null,
-  promptInput: null,
-  sendButton: null,
-  abortButton: null,
-  steerDropdown: null,
+  chatContainer: null!,
+  promptInput: null!,
+  sendButton: null!,
+  abortButton: null!,
+  steerDropdown: null!,
   welcome: null,
-  attachmentBar: null,
-  userMsgOverlay: null,
-  settingsOverlay: null,
-  slashAutocomplete: null,
-  livePanel: null,
-  sbDot: null,
-  sbModel: null,
-  sbThinking: null,
-  sbEffort: null,
-  sbUsage: null,
+  attachmentBar: null!,
+  userMsgOverlay: null!,
+  settingsOverlay: null!,
+  slashAutocomplete: null!,
+  livePanel: null!,
+  sbDot: null!,
+  sbModel: null!,
+  sbThinking: null!,
+  sbEffort: null!,
+  sbUsage: null!,
 };
 
 /** Populate DOM refs from document. Call once on startup. */
-export function initState(doc) {
-  state.chatContainer = doc.getElementById("chat-container");
-  state.promptInput = doc.getElementById("prompt-input");
-  state.sendButton = doc.getElementById("send-button");
-  state.abortButton = doc.getElementById("abort-button");
-  state.steerDropdown = doc.getElementById("steer-dropdown");
-  state.welcome = doc.getElementById("welcome");
-  state.attachmentBar = doc.getElementById("attachment-bar");
-  state.userMsgOverlay = doc.getElementById("user-msg-overlay");
-  state.settingsOverlay = doc.getElementById("settings-overlay");
-  state.slashAutocomplete = doc.getElementById("slash-autocomplete");
-  state.livePanel = doc.getElementById("live-panel");
-  state.sbDot = doc.getElementById("pi-sb-dot");
-  state.sbModel = doc.getElementById("pi-sb-model");
-  state.sbThinking = doc.getElementById("pi-sb-thinking");
-  state.sbEffort = doc.getElementById("pi-sb-effort");
-  state.sbUsage = doc.getElementById("pi-sb-usage");
+export function initState(doc: Document): void {
+  state.chatContainer = doc.getElementById("chat-container")!;
+  state.promptInput = doc.getElementById("prompt-input") as HTMLTextAreaElement;
+  state.sendButton = doc.getElementById("send-button") as HTMLButtonElement;
+  state.abortButton = doc.getElementById("abort-button") as HTMLButtonElement;
+  state.steerDropdown = doc.getElementById("steer-dropdown") as HTMLButtonElement;
+  state.welcome = doc.getElementById("welcome")!;
+  state.attachmentBar = doc.getElementById("attachment-bar")!;
+  state.userMsgOverlay = doc.getElementById("user-msg-overlay")!;
+  state.settingsOverlay = doc.getElementById("settings-overlay")!;
+  state.slashAutocomplete = doc.getElementById("slash-autocomplete")!;
+  state.livePanel = doc.getElementById("live-panel")!;
+  state.sbDot = doc.getElementById("pi-sb-dot")!;
+  state.sbModel = doc.getElementById("pi-sb-model")!;
+  state.sbThinking = doc.getElementById("pi-sb-thinking")!;
+  state.sbEffort = doc.getElementById("pi-sb-effort")!;
+  state.sbUsage = doc.getElementById("pi-sb-usage")!;
 
-  // Detect marked availability
   if (typeof marked !== "undefined") {
     state._markedAvailable = true;
   }
 }
 
-// Auto-initialize DOM refs on import (before any other module uses them)
 if (typeof document !== "undefined") {
   initState(document);
 }
