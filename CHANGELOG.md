@@ -1,5 +1,13 @@
 # Change Log
 
+## [0.0.33] — Strict TypeScript, UX polish, zombie bash fix
+
+### Added
+- **Strict TypeScript** across the full codebase — `noFallthroughCasesInSwitch`,
+  `noImplicitReturns`, `forceConsistentCasingInFileNames`, `isolatedModules`.
+  Webview now has its own `tsconfig.webview.json` with DOM lib + same strict
+  flags. `check-types` enforces both in CI.
+
 ## [0.0.32] — Live panel stacking, slash command fixes, startup resilience
 
 ### Fixed
