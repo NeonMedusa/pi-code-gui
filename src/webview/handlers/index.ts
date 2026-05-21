@@ -1111,6 +1111,7 @@ export function renderAttachments(): void {
   state.promptInput.addEventListener("paste", function (e) {
     var items = e.clipboardData?.items;
     if (!items) {return;}
+    if (!items) {return;}
 
     var imageItems = [];
     var fileItems = [];
@@ -1483,12 +1484,12 @@ export function handleCompactionSummaryMessage(data: any) {
 
     // Wire toggle
     var toggle = document.getElementById(summaryId + "-toggle");
-    var content = document.getElementById(summaryId + "-content");
-    if (toggle && content) {
+    var contentEl2 = document.getElementById(summaryId + "-content");
+    if (toggle && contentEl2) {
       toggle.addEventListener("click", function () {
-        var visible = content.style.display !== "none";
-        content.style.display = visible ? "none" : "block";
-        toggle.textContent = visible ? "Compacted from " + tokenStr + " tokens (click to expand)" : "Compacted from " + tokenStr + " tokens";
+      var visible = contentEl2 && contentEl2.style.display !== "none";
+      if (contentEl2) { contentEl2.style.display = visible ? "none" : "block"; }
+      if (toggle) { toggle.textContent = visible ? "Compacted from " + tokenStr + " tokens (click to expand)" : "Compacted from " + tokenStr + " tokens"; }
       });
     }
     scrollToBottom();
@@ -1533,7 +1534,7 @@ export function showUserMessageSelector() {
 
 export function highlightUserMsgItem() {
     var items = state.userMsgOverlay.querySelectorAll(".user-msg-item");
-    items.forEach(function (item, i) {
+    items.forEach(function (item: any, i: number) {
       if (i === state.userMsgSelectedIdx) {
         item.classList.add("selected");
         item.scrollIntoView({ block: "nearest" });
@@ -1674,7 +1675,7 @@ export function renderInlineCustomMessage(data: any) {
     });
     ic.el._component = ic; // attach for later updating
 
-    state.chatContainer.appendChild(ic.el);
+    state.chatContainer.appendChild(ic.el as HTMLElement);
     scrollToBottom();
   }
 
@@ -1921,8 +1922,8 @@ export function handleShowDialog(data: any) {
 
   // Full slash command list (builtins + extensions, with extensions first for dedup)
 export function getSlashCommands() {
-    var all = [];
-    var seen = {};
+    var all: Array<{ cmd: string; desc: string }> = [];
+    var seen: Record<string, boolean> = {};
     // Extensions come first so they take precedence
     state.extensionSlashCommands.forEach(function (sc) {
       seen[sc.cmd] = true;
@@ -1997,7 +1998,7 @@ export function updateSlashAutocomplete(filter: string) {
 
 export function handleRevealEntry(entryId: string, toolCallId: string) {
     if (!entryId && !toolCallId) {return;}
-    var el = null;
+    var el: HTMLElement | null = null;
 
     // Strategy 1: exact ID match (entry-{id}, tool-{id}, bash-{id})
     if (entryId) {
@@ -2039,14 +2040,14 @@ export function handleRevealEntry(entryId: string, toolCallId: string) {
     if (!el) {return;}
 
     el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.style.transition = "background 0.2s, box-shadow 0.2s";
-    el.style.background = "var(--vscode-list-hoverBackground)";
-    el.style.boxShadow = "0 0 0 2px var(--vscode-focusBorder)";
-    el.style.borderRadius = "4px";
+    (el as HTMLElement).style.transition = "background 0.2s, box-shadow 0.2s";
+    (el as HTMLElement).style.background = "var(--vscode-list-hoverBackground)";
+    (el as HTMLElement).style.boxShadow = "0 0 0 2px var(--vscode-focusBorder)";
+    (el as HTMLElement).style.borderRadius = "4px";
     setTimeout(function () {
-      el.style.background = "";
-      el.style.boxShadow = "";
-      el.style.borderRadius = "";
+      (el as HTMLElement).style.background = "";
+      (el as HTMLElement).style.boxShadow = "";
+      (el as HTMLElement).style.borderRadius = "";
     }, 2500);
   }
 
@@ -2060,7 +2061,7 @@ export function handleRevealEntry(entryId: string, toolCallId: string) {
 export function handleBashStart(data: Record<string, unknown>) {
     // Stop thinking spinner — bash execution means thinking is done
     if (state.currentThinkingEl) {
-      var _tb3 = state.currentThinkingEl._component;
+      var _tb3 = state.currentThinkingEl._component as any;
       if (_tb3) {
         _tb3.update({ content: _tb3._rawText || "", done: true });
       } else {
@@ -2087,7 +2088,7 @@ export function handleBashStart(data: Record<string, unknown>) {
       entryId: data.entryId,
       fromMessage: false,
     });
-    state.chatContainer.appendChild(block);
+    state.chatContainer.appendChild(block as HTMLElement);
     state.bashBlocks[callId as string] = block;
     state.bashOutputs[callId as string] = "";
     state.chatContainer.scrollTop = state.chatContainer.scrollHeight;
