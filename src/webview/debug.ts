@@ -25,7 +25,7 @@ export function logEvent(type: string, data: Record<string, unknown> | undefined
     id: data ? (data.entryId || data.toolCallId || "") as string : "",
     fromMessage: data ? !!data.fromMessage : false,
     toolName: data ? (data.toolName || "") as string : "",
-    stackDepth: new Error().stack ? new Error().stack.split("\n").length : 0,
+    stackDepth: (() => { const s = new Error().stack; return s ? s.split("\n").length : 0; })(),
   };
   debugEventLog.push(entry);
   if (debugEventLog.length > debugMaxEvents) {debugEventLog.shift();}
@@ -164,13 +164,16 @@ window.__piDebug = {
     return debugDomLog.slice(-(n || 50));
   },
   bashBlocks(): unknown[] {
-    return Object.keys(state.bashBlocks).map((k) => ({
-      id: k,
-      status: state.bashBlocks[k]?.getAttribute
-        ? state.bashBlocks[k]!.getAttribute("data-status")
-        : "?",
-      tag: state.bashBlocks[k]?.tagName,
-    }));
+    return Object.keys(state.bashBlocks).map((k) => {
+      const el = state.bashBlocks[k];
+      return {
+        id: k,
+        status: el && typeof el.getAttribute === "function"
+          ? el.getAttribute("data-status")
+          : "?",
+        tag: el?.tagName,
+      };
+    });
   },
   toolBlocks(): unknown[] {
     return Object.keys(state.currentToolBlocks).map((k) => {

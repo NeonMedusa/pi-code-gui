@@ -28,14 +28,7 @@ interface Window {
     domLog(n?: number): unknown[];
     bashBlocks(): unknown[];
     toolBlocks(): unknown[];
-    summary(): {
-      chat: unknown;
-      dupes: string[];
-      orphanBash: string[];
-      orphanTool: string[];
-      lastEvents: unknown[];
-      lastDomChanges: unknown[];
-    };
+    summary(): Record<string, unknown>;
     _queueEvents?: unknown[];
   };
   __piRegisterToolRenderer?: (name: string, renderer: unknown) => void;
@@ -44,6 +37,7 @@ interface Window {
     renderer: (data: unknown, ...args: unknown[]) => void,
   ) => void;
   __vscode: ReturnType<typeof acquireVsCodeApi>;
+  morphdom: typeof morphdom;
 }
 
 // Event data shape (from extension host to webview)
