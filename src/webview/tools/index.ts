@@ -25,15 +25,7 @@ type ToolResult = {
   details?: Record<string, unknown>;
   text?: string;
 };
-type ToolEl = HTMLElement & {
-  _toolBlock?: unknown;
-  _writeState?: { content: string; lang?: string; rawPath?: string };
-  _writePending?: string | null;
-  _writeRafId?: number | null;
-  _editEdits?: Array<{ oldText: string; newText: string }>;
-  _editLang?: string;
-  _readState?: { rawPath: string; lang?: string; compact?: unknown; offset?: number };
-};
+type ToolEl = HTMLElement;
 import { CodeBlock } from "../components/code-block.js";
 
 
