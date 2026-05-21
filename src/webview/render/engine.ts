@@ -380,40 +380,40 @@ export function renderInline(tokens: MarkedTokens | undefined): string {
   if (!tokens || tokens.length === 0) {return "";}
   let result = "";
   for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
+    const t = tokens[i]!;
     switch (t.type) {
       case "text":
-        result += escapeHtml(t.text);
+        result += escapeHtml(t.text as string);
         break;
       case "strong":
-        result += html`<strong>${safe(renderInline(t.tokens))}</strong>`;
+        result += html`<strong>${safe(renderInline(t.tokens as MarkedTokens | undefined))}</strong>`;
         break;
       case "em":
-        result += html`<em>${safe(renderInline(t.tokens))}</em>`;
+        result += html`<em>${safe(renderInline(t.tokens as MarkedTokens | undefined))}</em>`;
         break;
       case "codespan":
-        result += html`<code>${t.text}</code>`;
+        result += html`<code>${t.text as string}</code>`;
         break;
       case "link":
-        result += html`<a href="${t.href}">${safe(renderInline(t.tokens))}</a>`;
+        result += html`<a href="${t.href as string}">${safe(renderInline(t.tokens as MarkedTokens | undefined))}</a>`;
         break;
       case "del":
-        result += html`<del>${safe(renderInline(t.tokens))}</del>`;
+        result += html`<del>${safe(renderInline(t.tokens as MarkedTokens | undefined))}</del>`;
         break;
       case "image":
-        result += html`<img src="${t.href}" alt="${t.text}">`;
+        result += html`<img src="${t.href as string}" alt="${t.text as string}">`;
         break;
       case "br":
         result += "<br>";
         break;
       case "html":
-        result += t.text || t.raw || "";
+        result += (t.text as string) || (t.raw as string) || "";
         break;
       case "escape":
-        result += escapeHtml(t.text);
+        result += escapeHtml(t.text as string);
         break;
       default:
-        result += escapeHtml(t.raw || t.text || "");
+        result += escapeHtml((t.raw as string) || (t.text as string) || "");
     }
   }
   return result;
@@ -429,26 +429,28 @@ export function patchBlockList(container: HTMLElement, prevTokens: unknown[], ne
     return;
   }
   while (container.children.length > newTokens.length) {
-    container.removeChild(container.lastChild);
+    container.removeChild(container.lastChild!);
   }
   const commonLen = Math.min(prevTokens.length, newTokens.length);
   for (let i = 0; i < commonLen; i++) {
     const child = container.children[i];
+    const prev = prevTokens[i] as Record<string, unknown>;
+    const next = newTokens[i] as Record<string, unknown>;
     if (!child) {
-      container.appendChild(renderBlock(newTokens[i]));
+      container.appendChild(renderBlock(newTokens[i] as MarkedToken));
     } else if (
-      prevTokens[i].raw !== newTokens[i].raw ||
-      prevTokens[i].type !== newTokens[i].type
+      prev.raw !== next.raw ||
+      prev.type !== next.type
     ) {
-      morphRender(child, renderBlockToHTML(newTokens[i]));
+      morphRender(child as HTMLElement, renderBlockToHTML(newTokens[i] as MarkedToken));
     }
   }
   for (let i = prevTokens.length; i < newTokens.length; i++) {
-    container.appendChild(renderBlock(newTokens[i]));
+    container.appendChild(renderBlock(newTokens[i] as MarkedToken));
   }
 }
 
-export function renderBlockToHTML(token) {
+export function renderBlockToHTML(token: MarkedToken): string {
   const block = renderBlock(token);
   if (!block) {return "";}
   // Return the element's innerHTML so morphdom can diff children directly.
@@ -468,9 +470,10 @@ export function renderBlockToHTML(token) {
 
 export function setupCodeBlockHandlers() {
   // ── Click delegation for tool blocks, copy buttons, file paths ──
-  state.chatContainer.addEventListener("click", function (e) {
+  state.chatContainer.addEventListener("click", function (e: MouseEvent) {
+    const target = e.target as HTMLElement | null;
     // Show-more button for truncated tool results
-    const showMoreBtn = e.target.closest(".show-more-btn");
+    const showMoreBtn = target?.closest(".show-more-btn");
     if (showMoreBtn) {
       e.preventDefault();
       const truncEl = showMoreBtn.closest(".tool-result-truncated");
@@ -494,9 +497,9 @@ export function setupCodeBlockHandlers() {
       return;
     }
 
-    const btn = e.target.closest(".code-copy-btn");
+    const btn = target?.closest(".code-copy-btn");
     if (!btn) {
-      const pathEl = e.target.closest(".tool-path");
+      const pathEl = target?.closest(".tool-path") as HTMLElement | null;
       if (pathEl && pathEl.dataset.path) {
         e.preventDefault();
         // Use the global vscode API for file opening
@@ -527,7 +530,7 @@ export function setupCodeBlockHandlers() {
 
 // ═══ Diff Rendering ═══════════════════════════════════════
 
-export function renderDiffIfApplicable(text) {
+export function renderDiffIfApplicable(text: string): string {
   if (!text) {return renderMarkdown(text);}
   const hasDiff =
     /(?:^|\n)[+\-@]/.test(text) ||
@@ -537,7 +540,7 @@ export function renderDiffIfApplicable(text) {
   return renderDiffMarkup(text);
 }
 
-export function renderDiffMarkup(diffText) {
+export function renderDiffMarkup(diffText: string): string {
   const lines = diffText.split("\n");
   const resultLines = [];
   let i = 0;
@@ -599,13 +602,13 @@ export function renderDiffMarkup(diffText) {
   return html`<pre style="white-space:pre;font-family:var(--vscode-editor-font-family);font-size:0.85em;line-height:1.55;overflow-x:auto;padding:8px 0;">${safe(resultLines.join("\n"))}</pre>`;
 }
 
-function parseDiffLine(line) {
+function parseDiffLine(line: string): { prefix: string; lineNum: string; content: string } | null {
   const match = line.match(/^([+\-\s])(\s*\d*)\s(.*)$/);
   if (!match) {return null;}
-  return { prefix: match[1], lineNum: match[2], content: match[3] };
+  return { prefix: match[1]!, lineNum: match[2]!, content: match[3]! };
 }
 
-function diffWords(oldStr, newStr) {
+function diffWords(oldStr: string, newStr: string): { removed: string; added: string } {
   const minLen = Math.min(oldStr.length, newStr.length);
   let prefixLen = 0;
   while (prefixLen < minLen && oldStr[prefixLen] === newStr[prefixLen]) {prefixLen++;}
@@ -630,7 +633,7 @@ function diffWords(oldStr, newStr) {
 // ═══ Tool Result Rendering ════════════════════════════════
 
 /** Render tool result markdown. Detects diffs, code blocks, and JSON. */
-export function renderToolResult(text) {
+export function renderToolResult(text: string): string {
   if (!text) {return "";}
   if (/^```/.test(text.trim())) {
     return renderMarkdown(text);
@@ -652,7 +655,7 @@ export function renderToolResult(text) {
 }
 
 /** Guess the language of a tool result blob. */
-function detectToolResultLang(text) {
+function detectToolResultLang(text: string): string {
   if (/^[\[\{]\s*["\w]/.test(text) && /[\]\}]\s*$/.test(text)) {return "json";}
   if (/<[a-z][\s\S]*>/i.test(text)) {return "html";}
   if (/^\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/i.test(text)) {return "sql";}
