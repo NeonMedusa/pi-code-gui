@@ -110,7 +110,7 @@ interface WebviewEventData {
 interface HTMLElement {
   _component?: unknown;
   _rawText?: string;
-  _toolBlock?: { update(props: Record<string, unknown>): void; getContentEl(): HTMLElement; getResultEl(): HTMLElement; getHeaderEl(): HTMLElement; getPathEl(): HTMLElement | null; getStatusEl(): HTMLElement };
+  _toolBlock?: unknown;
   _writeState?: { content: string; lang?: string; rawPath?: string };
   _writePending?: string;
   _writeRafId?: number;

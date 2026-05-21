@@ -2057,7 +2057,7 @@ export function handleRevealEntry(entryId, toolCallId) {
   // with the extension host's bash-* event stream.  They delegate
   // to the bash tool renderer registered in the tool renderer registry.
 
-export function handleBashStart(data) {
+export function handleBashStart(data: Record<string, unknown>) {
     // Stop thinking spinner — bash execution means thinking is done
     if (state.currentThinkingEl) {
       var _tb3 = state.currentThinkingEl._component;
@@ -2094,7 +2094,7 @@ export function handleBashStart(data) {
     scrollToBottom();
   }
 
-export function handleBashOutput(data) {
+export function handleBashOutput(data: Record<string, unknown>) {
     var callId = data.toolCallId;
     var block = state.bashBlocks[callId];
     if (!block) {
@@ -2111,7 +2111,7 @@ export function handleBashOutput(data) {
     scrollToBottom();
   }
 
-export function handleBashEnd(data) {
+export function handleBashEnd(data: Record<string, unknown>) {
     var callId = data.toolCallId;
     var block = state.bashBlocks[callId];
     if (!block) {
