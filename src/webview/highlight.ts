@@ -39,7 +39,7 @@ hljs.registerAliases(["golang"], { languageName: "go" });
 hljs.registerAliases(["yml", "yaml"], { languageName: "yaml" }); // bonus
 
 // Language name normalizer: maps our getLangFromPath results to hljs names.
-const langMap: Record<string, string> = {
+const langMap: Record<string, string | undefined> = {
   javascript: "javascript",
   js: "javascript",
   jsx: "javascript",
