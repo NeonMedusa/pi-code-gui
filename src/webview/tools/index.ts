@@ -53,11 +53,11 @@ export const writeToolRenderer = {
         status: "running",
       });
       var block = tb.el as unknown as ToolEl;
-      block._toolBlock = tb; // attach component for update/finalize
-      block._writeState = { lang: lang, content: "", rawPath: rawPath };
+      (block as any)._toolBlock = tb; // attach component for update/finalize
+      (block as any)._writeState = { lang: lang, content: "", rawPath: rawPath };
 
       if (typeof fileContent === "string" && fileContent) {
-        block._writeState!.content = fileContent;
+        (block as any)._writeState!.content = fileContent;
         renderWriteContentBlock(block);
       }
 
@@ -76,9 +76,9 @@ export const writeToolRenderer = {
       (el as any)._writePending = text;
       if (!(el as any)._writeRafId) {
         (el as any)._writeRafId = requestAnimationFrame(function () {
-          el._writeRafId = null;
-          if (el._writePending) {
-            processWriteUpdate(el, el._writePending);
+          (el as any)._writeRafId = null;
+          if ((el as any)._writePending) {
+            processWriteUpdate(el, (el as any)._writePending);
             (el as any)._writePending = null;
           }
         });
@@ -86,12 +86,12 @@ export const writeToolRenderer = {
     },
     finalize: function (el: ToolEl, result: ToolResult, isError: boolean, entryId?: string) {
       // Flush any pending rAF render
-      if (el._writeRafId) { cancelAnimationFrame(el._writeRafId); el._writeRafId = null; }
-      if (el._writePending) { processWriteUpdate(el, el._writePending); (el as any)._writePending = null; }
+      if ((el as any)._writeRafId) { cancelAnimationFrame((el as any)._writeRafId); (el as any)._writeRafId = null; }
+      if ((el as any)._writePending) { processWriteUpdate(el, (el as any)._writePending); (el as any)._writePending = null; }
 
-      var tb = el._toolBlock;
+      var tb = (el as any)._toolBlock;
       if (tb) {
-        tb.update({ status: isError ? "error" : "done", entryId: entryId });
+        (tb as any).update({ status: isError ? "error" : "done", entryId: entryId });
       } else {
         var statusEl = el.querySelector(".tool-status");
         if (statusEl) {
@@ -115,7 +115,7 @@ export const writeToolRenderer = {
           .filter(function (c: { type: string; text: string }) { return c.type === "text"; })
           .map(function (c: { type: string; text: string }) { return c.text; })
           .join("\n");
-        var tr = tb ? tb.getResultEl() : el.querySelector(".tool-result");
+        var tr = tb ? (tb as any).getResultEl() : el.querySelector(".tool-result");
         if (tr && errorText) {
           tr.innerHTML = html`<div style="color:var(--vscode-errorForeground);margin-top:6px;white-space:pre-wrap;font-size:0.85em;">${formatToolError(errorText, "write")}</div>`;
         }
@@ -132,7 +132,7 @@ export function processWriteUpdate(el: ToolEl, text: string) {
         renderWriteContentBlock(el);
       }
       if (args.path) {
-        el._writeState!.rawPath = args.path;
+        (el as any)._writeState!.rawPath = args.path;
         (el as any)._writeState.lang = getLangFromPath(args.path);
         var pathEl = el.querySelector(".tool-path");
         if (pathEl) {pathEl.textContent = args.path;}
@@ -142,7 +142,7 @@ export function processWriteUpdate(el: ToolEl, text: string) {
       // Expected during streaming; only log if it persists (not a real error).
       var match = text.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
       if (match) {
-        el._writeState!.content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+        (el as any)._writeState!.content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "\t");
         renderWriteContentBlock(el);
       }
     }
@@ -152,7 +152,7 @@ export function processWriteUpdate(el: ToolEl, text: string) {
 export function renderWriteContentBlock(el: ToolEl) {
     var tc = el.querySelector(".tool-content");
     if (!tc) {return;}
-    var writeState = el._writeState || {};
+    var writeState: any = (el as any)._writeState || {};
     var content = writeState.content || "";
     var lang = writeState.lang;
     var active = el.getAttribute("data-status") !== "done" && el.getAttribute("data-status") !== "error";
@@ -168,7 +168,7 @@ export function renderWriteContentBlock(el: ToolEl) {
       cbComp.mount(scrollView);
     } else {
       // Persist the .code-block so scroll state survives across renders
-      var cb = scrollView.querySelector(".code-block");
+      var cb = scrollView!.querySelector(".code-block");
       if (!cb) {
         scrollView.innerHTML = "";
         var newCb = new CodeBlock({ code: content, lang: lang, showHeader: true, showCopy: true });
@@ -213,7 +213,7 @@ export const editToolRenderer = {
         pathExtra: editLabel,
       });
       var block = tb.el as unknown as ToolEl;
-      block._toolBlock = tb;
+      (block as any)._toolBlock = tb;
 
       if (Array.isArray(edits) && edits.length > 0) {
         block._editEdits = edits;
@@ -247,9 +247,9 @@ export const editToolRenderer = {
       }
     },
     finalize: function (el: ToolEl, result: ToolResult, isError: boolean, entryId?: string) {
-      var tb = el._toolBlock;
+      var tb = (el as any)._toolBlock;
       if (tb) {
-        tb.update({ status: isError ? "error" : "done", entryId: entryId });
+        (tb as any).update({ status: isError ? "error" : "done", entryId: entryId });
       } else {
         var statusEl = el.querySelector(".tool-status");
         if (statusEl) {
@@ -263,7 +263,7 @@ export const editToolRenderer = {
       }
 
       // Re-render previews to collapse to max 3 now that streaming is done
-      if (el._editEdits) { renderEditPreviews(el as any, (el as any)._editEdits); }
+      if ((el as any)._editEdits) { renderEditPreviews(el as any, (el as any)._editEdits); }
 
       var text = "";
       if (result && result.content) {
@@ -324,7 +324,7 @@ export function renderEditPreviews(el: ToolEl, edits: Array<{ oldText: string; n
     if (active && scrollView) {
       scrollView!.scrollTop = scrollView!.scrollHeight;
       requestAnimationFrame(function () {
-        var blocks = scrollView.querySelectorAll(".edit-old, .edit-new");
+        var blocks = scrollView!.querySelectorAll(".edit-old, .edit-new");
         for (var b = 0; b < blocks.length; b++) {
           if (blocks[b].scrollHeight > blocks[b].clientHeight) {
             blocks[b].scrollTop = blocks[b].scrollHeight;
@@ -364,18 +364,18 @@ export const readToolRenderer = {
         pathExtra: rangeLabel,
       });
       var block = tb.el as unknown as ToolEl;
-      block._toolBlock = tb;
+      (block as any)._toolBlock = tb;
 
       // Add compact label below header if applicable
       if (compact) {
         var compactEl = document.createElement("div");
         compactEl.className = "compact-label";
         compactEl.textContent = "[" + compact.kind + "] " + compact.label;
-        tb.getHeaderEl().after(compactEl);
+        (tb as any).getHeaderEl().after(compactEl);
       }
 
       // Store path, offset, and language for result rendering
-      block._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath) : undefined, compact: compact, offset: offset };
+      (block as any)._readState = { rawPath: rawPath, lang: rawPath ? getLangFromPath(rawPath) : undefined, compact: compact, offset: offset };
 
       return block;
     },
@@ -383,9 +383,9 @@ export const readToolRenderer = {
       // Read tool results come via tool-end, not incremental updates
     },
     finalize: function (el: ToolEl, result: ToolResult, isError: boolean, entryId?: string) {
-      var tb = el._toolBlock;
+      var tb = (el as any)._toolBlock;
       if (tb) {
-        tb.update({ status: isError ? "error" : "done", entryId: entryId });
+        (tb as any).update({ status: isError ? "error" : "done", entryId: entryId });
       } else {
         var statusEl = el.querySelector(".tool-status");
         if (statusEl) {
@@ -406,7 +406,7 @@ export const readToolRenderer = {
           .join("\n");
       }
 
-      var tr = tb ? tb.getResultEl() : el.querySelector(".tool-result");
+      var tr = tb ? (tb as any).getResultEl() : el.querySelector(".tool-result");
       if (!tr) {return;}
 
       if (isError) {
@@ -431,7 +431,7 @@ export const readToolRenderer = {
       text = text.replace(/\n?\[Truncated[^\]]*\](?:\n|$)/g, "");
       text = text.replace(/\n?\[\d+ more lines in file[^\]]*\](?:\n|$)/g, "");
 
-      var readState = (el as any)._readState || {};
+      var readState: any = (el as any)._readState || {};
       var lang = readState.lang;
 
       // Syntax-highlighted code in a scrollable container when tall.
@@ -455,10 +455,10 @@ export const readToolRenderer = {
       var contNextOffset = 0;
       var contRemaining = 0;
 
-      if (trunc && trunc.truncated) {
+      if (trunc && (trunc as any).truncated) {
         // Case 1: SDK hard truncation (50KB or 2000 lines)
-        contNextOffset = (readState.offset || 0) + trunc.outputLines;
-        contRemaining = trunc.totalLines - contNextOffset;
+        contNextOffset = (readState.offset || 0) + (trunc as any).outputLines;
+        contRemaining = (trunc as any).totalLines - contNextOffset;
         hasMore = contRemaining > 0;
       } else if (userMoreMatch) {
         // Case 2: User-specified limit with more content in file
@@ -606,7 +606,7 @@ export function handleToolStart(data: any) {
     if (state.currentThinkingEl) {
       var _tb = state.currentThinkingEl._component;
       if (_tb) {
-        _tb.update({ content: _tb._rawText || "", done: true });
+        (_tb as any).update({ content: (_tb as any)._rawText || "", done: true });
       } else {
         var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
         if (thSpinner) {thSpinner.remove();}
@@ -660,17 +660,17 @@ export function handleToolStart(data: any) {
           pathEl.setAttribute("data-path", newPath);
         }
         // Also update internal state so lang/syntax highlighting work
-        if (block._readState && !block._readState!.rawPath) {
-          block._readState!.rawPath = newPath;
-          block._readState!.lang = getLangFromPath(newPath);
+        if ((block as any)._readState && !(block as any)._readState!.rawPath) {
+          (block as any)._readState!.rawPath = newPath;
+          (block as any)._readState!.lang = getLangFromPath(newPath);
         }
-        if (block._writeState && !block._writeState!.rawPath) {
-          block._writeState!.rawPath = newPath;
-          block._writeState!.lang = getLangFromPath(newPath);
+        if ((block as any)._writeState && !(block as any)._writeState!.rawPath) {
+          (block as any)._writeState!.rawPath = newPath;
+          (block as any)._writeState!.lang = getLangFromPath(newPath);
         }
         // Update ToolBlock component if present
-        var tb = block._toolBlock;
-        if (tb) { tb.update({ filePath: newPath }); }
+        var tb = (block as any)._toolBlock;
+        if (tb) { (tb as any).update({ filePath: newPath }); }
       }
       if (data.entryId && block && block.id && !block.id.startsWith("entry-")) {
         block.id = "entry-" + data.entryId;
@@ -680,7 +680,7 @@ export function handleToolStart(data: any) {
 
     // Look up the renderer for this tool name
     var renderer = getToolRenderer(data.toolName);
-    var block = renderer.create(data);
+    var block = (renderer as any).create(data);
     if (!block) { console.warn("[pi-gui] tool renderer returned null for", data.toolName); return; }
 
     if (data.entryId && !block.id.startsWith("entry-")) {
@@ -708,7 +708,7 @@ export function handleToolUpdate(data: any) {
     if (state.currentThinkingEl) {
       var _tb2 = state.currentThinkingEl._component;
       if (_tb2) {
-        _tb2.update({ content: _tb2._rawText || "", done: true });
+        (_tb2 as any).update({ content: (_tb2 as any)._rawText || "", done: true });
       } else {
         var thSpinner = state.currentThinkingEl.querySelector(".thinking-spinner");
         if (thSpinner) {thSpinner.remove();}
@@ -717,9 +717,9 @@ export function handleToolUpdate(data: any) {
 
     var entry = state.currentToolBlocks[data.toolCallId];
     if (!entry) {return;}
-    var block = entry.el || entry;
-    var renderer = entry.renderer || defaultToolRenderer;
-    renderer.update(block, data.partialResult);
+    var block = (entry as any).el || entry;
+    var renderer = (entry as any).renderer || defaultToolRenderer;
+    (renderer as any).update(block, data.partialResult);
     scrollToBottom();
   }
 
@@ -752,9 +752,9 @@ export function handleToolEnd(data: any) {
       }
       return;
     }
-    var block = entry.el || entry;
-    var renderer = entry.renderer || defaultToolRenderer;
-    renderer.finalize(block, data.result, data.isError, data.entryId);
+    var block = (entry as any).el || entry;
+    var renderer = (entry as any).renderer || defaultToolRenderer;
+    (renderer as any).finalize(block, data.result, data.isError, data.entryId);
     delete state.currentToolBlocks[callId];
     scrollToBottom();
   }
