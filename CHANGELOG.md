@@ -1,5 +1,16 @@
 # Change Log
 
+## [0.0.35] — Session restore fix
+
+### Fixed
+- **Session restore** race condition — `saveOpenSessionPaths` inside
+  `initSessionInBackground` overwrote the saved session list with only the
+  primary session before `restoreAdditionalSessions` could read it, causing
+  additional tabs to be lost on reload. Now snapshots saved paths before
+  init and restores from the snapshot.
+- **Active session** now correctly restored after reload by persisting the
+  focused tab path in `workspaceState`.
+
 ## [0.0.34] — Session restore, activation fix
 
 ### Fixed
