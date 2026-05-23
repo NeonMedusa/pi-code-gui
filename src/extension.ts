@@ -666,11 +666,16 @@ export async function activate(context: vscode.ExtensionContext) {
   primary.webviewPanel.show();
 
   // ── Step 4: Initialize pi SDK asynchronously ───────────
+  // Snapshot saved paths BEFORE initSessionInBackground overwrites them
+  // (saveOpenSessionPaths inside that function writes only the primary session).
+  const savedPaths: string[] = context.workspaceState.get("pi-code-gui.openSessionPaths") ?? [];
+  const savedActivePath: string | undefined = context.workspaceState.get("pi-code-gui.activeSessionPath") ?? undefined;
+
   initSessionInBackground(context, primary).then(() => {
     if (primary.initialized) {
-      restoreAdditionalSessions(context).then(() => {
-        // Restore which session was active before reload
-        restoreActiveSession();
+      restoreAdditionalSessions(context, savedPaths, primary).then(() => {
+        restoreActiveSession(savedActivePath);
+        saveOpenSessionPaths();
       });
     }
   });
@@ -1117,9 +1122,6 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
 
   sessionTreeProvider?.refresh();
 
-  // Persist open sessions for next VS Code reload
-  saveOpenSessionPaths();
-
   console.log(`Pi Code Gui session ${sw.id} ready`);
 }
 
@@ -1140,11 +1142,14 @@ function removeSession(sw: SessionWindow) {
  * Restore additional sessions that were open when VS Code was last closed.
  * Called after the primary session finishes initializing on activate().
  */
-async function restoreAdditionalSessions(context: vscode.ExtensionContext) {
-  const savedPaths: string[] = context.workspaceState.get("pi-code-gui.openSessionPaths") ?? [];
-  if (savedPaths.length <= 1) { return; } // Only the primary was open
+async function restoreAdditionalSessions(
+  context: vscode.ExtensionContext,
+  savedPaths: string[],
+  primary: SessionWindow,
+) {
+  if (savedPaths.length <= 1) { return; }
 
-  const primaryPath = primarySession()?.piService.sessionFilePath;
+  const primaryPath = primary.piService.sessionFilePath;
 
   // Restore saved session counter to avoid ID collisions
   const savedCounter: number | undefined = context.workspaceState.get("pi-code-gui.sessionCounter");
@@ -1153,10 +1158,7 @@ async function restoreAdditionalSessions(context: vscode.ExtensionContext) {
   }
 
   for (const p of savedPaths) {
-    // Skip the session that the primary already opened via continueRecent
     if (p === primaryPath) { continue; }
-
-    // Verify the session file still exists on disk
     if (!fs.existsSync(p)) { continue; }
 
     const sw = createSessionWindow(context);
@@ -1167,11 +1169,8 @@ async function restoreAdditionalSessions(context: vscode.ExtensionContext) {
 }
 
 /** Restore which session was focused before reload. */
-function restoreActiveSession() {
-  if (!extContext) { return; }
-  const activePath: string | undefined = extContext.workspaceState.get("pi-code-gui.activeSessionPath") ?? undefined;
-  if (!activePath) { return; }
-  // Find the session with this path among restored sessions
+function restoreActiveSession(activePath: string | undefined) {
+  if (!extContext || !activePath) { return; }
   for (const sw of sessions) {
     if (sw.piService.sessionFilePath === activePath) {
       setActiveSession(sw);
