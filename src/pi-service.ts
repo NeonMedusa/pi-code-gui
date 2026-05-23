@@ -1321,12 +1321,6 @@ export class PiService {
     // of agent state, while steer()/followUp() explicitly reject them
     // ("extension commands cannot be queued").
     if (text.startsWith("/")) {
-      // Emit the command as a user message so it always appears in the
-      // conversation transcript.  Slash commands don't generate user-message
-      // events through the normal session.prompt() path (builtins are
-      // handled locally, extensions are intercepted by _tryExecuteExtensionCommand).
-      this.emit({ type: "chat-message", data: { role: "user", content: text } });
-
       const handled = await this.tryHandleCommand(text);
       if (handled) { return; }
       // Extension command or unknown slash — execute immediately via prompt(),

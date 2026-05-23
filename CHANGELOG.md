@@ -1,5 +1,15 @@
 # Change Log
 
+## [0.0.34] — Session restore, activation fix
+
+### Fixed
+- **Session restore** now picks the correct tab after reload by persisting
+  the active session path in `workspaceState`.
+- **`onCommand` activation events** prevent "command not found" errors when
+  editor toolbar buttons are invoked before `onStartupFinished` fires.
+- **Slash commands** reverted to TUI behaviour — execute silently without
+  echoing into the conversation transcript.
+
 ## [0.0.33] — Strict TypeScript, UX polish, zombie bash fix
 
 ### Added

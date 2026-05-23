@@ -35,6 +35,9 @@ async function saveOpenSessionPaths() {
   }
   await extContext.workspaceState.update("pi-code-gui.openSessionPaths", paths);
   await extContext.workspaceState.update("pi-code-gui.sessionCounter", sessionCounter);
+  // Persist which session was active so we can restore focus after reload
+  const activePath = activeSessionWindow?.piService.sessionFilePath ?? null;
+  await extContext.workspaceState.update("pi-code-gui.activeSessionPath", activePath);
 }
 
 /** The most recently focused (active) session window. */
@@ -665,7 +668,10 @@ export async function activate(context: vscode.ExtensionContext) {
   // ── Step 4: Initialize pi SDK asynchronously ───────────
   initSessionInBackground(context, primary).then(() => {
     if (primary.initialized) {
-      restoreAdditionalSessions(context);
+      restoreAdditionalSessions(context).then(() => {
+        // Restore which session was active before reload
+        restoreActiveSession();
+      });
     }
   });
 
@@ -1157,6 +1163,21 @@ async function restoreAdditionalSessions(context: vscode.ExtensionContext) {
     sw.webviewPanel.show();
     sessionTreeProvider?.refresh();
     initSessionInBackground(context, sw, { openPath: p });
+  }
+}
+
+/** Restore which session was focused before reload. */
+function restoreActiveSession() {
+  if (!extContext) { return; }
+  const activePath: string | undefined = extContext.workspaceState.get("pi-code-gui.activeSessionPath") ?? undefined;
+  if (!activePath) { return; }
+  // Find the session with this path among restored sessions
+  for (const sw of sessions) {
+    if (sw.piService.sessionFilePath === activePath) {
+      setActiveSession(sw);
+      sw.webviewPanel.show();
+      return;
+    }
   }
 }
 
