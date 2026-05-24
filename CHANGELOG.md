@@ -1,5 +1,17 @@
 # Change Log
 
+## [0.0.36] — Tool rendering fixes
+
+### Fixed
+- **Extension tools** now render during live streaming — `handleToolStart`
+  crashed on `null.create()` for unregistered tools (anything beyond
+  `bash`/`write`/`edit`/`read`). Now falls back to `defaultToolRenderer`.
+- **Tool-only assistant messages** now replay correctly on reload/resume.
+  Previously the `if (text || thinking)` guard in `sendInitialMessages` and
+  `replayBranchEntries` skipped assistant turns that had only tool calls
+  with no text, making tool executions disappear from the conversation
+  history after restart.
+
 ## [0.0.35] — Session restore fix
 
 ### Fixed
