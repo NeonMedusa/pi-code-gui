@@ -678,8 +678,9 @@ export function handleToolStart(data: any) {
       return;
     }
 
-    // Look up the renderer for this tool name
-    var renderer = getToolRenderer(data.toolName);
+    // Look up the renderer for this tool name.
+    // Fall back to defaultToolRenderer for unregistered tools (e.g. extension tools).
+    var renderer = getToolRenderer(data.toolName) || defaultToolRenderer;
     var block = (renderer as any).create(data);
     if (!block) { console.warn("[pi-gui] tool renderer returned null for", data.toolName); return; }
 

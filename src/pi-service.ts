@@ -994,44 +994,46 @@ export class PiService {
         } else if (msg.role === "assistant") {
           const text = this.extractTextFromContent(msg.content);
           const thinking = this.extractThinkingFromContent(msg.content);
-          if (text || thinking) {
-            this.emit({ type: "assistant-start", data: { messageId: msg.id, entryId: entry.id } });
-            // Emit thinking content first, then text
-            if (thinking) {
-              this.emit({ type: "thinking-delta", data: { delta: thinking } });
-              this.emit({ type: "thinking-delta", data: { delta: "", done: true } });
-            }
-            if (text) {
-              this.emit({ type: "stream-delta", data: { delta: text } });
-            }
-            this.emit({
-              type: "assistant-end",
-              data: {
-                stopReason: msg.stopReason,
-                errorMessage: msg.errorMessage,
-                toolCalls: this.extractToolCallsFromContent(msg.content).map((tc) => tc.id),
-              },
-            });
+          const toolCalls = this.extractToolCallsFromContent(msg.content);
+          const hasToolCalls = toolCalls.length > 0;
 
-            const toolCalls = this.extractToolCallsFromContent(msg.content);
-            for (const tc of toolCalls) {
-              const toolResultEntry = toolResultsById.get(tc.id);
-              if (tc.name === "bash" || tc.name === "exec") {
-                this.emit({ type: "bash-start", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", entryId: toolResultEntry?.id } });
-                const outputText = toolResultEntry?.message
-                  ? this.extractTextFromContent(toolResultEntry.message.content)
-                  : "";
-                this.emit({
-                  type: "bash-end",
-                  data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", exitCode: 0, cancelled: false, output: outputText, isError: false, entryId: toolResultEntry?.id },
-                });
+          // Always emit assistant messages — even tool-only ones with no text.
+          // Skipping them makes tool executions invisible on reload/resume.
+          this.emit({ type: "assistant-start", data: { messageId: msg.id, entryId: entry.id } });
+          // Emit thinking content first, then text
+          if (thinking) {
+            this.emit({ type: "thinking-delta", data: { delta: thinking } });
+            this.emit({ type: "thinking-delta", data: { delta: "", done: true } });
+          }
+          if (text) {
+            this.emit({ type: "stream-delta", data: { delta: text } });
+          }
+          this.emit({
+            type: "assistant-end",
+            data: {
+              stopReason: msg.stopReason,
+              errorMessage: msg.errorMessage,
+              toolCalls: toolCalls.map((tc) => tc.id),
+            },
+          });
+
+          for (const tc of toolCalls) {
+            const toolResultEntry = toolResultsById.get(tc.id);
+            if (tc.name === "bash" || tc.name === "exec") {
+              this.emit({ type: "bash-start", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", entryId: toolResultEntry?.id } });
+              const outputText = toolResultEntry?.message
+                ? this.extractTextFromContent(toolResultEntry.message.content)
+                : "";
+              this.emit({
+                type: "bash-end",
+                data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", exitCode: 0, cancelled: false, output: outputText, isError: false, entryId: toolResultEntry?.id },
+              });
+            } else {
+              this.emit({ type: "tool-start", data: { toolCallId: tc.id, toolName: tc.name, args: tc.arguments, fromMessage: true, entryId: toolResultEntry?.id } });
+              if (toolResultEntry?.message) {
+                this.emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: toolResultEntry.message, isError: false, entryId: toolResultEntry?.id } });
               } else {
-                this.emit({ type: "tool-start", data: { toolCallId: tc.id, toolName: tc.name, args: tc.arguments, fromMessage: true, entryId: toolResultEntry?.id } });
-                if (toolResultEntry?.message) {
-                  this.emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: toolResultEntry.message, isError: false, entryId: toolResultEntry?.id } });
-                } else {
-                  this.emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: { content: [{ type: "text", text: "(completed)" }] }, isError: false, entryId: toolResultEntry?.id } });
-                }
+                this.emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: { content: [{ type: "text", text: "(completed)" }] }, isError: false, entryId: toolResultEntry?.id } });
               }
             }
           }
@@ -1572,32 +1574,33 @@ export class PiService {
         } else if (msg.role === "assistant") {
           const text = this.extractTextFromContent(msg.content);
           const thinking = this.extractThinkingFromContent(msg.content);
-          if (text || thinking) {
-            this.emit({ type: "assistant-start", data: { messageId: msg.id, entryId: entry.id } });
-            // Emit thinking content first, then text
-            if (thinking) {
-              this.emit({ type: "thinking-delta", data: { delta: thinking } });
-              this.emit({ type: "thinking-delta", data: { delta: "", done: true } });
-            }
-            if (text) {
-              this.emit({ type: "stream-delta", data: { delta: text } });
-            }
-            this.emit({ type: "assistant-end", data: { stopReason: msg.stopReason, errorMessage: msg.errorMessage, toolCalls: this.extractToolCallsFromContent(msg.content).map((tc: any) => tc.id) } });
+          const toolCalls = this.extractToolCallsFromContent(msg.content);
 
-            const toolCalls = this.extractToolCallsFromContent(msg.content);
-            for (const tc of toolCalls) {
-              const toolResultEntry = toolResultsById.get(tc.id);
-              if (tc.name === "bash" || tc.name === "exec") {
-                this.emit({ type: "bash-start", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", entryId: toolResultEntry?.id } });
-                const outputText = toolResultEntry?.message ? this.extractTextFromContent(toolResultEntry.message.content) : "";
-                this.emit({ type: "bash-end", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", exitCode: 0, cancelled: false, output: outputText, isError: false, entryId: toolResultEntry?.id } });
+          // Always emit assistant messages — even tool-only ones with no text.
+          // Skipping them makes tool executions invisible on reload/resume.
+          this.emit({ type: "assistant-start", data: { messageId: msg.id, entryId: entry.id } });
+          // Emit thinking content first, then text
+          if (thinking) {
+            this.emit({ type: "thinking-delta", data: { delta: thinking } });
+            this.emit({ type: "thinking-delta", data: { delta: "", done: true } });
+          }
+          if (text) {
+            this.emit({ type: "stream-delta", data: { delta: text } });
+          }
+          this.emit({ type: "assistant-end", data: { stopReason: msg.stopReason, errorMessage: msg.errorMessage, toolCalls: toolCalls.map((tc: any) => tc.id) } });
+
+          for (const tc of toolCalls) {
+            const toolResultEntry = toolResultsById.get(tc.id);
+            if (tc.name === "bash" || tc.name === "exec") {
+              this.emit({ type: "bash-start", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", entryId: toolResultEntry?.id } });
+              const outputText = toolResultEntry?.message ? this.extractTextFromContent(toolResultEntry.message.content) : "";
+              this.emit({ type: "bash-end", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", exitCode: 0, cancelled: false, output: outputText, isError: false, entryId: toolResultEntry?.id } });
+            } else {
+              this.emit({ type: "tool-start", data: { toolCallId: tc.id, toolName: tc.name, args: tc.arguments, fromMessage: true, entryId: toolResultEntry?.id } });
+              if (toolResultEntry?.message) {
+                this.emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: toolResultEntry.message, isError: false, entryId: toolResultEntry?.id } });
               } else {
-                this.emit({ type: "tool-start", data: { toolCallId: tc.id, toolName: tc.name, args: tc.arguments, fromMessage: true, entryId: toolResultEntry?.id } });
-                if (toolResultEntry?.message) {
-                  this.emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: toolResultEntry.message, isError: false, entryId: toolResultEntry?.id } });
-                } else {
-                  this.emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: { content: [{ type: "text", text: "(forked)" }] }, isError: false, entryId: toolResultEntry?.id } });
-                }
+                this.emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: { content: [{ type: "text", text: "(forked)" }] }, isError: false, entryId: toolResultEntry?.id } });
               }
             }
           }
