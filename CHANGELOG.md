@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.0.37] — Edit tool diff rendering fix
+
+### Fixed
+- **Edit tool** Fixed to always render red/green diff blocks in the result area.  
+
 ## [0.0.36] — Tool rendering fixes
 
 ### Fixed
