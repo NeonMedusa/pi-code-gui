@@ -20,6 +20,7 @@ import {
   handleToolStart, handleToolUpdate, handleToolEnd,
   writeToolRenderer, editToolRenderer, readToolRenderer,
   bashToolRenderer, defaultToolRenderer,
+  insertToolBlock,
 } from "../tools/index.js";
 
 
@@ -367,6 +368,7 @@ export function handleAssistantStart(data: any) {
     state.currentThinkingEl = null;
     state._streamPrevTokens = [];  // Reset token tracker for new message
     state.assistantToolCallIds = {};
+    state.lastToolInsertionEl = null;  // New turn — reset tool insertion anchor
     state.chatContainer.appendChild(state.currentAssistantEl);
     scrollToBottom();
   }
@@ -384,7 +386,20 @@ export function handleAssistantEnd(data: any) {
         if (raw) {
           var thinkingBlock = mc.querySelector(".thinking-block");
           if (state._markedAvailable) {
-            while (mc.firstChild) { mc.removeChild(mc.firstChild); }
+            // Re-render markdown content from the accumulated raw text.
+            // Only remove text/block children — preserve tool blocks,
+            // thinking blocks, and other non-markdown content that may
+            // have been rendered into .message-content by extensions.
+            var kids = Array.from(mc.children);
+            for (var ki = 0; ki < kids.length; ki++) {
+              var kid = kids[ki];
+              // Skip tool blocks, thinking blocks, and anything that
+              // wasn't produced by our markdown rendering.
+              if (kid === thinkingBlock) { continue; }
+              if (kid.classList.contains("tool-block")) { continue; }
+              if (kid.classList.contains("bash-execution")) { continue; }
+              kid.remove();
+            }
             var tokens = marked.lexer(raw);
             for (var ti = 0; ti < tokens.length; ti++) {
               mc.appendChild(renderBlock(tokens[ti]));
@@ -2089,7 +2104,7 @@ export function handleBashStart(data: Record<string, unknown>) {
       entryId: data.entryId as string,
       fromMessage: false,
     });
-    state.chatContainer.appendChild(block as HTMLElement);
+    insertToolBlock(block as HTMLElement);
     state.bashBlocks[callId as string] = block;
     state.bashOutputs[callId as string] = "";
     state.chatContainer.scrollTop = state.chatContainer.scrollHeight;

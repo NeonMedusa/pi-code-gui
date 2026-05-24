@@ -5,7 +5,7 @@ import {
   renderFileContent, renderDiffMarkup, renderDiffIfApplicable,
   formatToolError, getLangFromPath, getCompactReadLabel,
   renderMarkdown, renderMarkdownSafe, hideWelcome, scrollToBottom, renderToolResultTruncated,
-  registerToolRenderer, getToolRenderer,
+  registerToolRenderer, getToolRenderer, truncate,
 } from "../render/engine.js";
 import { highlightCode } from "../highlight.js";
 import { html, safe } from "../render/html.js";
@@ -273,9 +273,14 @@ export const editToolRenderer = {
           .join("\n");
       }
       // The Pi SDK's edit tool returns the diff in result.details.diff,
-      // not in the content text.  Merge it so renderDiffIfApplicable
-      // can detect and render the actual red/green diff blocks.
-      var diffText = result?.details?.diff as string | undefined;
+      // not in the content text.  Only render it in the result area when
+      // previews weren't shown (no _editEdits).  When previews were rendered,
+      // they already show the red/green old/new blocks in .tool-content, so
+      // duplicating the diff in .tool-result would be redundant (TUI matches
+      // this — formatEditResult only returns a diff when it differs from the
+      // preview).
+      var hasPreviews = !!(el as any)._editEdits;
+      var diffText = !hasPreviews ? (result?.details?.diff as string | undefined) : undefined;
       if (diffText) {
         text = text ? text + "\n" + diffText : diffText;
       }
@@ -603,6 +608,33 @@ export const bashToolRenderer = {
   registerToolRenderer("edit", editToolRenderer);
   registerToolRenderer("read", readToolRenderer);
 
+  // ── Tool block insertion helper ────────────────────────
+  //
+  // Inserts a tool/batch block after the current assistant message
+  // so tools render inline with the conversation flow (matching the
+  // TUI behaviour) instead of accumulating at the bottom of chatContainer.
+  // Falls back to appendChild when there's no assistant anchor (e.g.
+  // during initial replay).
+
+  function insertToolBlock(block: HTMLElement) {
+    var anchor = state.lastToolInsertionEl || state.currentAssistantEl;
+    if (anchor && anchor.parentNode === state.chatContainer) {
+      // Insert after anchor
+      var next = anchor.nextSibling;
+      if (next) {
+        state.chatContainer.insertBefore(block, next);
+      } else {
+        state.chatContainer.appendChild(block);
+      }
+    } else {
+      state.chatContainer.appendChild(block);
+    }
+    state.lastToolInsertionEl = block;
+  }
+
+  // Exported for handleBashStart in handlers/index.ts
+  export { insertToolBlock };
+
   // ═══ Message Renderer Registry ════════════════════════════
   // ═══ Tool Lifecycle ════════════════════════════════════
 
@@ -679,6 +711,32 @@ export function handleToolStart(data: any) {
         var tb = (block as any)._toolBlock;
         if (tb) { (tb as any).update({ filePath: newPath }); }
       }
+      // When tool_execution_start fires (fromMessage=false), it carries
+      // the complete tool arguments — the first tool-start from
+      // message_update often had only partial args.  Feed the complete
+      // args to the renderer so it can finish its display (e.g. edit
+      // previews that were missing because oldText/newText hadn't
+      // arrived yet during streaming).
+      if (!data.fromMessage) {
+        var dedupRenderer = existingTool ? (existingTool as any).renderer : bashToolRenderer;
+        if (dedupRenderer && (dedupRenderer as any).update && data.args) {
+          (dedupRenderer as any).update(block, {
+            content: [{ type: "text", text: JSON.stringify(data.args, null, 2) }],
+          });
+        }
+        // Also repair the inline args display (tool-args <code>) if it
+        // was rendered from incomplete streaming data.
+        var argsEl = block?.querySelector?.(".tool-args");
+        if (argsEl && data.args) {
+          var codeEl = argsEl.querySelector("code");
+          if (codeEl) {
+            try {
+              codeEl.textContent = truncate(JSON.stringify(data.args, null, 2), 200);
+            } catch (_e) { /* ignore stringify errors */ }
+          }
+        }
+      }
+
       if (data.entryId && block && block.id && !block.id.startsWith("entry-")) {
         block.id = "entry-" + data.entryId;
       }
@@ -694,7 +752,7 @@ export function handleToolStart(data: any) {
     if (data.entryId && !block.id.startsWith("entry-")) {
       block.id = "entry-" + data.entryId;
     }
-    state.chatContainer.appendChild(block);
+    insertToolBlock(block);
 
     // Store both the element and its renderer for update/finalize
     state.currentToolBlocks[callId] = { el: block, renderer: renderer };

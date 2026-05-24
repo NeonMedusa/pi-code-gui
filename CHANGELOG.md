@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.0.38] — Tool rendering audit
+
+### Changed
+- **Tool blocks now insert after the assistant message** instead of
+  appending at the bottom of the chat. 
+
+### Fixed
+- **Edit result diff no longer duplicates previews.**  
+
 ## [0.0.37] — Edit tool diff rendering fix
 
 ### Fixed
