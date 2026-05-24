@@ -272,6 +272,13 @@ export const editToolRenderer = {
           .map(function (c: { type: string; text: string }) { return c.text; })
           .join("\n");
       }
+      // The Pi SDK's edit tool returns the diff in result.details.diff,
+      // not in the content text.  Merge it so renderDiffIfApplicable
+      // can detect and render the actual red/green diff blocks.
+      var diffText = result?.details?.diff as string | undefined;
+      if (diffText) {
+        text = text ? text + "\n" + diffText : diffText;
+      }
       if (!text && result && typeof result.text === "string") {text = result.text;}
       if (!text && result && typeof result === "string") {text = result;}
       if (!text && result && result.content && result.content.length > 0) {
