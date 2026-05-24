@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.0.39] — Tool block anchors, edit formats, prompt cursor
+
+### Fixed
+- **More Edit tool fixes.**  
+
 ## [0.0.38] — Tool rendering audit
 
 ### Changed
