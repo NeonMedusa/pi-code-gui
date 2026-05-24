@@ -1441,12 +1441,23 @@ let sbSettings = document.getElementById("pi-sb-settings");
   });
 
   state.promptInput.addEventListener("input", function () {
+    // Save cursor position before height recalculation — setting
+    // height:auto then height:Npx can reset selection in VS Code's
+    // Chromium, causing garbled text when typing mid-input after
+    // using arrow keys to reposition the cursor.
+    var selStart = state.promptInput.selectionStart;
+    var selEnd = state.promptInput.selectionEnd;
+
     // Cap at ~5 lines (approx 20px per line = 100px).
     // Only show scrollbar when the content actually exceeds the cap.
     var maxHeight = 100; // 5 lines ~ 100px
     state.promptInput.style.height = "auto";
     var newHeight = Math.min(state.promptInput.scrollHeight, maxHeight);
     state.promptInput.style.height = newHeight + "px";
+
+    // Restore cursor position (height recalculation may have reset it)
+    state.promptInput.selectionStart = selStart;
+    state.promptInput.selectionEnd = selEnd;
     // Only enable overflow scrollbar when content is truncated
     if (state.promptInput.scrollHeight > maxHeight) {
       state.promptInput.style.overflowY = "auto";

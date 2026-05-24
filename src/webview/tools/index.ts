@@ -196,11 +196,30 @@ export function renderWriteContentBlock(el: ToolEl) {
   // highlighting in the call block.  The result area shows the
   // actual computed diff when execution finishes.
 
+  /** Normalize edit args to the standard { path, edits } shape.
+   *  Mirrors the Pi SDK's prepareEditArguments: some models send
+   *  oldText/newText as top-level fields instead of inside an
+   *  edits[] array, and some send edits as a JSON string. */
+  function normalizeEditArgs(args: any): any[] | undefined {
+    if (!args) { return undefined; }
+    // Parse string-style edits (some models send edits as JSON text)
+    if (typeof args.edits === "string") {
+      try { args.edits = JSON.parse(args.edits); } catch (_e) { /* ignore */ }
+    }
+    // Legacy format: oldText/newText as top-level fields
+    if (typeof args.oldText === "string" && typeof args.newText === "string") {
+      var edits = Array.isArray(args.edits) ? args.edits.slice() : [];
+      edits.push({ oldText: args.oldText, newText: args.newText });
+      return edits;
+    }
+    return args.edits;
+  }
+
 export const editToolRenderer = {
     create: function (data: ToolData) {
       hideWelcome();
       var rawPath = data.args && (data.args.path || data.args.file_path || data.args.filePath);
-      var edits = data.args && data.args.edits;
+      var edits = normalizeEditArgs(data.args);
       var editCount = Array.isArray(edits) ? edits.length : 0;
       var editLabel = editCount > 1 ? " (" + editCount + " edits)" : "";
 
@@ -233,7 +252,7 @@ export const editToolRenderer = {
 
       try {
         var args = JSON.parse(text);
-        var edits = args.edits;
+        var edits = normalizeEditArgs(args);
         if (Array.isArray(edits) && edits.length > 0) {
           (el as any)._editEdits = edits;
           // Update edit count in header

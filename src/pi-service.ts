@@ -1206,10 +1206,25 @@ export class PiService {
         const tcEntry = byToolCallId.get(event.toolCallId);
         const tcEntryId = tcEntry?.id ?? event.toolCallId;
 
+        // Apply the tool's prepareArguments hook so the webview receives
+        // validated/transformed args (e.g. legacy oldText/newText → edits[]
+        // for the edit tool).  The SDK runs prepareArguments internally but
+        // only after emitting this event, so raw LLM args leak through.
+        let args = event.args;
+        try {
+          const tools = this.session?.agent?.state?.tools;
+          if (tools) {
+            const toolDef = (tools as any[]).find((t: any) => t.name === event.toolName);
+            if (toolDef?.prepareArguments) {
+              args = toolDef.prepareArguments(args);
+            }
+          }
+        } catch (_e) { /* best-effort — keep raw args on failure */ }
+
         if (event.toolName === "bash" || event.toolName === "exec") {
-          this.emit({ type: "bash-start", data: { toolCallId: event.toolCallId, command: event.args?.command ?? "", entryId: tcEntryId } });
+          this.emit({ type: "bash-start", data: { toolCallId: event.toolCallId, command: args?.command ?? "", entryId: tcEntryId } });
         } else {
-          this.emit({ type: "tool-start", data: { toolCallId: event.toolCallId, toolName: event.toolName, args: event.args, fromMessage: false, entryId: tcEntryId } });
+          this.emit({ type: "tool-start", data: { toolCallId: event.toolCallId, toolName: event.toolName, args: args, fromMessage: false, entryId: tcEntryId } });
         }
         break;
       }
