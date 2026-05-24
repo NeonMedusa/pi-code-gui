@@ -20,6 +20,9 @@ export interface AppState {
   // ── Tool execution tracking
   currentToolBlocks: Record<string, { el: HTMLElement; renderer?: unknown } | HTMLElement | undefined>;
   assistantToolCallIds: Record<string, boolean>;
+  /** Last tool/batch block inserted after the current assistant message.
+   *  Subsequent tools insert after this one to preserve call order. */
+  lastToolInsertionEl: HTMLElement | null;
 
   // ── Message tracking
   lastUserMessageContent: string | null;
@@ -123,6 +126,7 @@ export const state: AppState = {
 
   currentToolBlocks: {},
   assistantToolCallIds: {},
+  lastToolInsertionEl: null,
 
   lastUserMessageContent: null,
   userMessagesSeen: 0,
