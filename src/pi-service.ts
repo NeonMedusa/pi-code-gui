@@ -935,6 +935,9 @@ export class PiService {
     } catch (e: any) {
       piWarn(`bindExtensions failed: ${e.message ?? e}`);
     }
+
+    // Push updated slash-command list after extensions register commands
+    this.emitSlashCommands();
   }
 
   /** Get all slash commands available to the user.
@@ -990,7 +993,7 @@ export class PiService {
   }
 
   /** Emit all registered slash commands to the webview for autocomplete. */
-  private emitSlashCommands(): void {
+  emitSlashCommands(): void {
     const all = this.getAllSlashCommands();
     this.emit({
       type: "slash-commands-update",
@@ -1508,6 +1511,7 @@ export class PiService {
         await this.session.reload();
         // Re-send initial messages so the webview reflects updated extensions/skills
         this.sendInitialMessages();
+        this.emitSlashCommands();
         return true;
       }
 

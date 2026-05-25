@@ -1,5 +1,15 @@
 # Change Log
 
+## [0.0.43] — Slash autocomplete refresh after extension load
+
+### Fixed
+- **Webview slash autocomplete now refreshes after extensions load.**
+  `emitSlashCommands()` was called once at the end of `initialize()` —
+  before `bindExtensions()` registered extension commands.  Now called
+  again after `bindExtensions()`, after `session.reload()`, and after
+  the `reloadContext` command, so the inline autocomplete and the
+  Cmd+/ quick-pick stay in sync.
+
 ## [0.0.42] — Keybinding command-not-found fix
 
 ### Fixed
