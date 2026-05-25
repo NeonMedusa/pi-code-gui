@@ -2115,6 +2115,7 @@ export class PiService {
     return this.sessionManager?.getSessionFile?.() ?? null;
   }
   get sessionIdValue(): string | null { return this.sessionId; }
+  get initialized(): boolean { return this.session !== null; }
   get rawSession(): any { return this.session; }
   /** Expose the model registry for dynamic model pickers in the webview */
   get modelRegistryInstance(): any { return this.modelRegistry; }

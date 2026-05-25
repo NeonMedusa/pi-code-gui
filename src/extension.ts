@@ -665,6 +665,12 @@ export async function activate(context: vscode.ExtensionContext) {
   const primary = createSessionWindow(context);
   primary.webviewPanel.show();
 
+  // ── Step 3b: Register SDK-independent commands ─────
+  // These must be registered synchronously so keybindings
+  // (Cmd+/, Cmd+L, etc.) work immediately — the async SDK
+  // init chain in initSessionInBackground can take seconds.
+  registerEarlyCommands(context);
+
   // ── Step 4: Initialize pi SDK asynchronously ───────────
   // Snapshot saved paths BEFORE initSessionInBackground overwrites them
   // (saveOpenSessionPaths inside that function writes only the primary session).
@@ -958,6 +964,89 @@ function addSession(context: vscode.ExtensionContext) {
   initSessionInBackground(context, sw, { fresh: true });
 }
 
+// ── Early command registration (SDK-independent) ───────
+//
+// These commands are registered synchronously in activate()
+// so keybindings (Cmd+/, Cmd+@, etc.) work immediately.
+// The async SDK init chain in initSessionInBackground can
+// take seconds on slow startup — without this guard, VS Code
+// sees the keybinding mapped but the command missing.
+
+function registerEarlyCommands(context: vscode.ExtensionContext) {
+  // ── pickCommand (Cmd+/) ─────────────────────────────
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.pickCommand", async () => {
+      // Resolve the current piService at invocation time so
+      // the command works regardless of which session is active.
+      const active = activeSessionWindow ?? primarySession();
+      const pi = active?.piService;
+      const allCommands = pi?.getAllSlashCommands() ?? [];
+
+      // Build grouped quick-pick items
+      const items: vscode.QuickPickItem[] = [];
+      const grouped: Record<string, Array<{ cmd: string; desc: string; source: string }>> = {};
+      for (const c of allCommands) {
+        const group = c.source || "other";
+        if (!grouped[group]) { grouped[group] = []; }
+        grouped[group].push(c);
+      }
+
+      const groupOrder = ["builtin"];
+      for (const g of Object.keys(grouped).sort()) {
+        if (g !== "builtin") { groupOrder.push(g); }
+      }
+
+      for (const group of groupOrder) {
+        const cmds = grouped[group];
+        if (!cmds || cmds.length === 0) { continue; }
+        items.push({
+          label: `\u2014 ${group} \u2014`,
+          kind: vscode.QuickPickItemKind.Separator,
+        });
+        for (const c of cmds) {
+          items.push({ label: c.cmd, description: c.desc || `(${group})` });
+        }
+      }
+
+      if (items.length === 0) {
+        items.push(
+          { label: "/model", description: "Switch model" },
+          { label: "/new", description: "Start new session" },
+          { label: "/resume", description: "Resume a previous session" },
+          { label: "/fork", description: "Fork session from message" },
+        );
+      }
+
+      const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: "Slash command (/)",
+        matchOnDescription: true,
+      });
+      if (picked && typeof picked !== "string" && (picked as vscode.QuickPickItem).kind !== vscode.QuickPickItemKind.Separator) {
+        vscode.commands.executeCommand("pi-code-gui.sendSlashCommand", picked.label);
+      }
+    }),
+  );
+
+  // ── pickFile (Cmd+Shift+@) ──────────────────────────
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.pickFile", async () => {
+      const files = await vscode.workspace.findFiles("**/*", "**/node_modules/**", 200);
+      const items = files.map((u) => ({
+        label: vscode.workspace.asRelativePath(u),
+        uri: u,
+      }));
+      const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: "Pick a file (@)",
+      });
+      if (picked && typeof picked !== "string") {
+        vscode.commands.executeCommand(
+          "pi-code-gui.referenceFile",
+          vscode.workspace.asRelativePath((picked as any).uri),
+        );
+      }
+    }),
+  );
+}
 
 // ── Initialize a single session ───────────────────────
 

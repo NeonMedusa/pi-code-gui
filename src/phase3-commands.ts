@@ -6,8 +6,11 @@ function safeRegister(context: vscode.ExtensionContext, command: string, callbac
   try {
     context.subscriptions.push(vscode.commands.registerCommand(command, callback));
   } catch (e: any) {
-    // Command already registered by activate() — fine, skip.
-    console.log(`[pi-gui] Command "${command}" already registered, skipping phase-3 duplicate.`);
+    if (e?.message?.includes("already registered")) {
+      console.log(`[pi-gui] Command "${command}" already registered, skipping phase-3 duplicate.`);
+    } else {
+      console.error(`[pi-gui] Failed to register command "${command}":`, e);
+    }
   }
 }
 
@@ -16,12 +19,20 @@ export function registerPhase3Commands(
   piService: PiService,
 ): void {
   safeRegister(context, "pi-code-gui.pickModel", async () => {
-    // Model listing is handled by pi binary internals.
-    // For now, let the user type /model in chat.
+    // Guard: commands requiring initialized PiService show a friendly
+    // toast when pressed before SDK init completes.
+    if (!piService.initialized) {
+      vscode.window.showWarningMessage("Pi is still initializing. Try again in a moment.");
+      return;
+    }
     vscode.commands.executeCommand("pi-code-gui.sendSlashCommand", "/model");
   });
 
   safeRegister(context, "pi-code-gui.cycleModel", async () => {
+    if (!piService.initialized) {
+      vscode.window.showWarningMessage("Pi is still initializing. Try again in a moment.");
+      return;
+    }
     try {
       await piService.cycleModel();
       vscode.window.showInformationMessage(`Model: ${piService.model?.id ?? "unknown"}`);
@@ -29,87 +40,24 @@ export function registerPhase3Commands(
   });
 
   safeRegister(context, "pi-code-gui.pickThinkingLevel", async () => {
+    if (!piService.initialized) {
+      vscode.window.showWarningMessage("Pi is still initializing. Try again in a moment.");
+      return;
+    }
     await piService.pickThinkingLevel();
   });
 
   safeRegister(context, "pi-code-gui.cycleThinkingLevel", async () => {
+    if (!piService.initialized) {
+      vscode.window.showWarningMessage("Pi is still initializing. Try again in a moment.");
+      return;
+    }
     try {
       await piService.setThinkingLevel(
         nextLevel(piService.thinkingLevel),
       );
       vscode.window.showInformationMessage(`Thinking: ${piService.thinkingLevel}`);
     } catch (e: any) { vscode.window.showErrorMessage(e.message); }
-  });
-
-  safeRegister(context, "pi-code-gui.pickFile", async () => {
-    const files = await vscode.workspace.findFiles("**/*", "**/node_modules/**", 200);
-    const items = files.map(u => ({
-      label: vscode.workspace.asRelativePath(u),
-      uri: u,
-    }));
-    const picked = await vscode.window.showQuickPick(items, {
-      placeHolder: "Pick a file (@)",
-    });
-    if (picked && typeof picked !== "string") {
-      vscode.commands.executeCommand(
-        "pi-code-gui.referenceFile",
-        vscode.workspace.asRelativePath(picked.uri),
-      );
-    }
-  });
-
-  safeRegister(context, "pi-code-gui.pickCommand", async () => {
-    // Get the full slash-command list from PiService (extension commands,
-    // builtin SDK commands, and prompt templates), grouped by source.
-    const allCommands = piService.getAllSlashCommands();
-
-    // Build grouped quick-pick items with source labels
-    const items: vscode.QuickPickItem[] = [];
-    const grouped: Record<string, Array<{ cmd: string; desc: string }>> = {};
-    for (const c of allCommands) {
-      const group = c.source || "other";
-      if (!grouped[group]) { grouped[group] = []; }
-      grouped[group].push(c);
-    }
-
-    // Order: builtin first, then extensions, then others
-    const groupOrder = ["builtin"];
-    for (const g of Object.keys(grouped).sort()) {
-      if (g !== "builtin") { groupOrder.push(g); }
-    }
-
-    for (const group of groupOrder) {
-      const cmds = grouped[group];
-      if (!cmds || cmds.length === 0) { continue; }
-      items.push({
-        label: `\u2014 ${group} \u2014`,
-        kind: vscode.QuickPickItemKind.Separator,
-      });
-      for (const c of cmds) {
-        items.push({
-          label: c.cmd,
-          description: c.desc || `(${group})`,
-        });
-      }
-    }
-
-    if (items.length === 0) {
-      // Fallback: hardcoded list when session not yet initialized
-      items.push(
-        { label: "/model", description: "Switch model" },
-        { label: "/new", description: "Start new session" },
-        { label: "/resume", description: "Resume a previous session" },
-        { label: "/fork", description: "Fork session from message" },
-      );
-    }
-
-    const picked = await vscode.window.showQuickPick(items, {
-      placeHolder: "Slash command (/)",
-      matchOnDescription: true,
-    });
-    if (picked && typeof picked !== "string" && picked.kind !== vscode.QuickPickItemKind.Separator) {
-      vscode.commands.executeCommand("pi-code-gui.sendSlashCommand", picked.label);
-    }
   });
 
   safeRegister(context, "pi-code-gui.pickFork", async () => {
