@@ -1,62 +1,66 @@
 # Change Log
 
+## [0.0.44] — Past sessions tree render fix
+
+### Fixed
+- **Past sessions empty on cold start.**  Header was emitted with
+  `collapsibleState: None` then transitioned to `Collapsed` — VS Code
+  tree diff ignores this.  Header now hidden until data is ready.
+
 ## [0.0.43] — Slash autocomplete refresh after extension load
 
 ### Fixed
-- **Webview slash autocomplete now refreshes after extensions load.**
-  `emitSlashCommands()` was called once at the end of `initialize()` —
-  before `bindExtensions()` registered extension commands.  Now called
-  again after `bindExtensions()`, after `session.reload()`, and after
-  the `reloadContext` command, so the inline autocomplete and the
-  Cmd+/ quick-pick stay in sync.
+- **Autocomplete stale after extension load.**  `emitSlashCommands()`
+  called before `bindExtensions()` registered commands.  Now re-emits
+  after `bindExtensions()`, `session.reload()`, and `reloadContext`.
 
 ## [0.0.42] — Keybinding command-not-found fix
 
 ### Fixed
-- **Cmd+/ and Cmd+@ keybindings now work immediately** instead of
-  failing with "command not found" during slow SDK init.  `pickCommand`
-  and `pickFile` are now registered synchronously in `activate()` via
-  `registerEarlyCommands()`, using a closure that resolves the current
-  piService at invocation time.  SDK-dependent commands (`pickModel`,
-  `cycleModel`, etc.) show "Pi is still initializing" when pressed
-  before the session is ready.
-- **`safeRegister` now logs unexpected errors** instead of silently
-  swallowing all registerCommand failures as "already registered".
+- **Cmd+/ and Cmd+@ fail during slow init.**  `pickCommand` and
+  `pickFile` moved to `registerEarlyCommands()` in `activate()`,
+  registered synchronously before async SDK init.
+- **`safeRegister` swallowed all errors** — now only catches
+  "already registered".
 
 ### Added
-- **`PiService.initialized` getter** — returns `this.session !== null`,
-  used by phase-3 command guards.
+- **`PiService.initialized` getter** — guards SDK-dependent commands.
 
 ## [0.0.41] — Dynamic slash command picker
 
 ### Added
-- **`PiService.getAllSlashCommands()`** — public method returning extension,
-  builtin SDK, and prompt-template slash commands with a `source` field
-  for grouping.
-- **Grouped quick-pick** in `pickCommand` — commands now grouped by source
-  (`builtin`, `extension (npm:pi-subagents)`, etc.) with separator labels.
-  Falls back to hardcoded list before session initializes.
+- **`PiService.getAllSlashCommands()`** — extension + builtin + prompt
+  template commands with `source` field.
+- **Grouped quick-pick** in `pickCommand` — separator labels by source.
 
 ### Changed
-- **`emitSlashCommands()`** now pushes the complete list (extension + builtin +
-  prompt templates) to the webview via `slash-commands-update`, replacing
-  the old extension-only emit.  The webview autocomplete uses the dynamic
-  list when available, falling back to hardcoded builtins at startup.
+- **`emitSlashCommands()`** pushes complete list to webview via
+  `slash-commands-update`.  Autocomplete uses dynamic list when
+  available, hardcoded builtins as fallback.
 
 ## [0.0.40] — Past sessions load fix
 
 ### Fixed
-- **Past sessions empty on first load.**  `listSessions` used fewer retries
-  than `initialize()` (3×300ms vs 5×500ms), causing the SDK import to
-  give up on slow startup.  Now matches initialize()'s retry parameters.
-  Also fires a targeted `refreshPastOnly()` after the full tree refresh
-  to force VS Code to pick up the `collapsibleState` change when past
-  sessions transition from empty to populated.
+- **Past sessions empty on first load.**  `listSessions` retries now
+  match `initialize()` (5×500ms).  Added targeted `refreshPastOnly()`
+  after full refresh.
 
 ## [0.0.39] — Tool block anchors, edit formats, prompt cursor
 
+### Added
+- **`insertToolBlock()`** and **`state.lastToolInsertionEl`** — tool
+  blocks now insert after the assistant message, not at chat bottom.
+- **`normalizeEditArgs()`** — handles legacy `oldText`/`newText` format.
+
+### Changed
+- **`tool_execution_start` applies `prepareArguments`** from SDK tool
+  definitions before emitting `tool-start`.
+
 ### Fixed
-- **More Edit tool fixes.**  
+- **Edit diff dedup** — result area only shows `.details.diff` when
+  previews weren't already rendered.
+- **Prompt cursor garbled** — `input` handler now saves/restores
+  `selectionStart`/`selectionEnd` around height recalculation.
 
 ## [0.0.38] — Tool rendering audit
 
