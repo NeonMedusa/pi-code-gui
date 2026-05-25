@@ -59,16 +59,55 @@ export function registerPhase3Commands(
   });
 
   safeRegister(context, "pi-code-gui.pickCommand", async () => {
-    const items = [
-      { label: "/model", description: "Switch model" },
-      { label: "/new", description: "New session" },
-      { label: "/resume", description: "Resume session" },
-      { label: "/fork", description: "Fork from message" },
-    ];
+    // Get the full slash-command list from PiService (extension commands,
+    // builtin SDK commands, and prompt templates), grouped by source.
+    const allCommands = piService.getAllSlashCommands();
+
+    // Build grouped quick-pick items with source labels
+    const items: vscode.QuickPickItem[] = [];
+    const grouped: Record<string, Array<{ cmd: string; desc: string }>> = {};
+    for (const c of allCommands) {
+      const group = c.source || "other";
+      if (!grouped[group]) { grouped[group] = []; }
+      grouped[group].push(c);
+    }
+
+    // Order: builtin first, then extensions, then others
+    const groupOrder = ["builtin"];
+    for (const g of Object.keys(grouped).sort()) {
+      if (g !== "builtin") { groupOrder.push(g); }
+    }
+
+    for (const group of groupOrder) {
+      const cmds = grouped[group];
+      if (!cmds || cmds.length === 0) { continue; }
+      items.push({
+        label: `\u2014 ${group} \u2014`,
+        kind: vscode.QuickPickItemKind.Separator,
+      });
+      for (const c of cmds) {
+        items.push({
+          label: c.cmd,
+          description: c.desc || `(${group})`,
+        });
+      }
+    }
+
+    if (items.length === 0) {
+      // Fallback: hardcoded list when session not yet initialized
+      items.push(
+        { label: "/model", description: "Switch model" },
+        { label: "/new", description: "Start new session" },
+        { label: "/resume", description: "Resume a previous session" },
+        { label: "/fork", description: "Fork session from message" },
+      );
+    }
+
     const picked = await vscode.window.showQuickPick(items, {
       placeHolder: "Slash command (/)",
+      matchOnDescription: true,
     });
-    if (picked && typeof picked !== "string") {
+    if (picked && typeof picked !== "string" && picked.kind !== vscode.QuickPickItemKind.Separator) {
       vscode.commands.executeCommand("pi-code-gui.sendSlashCommand", picked.label);
     }
   });

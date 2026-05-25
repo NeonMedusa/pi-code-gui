@@ -937,37 +937,65 @@ export class PiService {
     }
   }
 
-  /** Emit all registered slash commands to the webview for autocomplete. */
-  private emitSlashCommands(): void {
-    if (!this.session || typeof this.session.bindExtensions !== "function") {
-      return;
-    }
+  /** Get all slash commands available to the user.
+   *  Includes extension-registered commands, builtin SDK commands,
+   *  and builtin prompt templates.  Each entry carries a `source`
+   *  field so the UI can group or label them. */
+  getAllSlashCommands(): Array<{ cmd: string; desc: string; source: string }> {
+    const result: Array<{ cmd: string; desc: string; source: string }> = [];
 
+    // ── Extension commands ──────────────────────────
     try {
-      // Get the extension runner (private but accessible on rawSession)
       const rawSession = (this.session as any);
       const runner = rawSession?._extensionRunner;
-      if (!runner || typeof runner.getRegisteredCommands !== "function") {
-        return;
+      if (runner && typeof runner.getRegisteredCommands === "function") {
+        const commands = runner.getRegisteredCommands();
+        if (commands && commands.length > 0) {
+          for (const c of commands) {
+            const source = c?.sourceInfo?.source
+              ? `extension (${c.sourceInfo.source})`
+              : "extension";
+            result.push({
+              cmd: `/${c.invocationName}`,
+              desc: c.description ?? "",
+              source,
+            });
+          }
+        }
       }
+    } catch { /* best-effort */ }
 
-      const commands = runner.getRegisteredCommands();
-      if (!commands || commands.length === 0) {
-        return;
-      }
+    // ── Builtin prompt templates ────────────────────
+    result.push(
+      { cmd: "/fix-diagnostics", desc: "Fix all diagnostics in open file", source: "builtin" },
+      { cmd: "/explain-code", desc: "Explain the code at current cursor position", source: "builtin" },
+      { cmd: "/refactor", desc: "Refactor the selected code", source: "builtin" },
+    );
 
-      const slashCommands = commands.map((c: any) => ({
-        cmd: `/${c.invocationName}`,
-        desc: c.description ?? "",
-      }));
+    // ── Builtin SDK commands ────────────────────────
+    result.push(
+      { cmd: "/model", desc: "Switch model", source: "builtin" },
+      { cmd: "/new", desc: "Start new session", source: "builtin" },
+      { cmd: "/resume", desc: "Resume a previous session", source: "builtin" },
+      { cmd: "/fork", desc: "Fork session from message", source: "builtin" },
+      { cmd: "/compact", desc: "Compact context", source: "builtin" },
+      { cmd: "/export", desc: "Export session to HTML", source: "builtin" },
+      { cmd: "/settings", desc: "Open settings", source: "builtin" },
+      { cmd: "/login", desc: "Configure provider authentication", source: "builtin" },
+      { cmd: "/logout", desc: "Remove provider authentication", source: "builtin" },
+      { cmd: "/debug", desc: "Dump webview state for troubleshooting", source: "builtin" },
+    );
 
-      this.emit({
-        type: "slash-commands-update",
-        data: { commands: slashCommands },
-      });
-    } catch {
-      // Non-critical: slash commands autocomplete is a convenience.
-    }
+    return result;
+  }
+
+  /** Emit all registered slash commands to the webview for autocomplete. */
+  private emitSlashCommands(): void {
+    const all = this.getAllSlashCommands();
+    this.emit({
+      type: "slash-commands-update",
+      data: { commands: all },
+    });
   }
 
   /** Send existing session messages to the webview on initial load (or after reload). */

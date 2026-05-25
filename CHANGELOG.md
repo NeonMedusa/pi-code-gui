@@ -1,5 +1,21 @@
 # Change Log
 
+## [0.0.41] — Dynamic slash command picker
+
+### Added
+- **`PiService.getAllSlashCommands()`** — public method returning extension,
+  builtin SDK, and prompt-template slash commands with a `source` field
+  for grouping.
+- **Grouped quick-pick** in `pickCommand` — commands now grouped by source
+  (`builtin`, `extension (npm:pi-subagents)`, etc.) with separator labels.
+  Falls back to hardcoded list before session initializes.
+
+### Changed
+- **`emitSlashCommands()`** now pushes the complete list (extension + builtin +
+  prompt templates) to the webview via `slash-commands-update`, replacing
+  the old extension-only emit.  The webview autocomplete uses the dynamic
+  list when available, falling back to hardcoded builtins at startup.
+
 ## [0.0.40] — Past sessions load fix
 
 ### Fixed
