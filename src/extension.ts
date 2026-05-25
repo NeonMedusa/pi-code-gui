@@ -7,6 +7,7 @@ import { PiPackagesTreeProvider } from "./pi-packages-tree-provider.js";
 import { initLogger, piLog, piWarn } from "./logger.js";
 import { registerPhase3Commands } from "./phase3-commands.js";
 import { registerPhase4Commands } from "./phase4-commands.js";
+import type { SessionSummary } from "./types.js";
 
 // ── Session window management ──────────────────────────
 
@@ -1241,14 +1242,17 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
     },
   });
 
-  sessionTreeProvider?.refresh();
+  if (!sessionTreeProvider) {
+    piWarn("sessionTreeProvider is null at refresh time — forcing creation");
+    ensureTreeProvider(context);
+  }
+  // Use targeted refresh — fires with the specific session item so VS Code
+  // updates its label/collapsibleState in-place rather than diffing new
+  // objects (which it can silently drop during async init).
+  sessionTreeProvider!.refreshSession(sw);
 
-  // Safety net: VS Code can drop tree refreshes if they fire before the
-  // TreeView's internal setup is complete (which happens inside async
-  // initialization). A second refresh after yielding the microtask queue
-  // guarantees the tree picks up the new state.
   await new Promise((resolve) => setTimeout(resolve, 50));
-  sessionTreeProvider?.refresh();
+  sessionTreeProvider!.refreshSession(sw);
 
   console.log(`Pi Code Gui session ${sw.id} ready`);
 }
@@ -1363,12 +1367,13 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   /** Track if past sessions header is expanded. */
   pastSessionsExpanded = false;
   /** Past sessions loaded from disk via SessionManager.list(). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _pastSessions: any[] = [];
+  private _pastSessions: SessionSummary[] = [];
   /** True while we are refreshing past sessions. */
   private _loadingPast = false;
   /** Current filter string for past sessions (empty = no filter). */
   public pastFilter = "";
+  /** Cache of current session tree items so we can update them in-place. */
+  private _sessionItems = new Map<string, SessionTreeItem>();
 
   constructor(private sessions: SessionWindow[], private context: vscode.ExtensionContext) {}
 
@@ -1379,7 +1384,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  get pastSessions(): any[] { return this._pastSessions; }
+  get pastSessions(): SessionSummary[] { return this._pastSessions; }
   /** Cached past-sessions header so targeted refreshes use the same object. */
   private _pastHeaderItem: SessionTreeItem | null = null;
 
@@ -1405,6 +1410,19 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
 
   /** Lightweight refresh (does not re-fetch past sessions). */
   refresh(): void { this._onDidChangeTreeData.fire(); }
+
+  /** Refresh a single session's tree item in-place.  More reliable than
+   *  fire() with no argument, which VS Code can drop during async setup. */
+  refreshSession(sw: SessionWindow): void {
+    const item = this._sessionItems.get(sw.id);
+    if (item) {
+      // Recompute the item properties and mutate in-place
+      this.makeSessionItem(sw);
+      this._onDidChangeTreeData.fire(item);
+    } else {
+      this._onDidChangeTreeData.fire();
+    }
+  }
 
   /** Refresh only past sessions children — preserves expand state. */
   refreshPastOnly(): void {
@@ -1512,25 +1530,41 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
     sw.label = sw.initialized ? sessionName : sw.label;
 
     const entryCount = getEntryCount(sw);
-    // Always allow expanding — even before init, so the user can see loading placeholders
     const collapsible = sw.initialized && entryCount === 0
       ? vscode.TreeItemCollapsibleState.None
       : vscode.TreeItemCollapsibleState.Collapsed;
-    const item = new SessionTreeItem(
-      label,
-      "session",
-      {
-        command: "pi-code-gui.focusSession",
-        title: "Focus Session",
-        arguments: [sw.id],
-      },
-      collapsible,
-    );
-    item.sessionId = sw.id;
-    item.description = sw.initialized ? (sw.piService.model?.id ?? "...") : "initializing";
-    item.tooltip = new vscode.MarkdownString(
-      `**${sw.id}**\n\nModel: ${sw.piService.model?.id ?? "-"}\nThinking: ${sw.piService.thinkingLevel}\nEntries: ${entryCount}\nInitialized: ${sw.initialized}\nStreaming: ${sw.isStreaming}`,
-    );
+
+    // Reuse the cached item and mutate in-place so VS Code's tree diff
+    // picks up label/collapsibleState/description changes.  Creating a
+    // new TreeItem on every render caused VS Code to silently skip
+    // updates during async initialization.
+    let item = this._sessionItems.get(sw.id);
+    if (item) {
+      item.label = label;
+      item.collapsibleState = collapsible;
+      item.description = sw.initialized ? (sw.piService.model?.id ?? "...") : "initializing";
+      item.tooltip = new vscode.MarkdownString(
+        `**${sw.id}**\n\nModel: ${sw.piService.model?.id ?? "-"}\nThinking: ${sw.piService.thinkingLevel}\nEntries: ${entryCount}\nInitialized: ${sw.initialized}\nStreaming: ${sw.isStreaming}`,
+      );
+    } else {
+      item = new SessionTreeItem(
+        label,
+        "session",
+        {
+          command: "pi-code-gui.focusSession",
+          title: "Focus Session",
+          arguments: [sw.id],
+        },
+        collapsible,
+      );
+      item.id = sw.id;
+      item.sessionId = sw.id;
+      item.description = sw.initialized ? (sw.piService.model?.id ?? "...") : "initializing";
+      item.tooltip = new vscode.MarkdownString(
+        `**${sw.id}**\n\nModel: ${sw.piService.model?.id ?? "-"}\nThinking: ${sw.piService.thinkingLevel}\nEntries: ${entryCount}\nInitialized: ${sw.initialized}\nStreaming: ${sw.isStreaming}`,
+      );
+      this._sessionItems.set(sw.id, item);
+    }
 
     return item;
   }

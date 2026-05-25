@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.0.47] — Tree item in-place mutation fix
+
+### Fixed
+- Session tree items fail to initialize on slow loads.
+
 ## [0.0.46] — Strict linting, type hardening, tree UX fixes
 
 ### Changed
