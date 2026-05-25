@@ -1,5 +1,22 @@
 # Change Log
 
+## [0.0.42] — Keybinding command-not-found fix
+
+### Fixed
+- **Cmd+/ and Cmd+@ keybindings now work immediately** instead of
+  failing with "command not found" during slow SDK init.  `pickCommand`
+  and `pickFile` are now registered synchronously in `activate()` via
+  `registerEarlyCommands()`, using a closure that resolves the current
+  piService at invocation time.  SDK-dependent commands (`pickModel`,
+  `cycleModel`, etc.) show "Pi is still initializing" when pressed
+  before the session is ready.
+- **`safeRegister` now logs unexpected errors** instead of silently
+  swallowing all registerCommand failures as "already registered".
+
+### Added
+- **`PiService.initialized` getter** — returns `this.session !== null`,
+  used by phase-3 command guards.
+
 ## [0.0.41] — Dynamic slash command picker
 
 ### Added
