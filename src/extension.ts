@@ -456,6 +456,8 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         await sw.piService.rawSession.reload();
         sw.piService.sendInitialMessages();
+        // Push updated slash commands after extension reload
+        sw.piService.emitSlashCommands();
         vscode.window.showInformationMessage("Extensions, skills, and keybindings reloaded.");
       } catch (e: any) {
         vscode.window.showErrorMessage(`Reload failed: ${e.message ?? e}`);
