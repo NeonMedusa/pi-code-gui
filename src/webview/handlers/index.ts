@@ -1949,19 +1949,13 @@ export function handleShowDialog(data: any) {
 
   // Full slash command list (builtins + extensions, with extensions first for dedup)
 export function getSlashCommands() {
-    var all: Array<{ cmd: string; desc: string }> = [];
-    var seen: Record<string, boolean> = {};
-    // Extensions come first so they take precedence
-    state.extensionSlashCommands.forEach(function (sc) {
-      seen[sc.cmd] = true;
-      all.push(sc);
-    });
-    state.builtinSlashCommands.forEach(function (sc) {
-      if (!seen[sc.cmd]) {
-        all.push(sc);
-      }
-    });
-    return all;
+    // When the extension host has pushed a complete slash-command list
+    // (extension + builtin + prompt templates), use it directly.
+    if (state.extensionSlashCommands.length > 0) {
+      return state.extensionSlashCommands;
+    }
+    // Fallback: use hardcoded builtins (before first slash-commands-update arrives)
+    return state.builtinSlashCommands;
   }
 
   // Slash commands that should be handled locally (not sent to LLM)
