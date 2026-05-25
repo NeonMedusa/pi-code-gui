@@ -1388,30 +1388,33 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
           : vscode.TreeItemCollapsibleState.Collapsed,
       ));
 
-      // Past Sessions
+      // Past Sessions — only show the header when there are sessions
+      // to display.  Emitting it with collapsibleState: None (empty) and
+      // then transitioning to Collapsed on refresh can be silently ignored
+      // by VS Code's tree diff, causing past sessions to appear empty even
+      // after the list loads.  By deferring the header's first appearance
+      // until data is ready, VS Code treats it as a new child and renders
+      // the correct collapsibleState immediately.
       const pastCount = this._pastSessions.length;
-      const filteredCount = this.pastFilter
-        ? this._pastSessions.filter((s) => this.matchesPastFilter(s)).length
-        : pastCount;
-      let pastLabel = "Past Sessions";
       if (pastCount > 0) {
-        pastLabel = this.pastFilter
+        const filteredCount = this.pastFilter
+          ? this._pastSessions.filter((s) => this.matchesPastFilter(s)).length
+          : pastCount;
+        const pastLabel = this.pastFilter
           ? `Past Sessions (${filteredCount} of ${pastCount})`
           : `Past Sessions (${pastCount})`;
+        const pastItem = new SessionTreeItem(
+          pastLabel,
+          "past-sessions-header",
+          undefined,
+          this.pastSessionsExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed,
+        );
+        pastItem.id = "__past_sessions_header__";
+        if (this.pastFilter) {
+          pastItem.iconPath = new vscode.ThemeIcon("filter");
+        }
+        children.push(pastItem);
       }
-      const pastItem = new SessionTreeItem(
-        pastLabel,
-        "past-sessions-header",
-        undefined,
-        pastCount > 0
-          ? (this.pastSessionsExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed)
-          : vscode.TreeItemCollapsibleState.None,
-      );
-      pastItem.id = "__past_sessions_header__";
-      if (this.pastFilter) {
-        pastItem.iconPath = new vscode.ThemeIcon("filter");
-      }
-      children.push(pastItem);
 
       return children;
     }
