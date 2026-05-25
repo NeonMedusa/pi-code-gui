@@ -1,7 +1,7 @@
 # Multi-Backend Architecture
 
 > **Status:** evolving  
-> **Last updated:** 2026-05-25 — initial design for supporting both TypeScript and Rust Pi backends
+> **Last updated:** 2026-05-25 — added installer coexistence notes, fallback binary names
 
 ## Overview
 
@@ -142,12 +142,17 @@ This is cleaner than the current TS approach where bridge tools are mixed into t
 
 ### Backend detection
 
-Two fast, synchronous checks (file existence):
+Two fast, synchronous checks (file existence).
+
+**Important**: the TypeScript backend uses the npm *package*, not the CLI binary.
+The Rust installer may rename the TS `pi` command to `legacy-pi` — this does
+not affect the extension because the TS backend resolves the npm package on
+disk, not the shell command.
 
 | Backend | Detection |
 |---------|-----------|
 | TypeScript | `resolvePiPackagePath()` — checks global npm, nvm, project-local `.pi/npm/` |
-| Rust | `detectRustBinary()` — checks `pi-code-gui.rustBinaryPath` setting → `PI_BINARY_PATH` env → `~/.cargo/bin/pi` → `~/.local/bin/pi` → `/usr/local/bin/pi` → PATH lookup → verify with `pi --version` |
+| Rust | `detectRustBinary()` — checks `pi-code-gui.rustBinaryPath` setting → `PI_BINARY_PATH` env → `~/.cargo/bin/pi` → `~/.local/bin/pi` → `/usr/local/bin/pi` → PATH lookup (`which pi`).  Also checks `legacy-pi` and `rust-pi` as fallback names (the curl installer may rename the binary during TS→Rust migration).  Verifies with `pi --version`. |
 
 ### Decision flow
 
@@ -176,11 +181,20 @@ Two fast, synchronous checks (file existence):
      [Learn More]
 
 4. Install (if user chose to)
-   Rust: curl installer in terminal
+   Rust: curl installer with `--yes --easy-mode` flags for non-interactive
+     install.  The installer handles TS→Rust migration automatically (renames
+     old `pi` to `legacy-pi`).
    TS:  npm install -g in terminal (existing behavior)
 
 5. Re-detect and proceed with initialization
 ```
+
+### Coexistence
+
+The two backends are fully independent.  The TypeScript backend imports the
+npm package; the Rust backend spawns a child process.  Neither touches the
+other's files or runtime.  The Rust installer's `legacy-pi` rename has no
+effect on the extension — the TS backend never invokes the `pi` shell command.
 
 ### VS Code settings additions
 
@@ -209,7 +223,7 @@ Two fast, synchronous checks (file existence):
 | File | Lines | Purpose |
 |------|-------|---------|
 | `src/session-files.ts` | ~150 | `resolveAgentDir()`, `resolveSessionDir()`, `listSessions()`, `deleteSessionFile()` — backend-agnostic, pure filesystem |
-| `src/pi-rust-resolver.ts` | ~80 | `detectRustBinary()`, `RustInstallStatus` — find the `pi` binary on disk |
+| `src/pi-rust-resolver.ts` | ~80 | `detectRustBinary()`, `RustInstallStatus` — find the `pi` binary on disk.  Checks `pi`, `legacy-pi`, `rust-pi` as fallback names (the curl installer may rename the binary during TS→Rust migration). |
 | `src/pi-rust-process.ts` | ~300 | `RustProcess` class — spawn `pi --mode rpc`, manage stdin/stdout, translate RPC events → `PiServiceEvent`, intercept `vscode_*` bridge tools |
 | `src/backend-detection.ts` | ~120 | `detectBackends()`, `resolveBackend()`, install dialogs, install helpers |
 
