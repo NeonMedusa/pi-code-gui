@@ -1341,6 +1341,8 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   }
 
   get pastSessions(): any[] { return this._pastSessions; }
+  /** Cached past-sessions header so targeted refreshes use the same object. */
+  private _pastHeaderItem: SessionTreeItem | null = null;
 
   /** Reload past sessions from disk asynchronously and fire refresh. */
   async refreshPastSessions(cwd: string) {
@@ -1366,9 +1368,14 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
 
   /** Refresh only past sessions children — preserves expand state. */
   refreshPastOnly() {
-    var item = new SessionTreeItem("", "past-sessions-header");
-    item.id = "__past_sessions_header__";
-    this._onDidChangeTreeData.fire(item);
+    // Use the cached header element so VS Code can match it by reference
+    // to the one returned by getChildren().  A fresh SessionTreeItem with
+    // the same id is not reference-equal and VS Code ignores the event.
+    if (this._pastHeaderItem) {
+      this._onDidChangeTreeData.fire(this._pastHeaderItem);
+    } else {
+      this._onDidChangeTreeData.fire();
+    }
   }
 
   getTreeItem(element: SessionTreeItem): vscode.TreeItem { return element; }
@@ -1388,33 +1395,31 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
           : vscode.TreeItemCollapsibleState.Collapsed,
       ));
 
-      // Past Sessions — only show the header when there are sessions
-      // to display.  Emitting it with collapsibleState: None (empty) and
-      // then transitioning to Collapsed on refresh can be silently ignored
-      // by VS Code's tree diff, causing past sessions to appear empty even
-      // after the list loads.  By deferring the header's first appearance
-      // until data is ready, VS Code treats it as a new child and renders
-      // the correct collapsibleState immediately.
+      // Past Sessions
       const pastCount = this._pastSessions.length;
+      const filteredCount = this.pastFilter
+        ? this._pastSessions.filter((s) => this.matchesPastFilter(s)).length
+        : pastCount;
+      let pastLabel = "Past Sessions";
       if (pastCount > 0) {
-        const filteredCount = this.pastFilter
-          ? this._pastSessions.filter((s) => this.matchesPastFilter(s)).length
-          : pastCount;
-        const pastLabel = this.pastFilter
+        pastLabel = this.pastFilter
           ? `Past Sessions (${filteredCount} of ${pastCount})`
           : `Past Sessions (${pastCount})`;
-        const pastItem = new SessionTreeItem(
-          pastLabel,
-          "past-sessions-header",
-          undefined,
-          this.pastSessionsExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed,
-        );
-        pastItem.id = "__past_sessions_header__";
-        if (this.pastFilter) {
-          pastItem.iconPath = new vscode.ThemeIcon("filter");
-        }
-        children.push(pastItem);
       }
+      const pastItem = new SessionTreeItem(
+        pastLabel,
+        "past-sessions-header",
+        undefined,
+        pastCount > 0
+          ? (this.pastSessionsExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed)
+          : vscode.TreeItemCollapsibleState.None,
+      );
+      pastItem.id = "__past_sessions_header__";
+      if (this.pastFilter) {
+        pastItem.iconPath = new vscode.ThemeIcon("filter");
+      }
+      this._pastHeaderItem = pastItem;  // cache for targeted refresh
+      children.push(pastItem);
 
       return children;
     }
