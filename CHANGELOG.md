@@ -1,5 +1,13 @@
 # Change Log
 
+## [0.0.45] — Past sessions targeted-refresh fix
+
+### Fixed
+- **Past sessions empty on cold start.**  `refreshPastOnly()` created
+  a new `SessionTreeItem` on every call — VS Code matches targeted
+  refreshes by reference equality, not `id`.  Now caches
+  `_pastHeaderItem` from `getChildren()` and reuses the same object.
+
 ## [0.0.44] — Past sessions tree render fix
 
 ### Fixed
