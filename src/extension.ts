@@ -1262,7 +1262,12 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
       this._pastSessions = [];
     }
     this._loadingPast = false;
+    // Full refresh updates the root-level labels and open sessions.
     this.refresh();
+    // Targeted refresh forces VS Code to re-read the past-sessions
+    // header, picking up the collapsibleState change (None → Collapsed)
+    // that a full refresh alone can silently miss.
+    this.refreshPastOnly();
   }
 
   /** Lightweight refresh (does not re-fetch past sessions). */

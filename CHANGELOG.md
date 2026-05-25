@@ -1,5 +1,15 @@
 # Change Log
 
+## [0.0.40] — Past sessions load fix
+
+### Fixed
+- **Past sessions empty on first load.**  `listSessions` used fewer retries
+  than `initialize()` (3×300ms vs 5×500ms), causing the SDK import to
+  give up on slow startup.  Now matches initialize()'s retry parameters.
+  Also fires a targeted `refreshPastOnly()` after the full tree refresh
+  to force VS Code to pick up the `collapsibleState` change when past
+  sessions transition from empty to populated.
+
 ## [0.0.39] — Tool block anchors, edit formats, prompt cursor
 
 ### Fixed
