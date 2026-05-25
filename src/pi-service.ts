@@ -404,7 +404,9 @@ export class PiService {
   static async listSessions(cwd: string): Promise<any[]> {
     try {
       const piRoot = resolvePiPackagePath();
-      const SDK = await importWithRetry(path.join(piRoot, "dist/index.js"), 3, 300);
+      // Match initialize()'s retry parameters — fewer retries here
+      // caused past-session lists to come up empty on slow first loads.
+      const SDK = await importWithRetry(path.join(piRoot, "dist/index.js"), 5, 500);
       const cfg = vscode.workspace.getConfiguration("pi-code-gui");
       const sessionDir = cfg.get<string>("sessionDir")?.trim() || undefined;
       const sessions = await SDK.SessionManager.list(cwd, sessionDir);
@@ -695,6 +697,15 @@ export class PiService {
         customTools: tools,
         cwd,
       };
+
+      // ── Tool allowlist from VS Code settings ───
+      // When set, only the listed tools are available.
+      // When unset (default), all registered tools are available.
+      const toolsSetting = cfg.get<string[]>("tools");
+      if (toolsSetting && toolsSetting.length > 0) {
+        opts.tools = toolsSetting;
+        piLog(`Tool allowlist set: ${toolsSetting.join(", ")}`);
+      }
 
       // Scoped models from registry (dynamic)
       if (this.cycleModels.length > 0) {
