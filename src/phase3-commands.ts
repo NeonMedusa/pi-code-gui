@@ -1,15 +1,15 @@
 import * as vscode from "vscode";
-import { PiService } from "./pi-service.js";
+import type { PiService } from "./pi-service.js";
 
-/** Register a command safely — ignore if already registered. */
-function safeRegister(context: vscode.ExtensionContext, command: string, callback: (...args: any[]) => any) {
+function safeRegister(context: vscode.ExtensionContext, command: string, callback: (...args: unknown[]) => unknown): void {
   try {
     context.subscriptions.push(vscode.commands.registerCommand(command, callback));
-  } catch (e: any) {
-    if (e?.message?.includes("already registered")) {
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    if (err.message.includes("already registered")) {
       console.log(`[pi-gui] Command "${command}" already registered, skipping phase-3 duplicate.`);
     } else {
-      console.error(`[pi-gui] Failed to register command "${command}":`, e);
+      console.error(`[pi-gui] Failed to register command "${command}":`, err);
     }
   }
 }
@@ -19,8 +19,6 @@ export function registerPhase3Commands(
   piService: PiService,
 ): void {
   safeRegister(context, "pi-code-gui.pickModel", async () => {
-    // Guard: commands requiring initialized PiService show a friendly
-    // toast when pressed before SDK init completes.
     if (!piService.initialized) {
       vscode.window.showWarningMessage("Pi is still initializing. Try again in a moment.");
       return;
@@ -36,7 +34,9 @@ export function registerPhase3Commands(
     try {
       await piService.cycleModel();
       vscode.window.showInformationMessage(`Model: ${piService.model?.id ?? "unknown"}`);
-    } catch (e: any) { vscode.window.showErrorMessage(e.message); }
+    } catch (e: unknown) {
+      vscode.window.showErrorMessage(e instanceof Error ? e.message : String(e));
+    }
   });
 
   safeRegister(context, "pi-code-gui.pickThinkingLevel", async () => {
@@ -57,7 +57,9 @@ export function registerPhase3Commands(
         nextLevel(piService.thinkingLevel),
       );
       vscode.window.showInformationMessage(`Thinking: ${piService.thinkingLevel}`);
-    } catch (e: any) { vscode.window.showErrorMessage(e.message); }
+    } catch (e: unknown) {
+      vscode.window.showErrorMessage(e instanceof Error ? e.message : String(e));
+    }
   });
 
   safeRegister(context, "pi-code-gui.pickFork", async () => {

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { PiService } from "./pi-service.js";
-import type { PiServiceEvent, PromptMessage } from "./types.js";
+import type { PiService } from "./pi-service.js";
+import type { PiServiceEvent } from "./types.js";
 import { validateExtensionToWebview, type WebviewToExtension, type ExtensionToWebview } from "./shared/protocol.js";
 
 export type PanelDisposeCallback = (piService: PiService) => void;
@@ -34,7 +34,7 @@ export class PiWebviewPanel {
   set onActivate(cb: (() => void) | null) { this._onActivateCb = cb; }
   private _onActivateCb: (() => void) | null = null;
 
-  async show() {
+  async show(): Promise<void> {
     if (this.panel) {
       this.panel.reveal();
       return;
@@ -84,7 +84,7 @@ export class PiWebviewPanel {
     });
   }
 
-  private setupWebviewHandlers() {
+  private setupWebviewHandlers(): void {
     if (!this.panel) {
       console.error("[pi-gui] setupWebviewHandlers called with no panel — webview messages will be lost");
       return;
@@ -92,8 +92,9 @@ export class PiWebviewPanel {
 
     // Proactively send status every 500ms until pi is ready
     // This avoids the webview-to-extension 'ready' handshake entirely
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     let statusInterval: any = null;
-    const startPolling = () => {
+    const startPolling = (): void => {
       if (statusInterval) {return;}
       statusInterval = setInterval(() => {
         const model = this.piService.model;
@@ -121,7 +122,9 @@ export class PiWebviewPanel {
       async (message) => {
         switch (message.type) {
           case "prompt": {
-              const msg = message as any;
+ 
+              const msg = message;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
               this.piService.sendPrompt(msg.text, msg.images, msg.mode).catch((error: any) => {
                 let errMsg = error.message ?? String(error);
                 if (/api.?key|login|authenticate|provider/i.test(errMsg)) {
@@ -149,15 +152,15 @@ export class PiWebviewPanel {
             break;
 
           case "pickModel":
-            this.triggerModelPicker();
+            void this.triggerModelPicker();
             break;
 
           case "pickThinkingLevel":
-            this.triggerThinkingPicker();
+            void this.triggerThinkingPicker();
             break;
 
           case "pickEffort":
-            this.triggerEffortPicker();
+            void this.triggerEffortPicker();
             break;
 
           case "openUrl":
@@ -170,7 +173,7 @@ export class PiWebviewPanel {
 
           // Slash commands intercepted locally (not sent to LLM)
           case "slashCommand":
-            this.handleSlashCommand(message.command);
+            void this.handleSlashCommand(message.command);
             break;
 
           // Settings toggle messages from webview (#3)
@@ -202,7 +205,7 @@ export class PiWebviewPanel {
 
           // Context budget picker
           case "pickContextBudget":
-            this.triggerContextBudgetPicker();
+            void this.triggerContextBudgetPicker();
             break;
 
           // Request settings state (#2, #8)
@@ -232,11 +235,11 @@ export class PiWebviewPanel {
     );
   }
 
-  private setupServiceHandlers() {
+  private setupServiceHandlers(): void {
     // Remove any stale listener before adding a new one (prevents duplicates on panel reopen)
     this.cleanupPiListener();
     this.piCleanup = this.piService.onEvent((event: PiServiceEvent) => {
-      this.postMessage(event as ExtensionToWebview);
+      this.postMessage(event);
 
       // Capture first user input for tab title summary.
       // Only generate if the session does NOT already have a stored name
@@ -295,11 +298,11 @@ export class PiWebviewPanel {
   /** Update the tab title to indicate streaming / idle / init state.
    *  The in-webview status bar handles the visual color indicator;
    *  the tab uses a text suffix for streaming so it stays theme-consistent. */
-  private updateTabIndicator() {
+  private updateTabIndicator(): void {
     if (!this.panel) { return; }
 
     // Static icon — no colour coding (SVGs can't adapt to theme variables)
-    const piIcon = (name: string) =>
+    const piIcon = (name: string): vscode.Uri =>
       vscode.Uri.joinPath(this.context.extensionUri, "media", name);
     this.panel.iconPath = {
       light: piIcon("pi-icon-light.svg"),
@@ -316,7 +319,7 @@ export class PiWebviewPanel {
     this.panel.title = (this._tabStreaming ? "\u25CF " : "\u25CB ") + label;
   }
 
-  private cleanupPiListener() {
+  private cleanupPiListener(): void {
     if (this.piCleanup) {
       this.piCleanup();
       this.piCleanup = null;
@@ -325,11 +328,12 @@ export class PiWebviewPanel {
 
   get summary(): string | null { return this._tabSummary; }
 
-  postMessage(message: ExtensionToWebview | WebviewToExtension) {
+  postMessage(message: ExtensionToWebview | WebviewToExtension): void {
     // ── Layer 1: Validate extension→webview messages before posting ──
     // Webview-to-extension messages are validated on receipt by the extension host.
     // For extension→webview, we validate here to catch malformed events early.
     // We check if "type" is an extension→webview type (has data or is command).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const msgType = (message as any).type;
     if (msgType && msgType !== "prompt" && msgType !== "abort" && msgType !== "slashCommand" &&
         msgType !== "pickModel" && msgType !== "pickThinkingLevel" && msgType !== "pickEffort" &&
@@ -346,12 +350,12 @@ export class PiWebviewPanel {
   }
 
   /** Insert a command or file reference into the chat input */
-  postCommand(command: string) {
+  postCommand(command: string): void {
     this.panel?.webview.postMessage({ type: "insertCommand", command });
   }
 
   /** Handle a locally-intercepted slash command (not sent to LLM) */
-  private async handleSlashCommand(command: string) {
+  private async handleSlashCommand(command: string): Promise<void> {
     switch (command) {
       case "login":
         await this.piService.login();
@@ -375,6 +379,7 @@ export class PiWebviewPanel {
         // Forward to pi session so extension command handlers (e.g. /tldr) can respond
         try {
           await this.piService.sendPrompt(`/${command}`);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
           this.postMessage({
             type: "error",
@@ -454,17 +459,17 @@ export class PiWebviewPanel {
   }
 
   /** Open VS Code quick pick to pick a model for the current session */
-  private async triggerModelPicker() {
+  private async triggerModelPicker(): Promise<void> {
     await this.piService.pickModel();
   }
 
   /** Open VS Code quick pick to pick thinking level */
-  private async triggerThinkingPicker() {
+  private async triggerThinkingPicker(): Promise<void> {
     await this.piService.pickThinkingLevel();
   }
 
   /** Open VS Code quick pick to set context budget */
-  async triggerContextBudgetPicker() {
+  async triggerContextBudgetPicker(): Promise<void> {
     const ps = this.piService;
     const current = ps.getContextBudget();
     const budgets = [
@@ -492,7 +497,7 @@ export class PiWebviewPanel {
   }
 
   /** Open VS Code quick pick to pick effort */
-  async triggerEffortPicker() {
+  async triggerEffortPicker(): Promise<void> {
     const ps = this.piService;
     const levels = [
       { label: "auto", description: "Let the model decide" },
@@ -512,9 +517,9 @@ export class PiWebviewPanel {
   }
 
   /** Open VS Code quick pick for settings */
-  private async triggerSettingsPicker() {
+  private async triggerSettingsPicker(): Promise<void> {
     const ps = this.piService;
-    const makeToggleLabel = (name: string, on: boolean) =>
+    const makeToggleLabel = (name: string, on: boolean): string =>
       `${on ? "$(check)" : "$(circle-outline)"} ${name}`;
 
     const items: vscode.QuickPickItem[] = [
@@ -552,7 +557,7 @@ export class PiWebviewPanel {
     }
   }
 
-  dispose() {
+  dispose(): void {
     this.cleanupPiListener();
     this.disposables.forEach((d) => d.dispose());
     this.panel?.dispose();

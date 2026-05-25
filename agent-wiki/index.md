@@ -14,6 +14,7 @@ reference; follow the links for depth.
 
 ## Architecture
 
+- [Multi-Backend Architecture](architecture/multi-backend.md) — Supporting both TypeScript and Rust Pi backends, RPC protocol, path resolution, install flow
 - [Session Window](architecture/session-window.md) — Paired PiService+WebviewPanel, multi-session, restore across reloads
 - [PiService](architecture/pi-service.md) — SDK lifecycle bridge, dynamic import, event translation, model/settings
 - [Webview Panel](architecture/webview-panel.md) — Webview creation, bidirectional messaging, tab indicators

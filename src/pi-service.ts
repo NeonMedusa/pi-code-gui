@@ -21,10 +21,12 @@ async function importWithRetry(
   modulePath: string,
   maxAttempts: number,
   delayMs: number,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await import(modulePath);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       if (attempt === maxAttempts) { throw e; }
       piWarn(`importWithRetry: attempt ${attempt}/${maxAttempts} failed for ${modulePath}: ${e.message}`);
@@ -35,6 +37,7 @@ async function importWithRetry(
 
 // ── Types for the dynamically loaded SDK ──────────────────
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- dynamically imported SDK; types unavailable at compile time */
 interface PiSdk {
   createAgentSession: Function;
   SessionManager: any;
@@ -62,6 +65,7 @@ export interface InstallStatus {
   error?: string;
 }
 
+/* eslint-enable @typescript-eslint/no-explicit-any */
 type EventListener = (event: PiServiceEvent) => void;
 
 // ── SDK Resolution ───────────────────────────────────────
@@ -92,7 +96,7 @@ export function resolvePiPackagePath(): string {
           );
         }
       }
-    } catch { /* ignore */ }
+    } catch (e: unknown) { piWarn(`Non-critical failure (ignored): ${e instanceof Error ? e.message : String(e)}`); }
   }
 
   // Windows %APPDATA%\npm
@@ -105,7 +109,7 @@ export function resolvePiPackagePath(): string {
     try {
       const pkgPath = path.join(candidate, "package.json");
       if (fs.existsSync(pkgPath)) { return candidate; }
-    } catch { /* ignore */ }
+    } catch (e: unknown) { piWarn(`Non-critical failure (ignored): ${e instanceof Error ? e.message : String(e)}`); }
   }
 
   throw new Error(
@@ -145,13 +149,14 @@ function buildContextFiles(cwd: string): Array<{ path: string; content: string }
   const files: Array<{ path: string; content: string }> = [];
 
   // Check if project has a package.json to infer project type
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   let pkgJson: any = null;
   try {
     const pkgPath = path.join(cwd, "package.json");
     if (fs.existsSync(pkgPath)) {
       pkgJson = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
     }
-  } catch {}
+  } catch (e: unknown) { piWarn(`Non-critical failure: ${e instanceof Error ? e.message : String(e)}`); }
 
   // Check for common config files
   const hasTypeScript = fs.existsSync(path.join(cwd, "tsconfig.json"));
@@ -221,8 +226,9 @@ This is a Node.js backend project.
 /** Build custom slash commands */
 function buildPromptTemplates(
   createSyntheticSourceInfo: Function,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Array<{ name: string; description: string; filePath: string; sourceInfo: any; content: string }> {
-  const syn = (p: string) => createSyntheticSourceInfo(p, { source: "vscode-gui" });
+  const syn = (p: string): unknown => createSyntheticSourceInfo(p, { source: "vscode-gui" });
 
   return [
     {
@@ -270,6 +276,7 @@ Apply your changes using edit tools.`,
 // ── PiService ────────────────────────────────────────────
 
 export class PiService {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   private session: any = null;
   private unsubscribe: (() => void) | null = null;
   private listeners: EventListener[] = [];
@@ -283,6 +290,7 @@ export class PiService {
   private _piRoot: string | null = null;
 
   // SDK instances (loaded at init time)
+  /* eslint-disable @typescript-eslint/no-explicit-any -- SDK objects are dynamically typed */
   private SDK: PiSdk | null = null;
   private AI: PiAi | null = null;
   private authStorage: any = null;
@@ -300,6 +308,8 @@ export class PiService {
 
   // Widget activity timer (cleared on dispose to prevent leaks)
   private _widgetTimer: ReturnType<typeof setInterval> | null = null;
+
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // Pending interactive dialogs (select/confirm/input).  Maps dialog ID → Promise resolve.
   private _pendingDialogs = new Map<string, { resolve: (v: unknown) => void }>();
@@ -326,37 +336,39 @@ export class PiService {
     };
   }
 
-  private emit(event: PiServiceEvent) {
+  private emit(event: PiServiceEvent): void {
     // ── Layer 1: Runtime protocol validation ───────────────
     // Validates every outgoing message against the Zod schema.
     // If validation fails, we STILL emit to avoid breaking existing
     // functionality, but log the error and show a diagnostic notification.
     const result = validateExtensionToWebview(event);
     if (!result.success) {
-      piWarn(`[protocol] emit validation failed for type "${(event as any).type}": ${result.error}`);
+      piWarn(`[protocol] emit validation failed for type "${(event as Record<string, unknown>).type}": ${result.error}`);
       // Emit a visible diagnostic so the user (and us) can see the issue
       this.emitSafe({
         type: "custom-message",
         data: {
           customType: "pi-gui-diagnostic",
-          content: `Protocol validation error (type: ${(event as any).type}): ${result.error.substring(0, 200)}`,
+          content: `Protocol validation error (type: ${(event as Record<string, unknown>).type}): ${result.error.substring(0, 200)}`,
           display: false,
         },
       });
     }
     // Dispatch to listeners (always, even on validation failures for backward compat)
     for (const l of this.listeners) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       try { l(event); } catch (e: any) {
-        piWarn(`emit listener threw for type "${(event as any).type}": ${e?.message ?? e}`);
+        piWarn(`emit listener threw for type "${(event as Record<string, unknown>).type}": ${e?.message ?? e}`);
       }
     }
   }
 
   /** Emit without validation (used internally to avoid recursive validation on diagnostics). */
-  private emitSafe(event: PiServiceEvent) {
+  private emitSafe(event: PiServiceEvent): void {
     for (const l of this.listeners) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       try { l(event); } catch (e: any) {
-        piWarn(`emitSafe listener threw for type "${(event as any).type}": ${e?.message ?? e}`);
+        piWarn(`emitSafe listener threw for type "${(event as Record<string, unknown>).type}": ${e?.message ?? e}`);
       }
     }
   }
@@ -395,12 +407,14 @@ export class PiService {
       }
 
       return { installed: true, hasApiKey: true, path: p };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { installed: false, hasApiKey: false, error: e.message ?? String(e) };
     }
   }
 
   /** List past (saved-on-disk) sessions for the given cwd. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   static async listSessions(cwd: string): Promise<any[]> {
     try {
       const piRoot = resolvePiPackagePath();
@@ -412,6 +426,7 @@ export class PiService {
       const sessions = await SDK.SessionManager.list(cwd, sessionDir);
       piLog(`listSessions: found ${sessions.length} past sessions in ${cwd}`);
       return sessions;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       piWarn(`listSessions failed: ${e.message ?? e}`);
       return [];
@@ -432,6 +447,7 @@ export class PiService {
     // ── Step 1: Resolve SDK ────────────────────────────
     try {
       this._piRoot = resolvePiPackagePath();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: `SDK not found: ${e.message ?? e}` };
     }
@@ -441,6 +457,7 @@ export class PiService {
       this.SDK = (await importWithRetry(
         path.join(this._piRoot, "dist/index.js"), 5, 500
       )) as PiSdk;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: `Failed to load pi-coding-agent: ${e.message ?? e}` };
     }
@@ -449,6 +466,7 @@ export class PiService {
       this.AI = (await importWithRetry(
         path.join(this._piRoot, "node_modules/@earendil-works/pi-ai/dist/index.js"), 5, 500
       )) as PiAi;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       const msg = e.message ?? String(e);
       // Detect common missing-dependency patterns caused by broken npm global
@@ -468,6 +486,7 @@ export class PiService {
     }
     // Load typebox for defineTool usage (with retry — npm install may still
     // be populating node_modules when the extension host first activates).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     let Type: any;
     try {
       const Typebox = await importWithRetry(
@@ -476,6 +495,7 @@ export class PiService {
         500 // delay ms between attempts
       );
       Type = Typebox.Type ?? Typebox;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: `Failed to load typebox: ${e.message ?? e}` };
     }
@@ -500,18 +520,21 @@ export class PiService {
 
       this.modelRegistry = SDK.ModelRegistry.create(this.authStorage);
       this.settingsManager = SDK.SettingsManager.create(cwd);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: `Auth/registry setup failed: ${e.message ?? e}` };
     }
 
     // ── Step 4: Pick a model (dynamic from registry) ──
     const AI = this.AI;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     let model: any = null;
     try {
       // Try registry first (respects API keys)
       const available = await this.modelRegistry.getAvailable();
       if (available.length > 0) {
         model = available[0];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.cycleModels = available.map((m: any) => ({ provider: m.provider, id: m.id }));
       } else {
         // Fallback: try built-in models via modelRegistry.find() and getModel()
@@ -539,6 +562,7 @@ export class PiService {
           }
         }
       }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: `Model lookup failed: ${e.message ?? e}` };
     }
@@ -584,10 +608,12 @@ export class PiService {
         // Prevent DefaultResourceLoader from appending default append files
         appendSystemPromptOverride: () => [],
         // Inject virtual context files with project-specific guidelines
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         agentsFilesOverride: (current: any) => ({
           agentsFiles: [...current.agentsFiles, ...contextFiles],
         }),
         // Inject custom slash commands
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         promptsOverride: (current: any) => ({
           prompts: [...current.prompts, ...templates],
           diagnostics: current.diagnostics,
@@ -597,21 +623,21 @@ export class PiService {
 
       // Report discovered resources
       const { skills: discoveredSkills } = this.resourceLoader.getSkills();
-      const { prompts: discoveredPrompts } = this.resourceLoader.getPrompts();
-      const { agentsFiles } = this.resourceLoader.getAgentsFiles();
-      piLog(`Extensions: ${discoveredSkills.map((s: any) => s.name).join(", ") || "none"}`);
-    } catch (e: any) {
-      piWarn(`ResourceLoader setup warning: ${e.message}`);
+      piLog(`Extensions: ${discoveredSkills.map((s: Record<string, unknown>) => s.name).join(", ") || "none"}`);
+    } catch (e: unknown) {
+      piWarn(`ResourceLoader setup warning: ${e instanceof Error ? e.message : String(e)}`);
       // Non-fatal: ResourceLoader is optional, session can work without it
     }
 
     // ── Step 6: Session tools ──────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     let tools: any[];
     try {
       tools = [
         ...SDK.createCodingTools(cwd),
         ...createBridgeTools(SDK.defineTool, Type),
       ];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: `Tool setup failed: ${e.message ?? e}` };
     }
@@ -631,6 +657,7 @@ export class PiService {
           this.sessionManager = SDK.SessionManager.create(cwd, sessionDir);
         }
       }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: `Session manager failed: ${e.message ?? e}` };
     }
@@ -638,6 +665,7 @@ export class PiService {
     // ── Step 8: Restore model & thinking from session file (if resuming) ──
     //        Applies to both openPath (resume from Past Sessions) and
     //        continueRecent (restoring after VS Code restart).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     let resumeModel: any = model;
     let resumeThinkingLevel = cfg.get<string>("defaultThinkingLevel") ?? "off";
     let foundSessionModel = false;
@@ -685,8 +713,10 @@ export class PiService {
     }
 
     // ── Step 9: Create agent session ───────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     let result: any;
     try {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       const opts: any = {
         model: resumeModel,
         thinkingLevel: resumeThinkingLevel,
@@ -709,6 +739,7 @@ export class PiService {
 
       // Scoped models from registry (dynamic)
       if (this.cycleModels.length > 0) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         opts.scopedModels = this.cycleModels.map((m: any) => ({
           model: AI.getModel(m.provider, m.id),
           thinkingLevel: "off",
@@ -721,11 +752,12 @@ export class PiService {
       }
 
       // Inject before extensions load (SDK may load them during createAgentSession)
-      (globalThis as any).__piRegisterMessageRenderer = (customType: string, sourceCode: string) => {
+      (globalThis as Record<string, unknown>).__piRegisterMessageRenderer = (customType: string, sourceCode: string) => {
         this.emit({ type: "registerMessageRenderer", data: { customType, sourceCode } });
       };
 
       result = await SDK.createAgentSession(opts);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: `createAgentSession failed: ${e.message ?? e}` };
     }
@@ -740,6 +772,7 @@ export class PiService {
     }
 
     // ── Step 10: Subscribe to events ───────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.unsubscribe = this.session.subscribe((event: any) => {
       this.handleAgentEvent(event);
     });
@@ -775,7 +808,7 @@ export class PiService {
       return;
     }
 
-    const emit = (event: PiServiceEvent) => this.emit(event);
+    const emit = (event: PiServiceEvent): void => this.emit(event);
 
     // Active widgets keyed by widget key (rendered text per widget)
     const widgetTexts = new Map<string, string>();
@@ -840,7 +873,7 @@ export class PiService {
           // but pi-tldr and similar widgets only use theme.
           const tui = {};
 
-          const component = (factory as Function)(tui, theme) as {
+          const component = (factory)(tui, theme) as {
             render?: (width: number) => string[];
           };
           if (!component || typeof component.render !== "function") {
@@ -868,6 +901,7 @@ export class PiService {
             type: "widget-update",
             data: { key, content },
           });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
           // Widget rendering is best-effort; don't crash the session.
           piWarn(`setWidget("${key}"): render error: ${e?.message ?? e}`);
@@ -909,6 +943,7 @@ export class PiService {
     // extensions expect, then no-op gracefully instead of crashing.
     const uiContext = new Proxy(baseUIContext, {
       get(target, prop) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (prop in target) { return (target as any)[prop]; }
         if (typeof prop === "string" && !prop.startsWith("_")) {
           return (...args: unknown[]) => {
@@ -932,6 +967,7 @@ export class PiService {
         const paths = this.session._extensionRunner.getExtensionPaths?.() ?? [];
         piLog(`Loaded extensions: ${paths.length > 0 ? paths.join(", ") : "none"}`);
       }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       piWarn(`bindExtensions failed: ${e.message ?? e}`);
     }
@@ -949,7 +985,8 @@ export class PiService {
 
     // ── Extension commands ──────────────────────────
     try {
-      const rawSession = (this.session as any);
+ 
+      const rawSession = (this.session);
       const runner = rawSession?._extensionRunner;
       if (runner && typeof runner.getRegisteredCommands === "function") {
         const commands = runner.getRegisteredCommands();
@@ -966,7 +1003,7 @@ export class PiService {
           }
         }
       }
-    } catch { /* best-effort */ }
+    } catch (e: unknown) { piWarn(`Best-effort failure: ${e instanceof Error ? e.message : String(e)}`); }
 
     // ── Builtin prompt templates ────────────────────
     result.push(
@@ -1002,12 +1039,14 @@ export class PiService {
   }
 
   /** Send existing session messages to the webview on initial load (or after reload). */
-  sendInitialMessages() {
+  sendInitialMessages(): void {
     // Build session context from the session manager
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     let entries: any[];
     try {
       entries = this.sessionManager.getEntries();
       piLog(`sendInitialMessages: ${entries?.length ?? 0} entries`);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       piWarn(`sendInitialMessages: getEntries failed: ${e.message}`);
       return;
@@ -1015,6 +1054,7 @@ export class PiService {
     if (!entries || entries.length === 0) { return; }
 
     // Pre-index tool results by call ID (O(n) instead of O(n²) .find() per entry)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const toolResultsById = new Map<string, any>();
     for (const e of entries) {
       if (e.type === "message" && e.message?.role === "toolResult") {
@@ -1037,7 +1077,7 @@ export class PiService {
           const text = this.extractTextFromContent(msg.content);
           const thinking = this.extractThinkingFromContent(msg.content);
           const toolCalls = this.extractToolCallsFromContent(msg.content);
-          const hasToolCalls = toolCalls.length > 0;
+          
 
           // Always emit assistant messages — even tool-only ones with no text.
           // Skipping them makes tool executions invisible on reload/resume.
@@ -1098,12 +1138,15 @@ export class PiService {
   // ── Agent event → PiServiceEvent translation ────────────
 
   /** Extract plain text from a message content (string or array) */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   private extractTextFromContent(content: any): string {
     if (!content) { return ""; }
     if (typeof content === "string") { return content; }
     if (Array.isArray(content)) {
       return content
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         .filter((c: any) => c.type === "text")
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((c: any) => c.text)
         .join("\n");
     }
@@ -1111,11 +1154,14 @@ export class PiService {
   }
 
   /** Extract thinking content blocks from an assistant message content array */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   private extractThinkingFromContent(content: any): string {
     if (!content) { return ""; }
     if (Array.isArray(content)) {
       return content
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         .filter((c: any) => c.type === "thinking")
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((c: any) => c.thinking)
         .join("\n");
     }
@@ -1123,17 +1169,24 @@ export class PiService {
   }
 
   /** Extract tool call content blocks from an assistant message */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   private extractToolCallsFromContent(content: any[]): Array<{ name: string; id: string; arguments: any }> {
     if (!content) { return []; }
     return content
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       .filter((c: any) => c.type === "toolCall")
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((c: any) => ({ name: c.name, id: c.id, arguments: c.arguments }));
   }
 
   /** Get entries once per event, plus pre-built lookups to avoid O(n²) scans. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   private getEntriesWithLookups(): { entries: any[]; byMessageId: Map<string, any>; byToolCallId: Map<string, any> } {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const entries: any[] = this.sessionManager?.getEntries?.() ?? [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const byMessageId = new Map<string, any>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const byToolCallId = new Map<string, any>();
     for (const e of entries) {
       if (e.type === "message") {
@@ -1146,7 +1199,8 @@ export class PiService {
     return { entries, byMessageId, byToolCallId };
   }
 
-  private handleAgentEvent(event: any) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private handleAgentEvent(event: any): void {
     switch (event.type) {
       case "agent_start":
         this._isStreaming = true;
@@ -1238,6 +1292,7 @@ export class PiService {
           this.reportStatus();
         } else if (event.message?.role === "custom") {
           const { entries } = this.getEntriesWithLookups();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
           const custEntry = reverseFind(entries, (e: any) => e.type === "message" && e.message?.role === "custom");
           this.emit({ type: "custom-message", data: { customType: event.message.customType, content: event.message.content, display: event.message.display, details: event.message.details, timestamp: event.message.timestamp, entryId: custEntry?.id ?? event.message.id } });
         }
@@ -1256,12 +1311,13 @@ export class PiService {
         try {
           const tools = this.session?.agent?.state?.tools;
           if (tools) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             const toolDef = (tools as any[]).find((t: any) => t.name === event.toolName);
             if (toolDef?.prepareArguments) {
               args = toolDef.prepareArguments(args);
             }
           }
-        } catch (_e) { /* best-effort — keep raw args on failure */ }
+        } catch (_e: unknown) { piWarn(`Tool param decode skipped: ${_e instanceof Error ? _e.message : String(_e)}`); }
 
         if (event.toolName === "bash" || event.toolName === "exec") {
           this.emit({ type: "bash-start", data: { toolCallId: event.toolCallId, command: args?.command ?? "", entryId: tcEntryId } });
@@ -1273,6 +1329,7 @@ export class PiService {
 
       case "tool_execution_update":
         if (event.toolName === "bash" || event.toolName === "exec") {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
           const text = event.partialResult?.content?.filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
           this.emit({ type: "bash-output", data: { toolCallId: event.toolCallId, output: text ?? "" } });
         } else {
@@ -1286,6 +1343,7 @@ export class PiService {
         const tcEntryId = tcEntry?.id ?? event.toolCallId;
 
         if (event.toolName === "bash" || event.toolName === "exec") {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
           const text = event.result?.content?.filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
           this.emit({ type: "bash-end", data: { toolCallId: event.toolCallId, command: event.args?.command ?? "", exitCode: event.isError ? 1 : 0, cancelled: false, output: text ?? "", isError: event.isError, entryId: tcEntryId } });
         } else {
@@ -1317,6 +1375,7 @@ export class PiService {
         this.emit({ type: "compaction-end", data: { reason: event.reason, aborted: event.aborted, willRetry: event.willRetry, result: event.result, errorMessage: event.errorMessage } });
         if (event.result) {
           const { entries } = this.getEntriesWithLookups();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
           const compactEntry = reverseFind(entries, (e: any) => e.type === "compaction");
           this.emit({ type: "compaction-summary-message", data: { summary: event.result.summary, tokensBefore: event.result.tokensBefore, timestamp: Date.now(), entryId: compactEntry?.id } });
         }
@@ -1347,7 +1406,7 @@ export class PiService {
     }
   }
 
-  private reportStatus() {
+  private reportStatus(): void {
     const stats = this.getUsageStats();
     const cfg = vscode.workspace.getConfiguration("pi-code-gui");
     const budget = cfg.get<number>("contextBudget") ?? 0;
@@ -1367,7 +1426,8 @@ export class PiService {
 
   // ── User actions ───────────────────────────────────────
 
-  async sendPrompt(text: string, images?: any[], mode?: string) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendPrompt(text: string, images?: any[], mode?: string): Promise<void> {
     if (!this.session) { throw new Error("Pi session not initialized"); }
 
     // Handle slash commands at the PiService level before forwarding to
@@ -1398,6 +1458,7 @@ export class PiService {
         } else {
           await this.session.steer(text);
         }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         // steer/followUp reject extension commands and prompt templates
         // during streaming — surface the error rather than swallowing it.
@@ -1413,6 +1474,7 @@ export class PiService {
         });
       }
     } else {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       const opts: any = {};
       if (images && images.length > 0) {
         // Check if current model supports images; if not, try to auto-switch
@@ -1444,7 +1506,8 @@ export class PiService {
 
   /** Check whether the active model's input capabilities include images. */
   private activeModelSupportsImages(): boolean {
-    const rawModel = (this.session as any)?.model;
+ 
+    const rawModel = (this.session)?.model;
     if (!rawModel) { return true; }
     const input = rawModel.input as string[] | undefined;
     return input?.includes("image") ?? true;
@@ -1533,7 +1596,7 @@ export class PiService {
     }
   }
 
-  async abort() {
+  async abort(): Promise<void> {
     if (!this.session) {
       piWarn("abort() called but session not initialized — nothing to abort");
       return;
@@ -1541,12 +1604,14 @@ export class PiService {
     // Kill running bash processes first — agent.abort() only stops the LLM call,
     // not child processes.  Without this, long-running commands (npm install,
     // test suites, etc.) become orphaned/zombie processes on the system.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     try { this.session.abortBash?.(); } catch (e: any) { piWarn(`abortBash() failed: ${e?.message ?? e}`); }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     try { this.session.agent.abort(); } catch (e: any) { piWarn(`abort() failed: ${e?.message ?? e}`); }
   }
 
   /** Resolve a pending interactive dialog (called from webview-panel.ts). */
-  resolveDialog(id: string, value: unknown) {
+  resolveDialog(id: string, value: unknown): void {
     const entry = this._pendingDialogs.get(id);
     if (entry) {
       this._pendingDialogs.delete(id);
@@ -1580,11 +1645,12 @@ export class PiService {
           options: extras.options || [],
           defaultValue: extras.defaultValue || "",
         },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
     });
   }
 
-  async newSession() {
+  async newSession(): Promise<void> {
     if (!this.session) {
       piWarn("newSession() called but session not initialized — creating fresh");
       this.dispose();
@@ -1592,6 +1658,7 @@ export class PiService {
       return;
     }
     // Kill running bash before waiting for idle (otherwise waitForIdle hangs).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     try { this.session.abortBash?.(); } catch (e: any) { piWarn(`abortBash() failed: ${e?.message ?? e}`); }
     await this.session.agent.waitForIdle();
     this.dispose();
@@ -1601,17 +1668,21 @@ export class PiService {
   /** Resume a past session from a .jsonl file path. Disposes current and re-initializes. */
   async resumeSession(filePath: string): Promise<{ success: boolean; error?: string }> {
     // Kill running bash before waiting for idle.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     try { this.session?.abortBash?.(); } catch (e: any) { piWarn(`abortBash() failed: ${e?.message ?? e}`); }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     try { await this.session?.agent.waitForIdle(); } catch (e: any) { piWarn(`waitForIdle() failed: ${e?.message ?? e}`); }
     this.dispose();
     return this.initialize({ openPath: filePath });
   }
 
   /** After a branch/fork operation, re-emit the branched entries to the webview */
-  replayBranchEntries(path: any[]) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+  replayBranchEntries(path: any[]): void {
     this._userMessages = [];
 
     // Pre-index tool results by call ID
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const toolResultsById = new Map<string, any>();
     for (const e of path) {
       if (e.type === "message" && e.message?.role === "toolResult") {
@@ -1645,6 +1716,7 @@ export class PiService {
           if (text) {
             this.emit({ type: "stream-delta", data: { delta: text } });
           }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
           this.emit({ type: "assistant-end", data: { stopReason: msg.stopReason, errorMessage: msg.errorMessage, toolCalls: toolCalls.map((tc: any) => tc.id) } });
 
           for (const tc of toolCalls) {
@@ -1678,7 +1750,7 @@ export class PiService {
   }
 
   /** Write a session entry directly to the session file, bypassing SDK _persist quirks. */
-  private _forcePersistEntry(entry: Record<string, unknown>) {
+  private _forcePersistEntry(entry: Record<string, unknown>): void {
     const sf = this.sessionManager?.getSessionFile?.();
     if (!sf) {
       piWarn("_forcePersistEntry: no session file");
@@ -1686,17 +1758,19 @@ export class PiService {
     }
     try {
       fs.appendFileSync(sf, JSON.stringify(entry) + "\n");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       piWarn(`_forcePersistEntry failed: ${e.message}`);
     }
   }
 
-  async setModel(provider: string, modelId: string) {
+  async setModel(provider: string, modelId: string): Promise<void> {
     if (!this.session || !this.AI) {
       piWarn(`setModel("${provider}/${modelId}") ignored: session not initialized`);
       return;
     }
     // Try registry first, then fall back to getModel
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     let model: any = null;
     if (this.modelRegistry) {
       model = this.modelRegistry.find(provider, modelId);
@@ -1722,7 +1796,7 @@ export class PiService {
     }
   }
 
-  async cycleModel() {
+  async cycleModel(): Promise<void> {
     if (!this.session || !this.AI) {
       vscode.window.showWarningMessage("Pi session not ready yet.");
       return;
@@ -1747,7 +1821,7 @@ export class PiService {
     }
   }
 
-  async setThinkingLevel(level: string) {
+  async setThinkingLevel(level: string): Promise<void> {
     if (!this.session) {
       piWarn(`setThinkingLevel("${level}") ignored: session not initialized`);
       return;
@@ -1768,7 +1842,7 @@ export class PiService {
   // ── Default model / thinking persistence ──────────────
 
   /** Save the current model as the default for future sessions. */
-  saveDefaultModel() {
+  saveDefaultModel(): void {
     if (!this._model?.provider || !this._model?.id) {
       piWarn("saveDefaultModel() called but no model is active — ignoring");
       return;
@@ -1779,7 +1853,7 @@ export class PiService {
   }
 
   /** Save the current thinking level as the default for future sessions. */
-  saveDefaultThinking() {
+  saveDefaultThinking(): void {
     const cfg = vscode.workspace.getConfiguration("pi-code-gui");
     cfg.update("defaultThinkingLevel", this._thinkingLevel, vscode.ConfigurationTarget.Global);
   }
@@ -1803,7 +1877,7 @@ export class PiService {
   }
 
   /** Save context budget setting (requires restart to take effect). */
-  async setContextBudget(budget: number) {
+  async setContextBudget(budget: number): Promise<void> {
     const cfg = vscode.workspace.getConfiguration("pi-code-gui");
     await cfg.update("contextBudget", budget, vscode.ConfigurationTarget.Global);
     this.reportStatus();
@@ -1821,6 +1895,7 @@ export class PiService {
     if (!this.modelRegistry) { return []; }
     try {
       const available = await this.modelRegistry.getAvailable();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       return available.map((m: any) => ({
         provider: m.provider,
         id: m.id,
@@ -1861,6 +1936,7 @@ export class PiService {
           contextWindow: m.contextWindow,
         }));
       }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       piWarn(`pickModel: getAvailableModels failed (${e.message}), using static fallback`);
     }
@@ -1950,6 +2026,7 @@ export class PiService {
   /** Get scoped models from the session */
   getScopedModels(): Array<{ provider: string; id: string; thinkingLevel: string }> {
     if (!this.session || !this.session.scopedModels) { return []; }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     return this.session.scopedModels.map((s: any) => ({
       provider: s.model.provider,
       id: s.model.id,
@@ -1957,11 +2034,11 @@ export class PiService {
     }));
   }
 
-  emitScopedModels() {
+  emitScopedModels(): void {
     this.emit({ type: "scoped-models-update", data: { models: this.getScopedModels() } });
   }
 
-  emitSettings() {
+  emitSettings(): void {
     this.emit({
       type: "settings-update",
       data: { autoCompaction: this._autoCompactionEnabled, autoRetry: this._autoRetryEnabled, showImages: this._showImages },
@@ -1991,7 +2068,7 @@ export class PiService {
     return this._showImages;
   }
 
-  async setEffort(effort: string) {
+  async setEffort(effort: string): Promise<void> {
     this._effort = effort;
     if (this.session && typeof this.session.setEffort === "function") {
       await this.session.setEffort(effort);
@@ -2035,7 +2112,7 @@ export class PiService {
   }
 
   /** Set a runtime API key (not persisted to disk) */
-  setRuntimeApiKey(provider: string, key: string) {
+  setRuntimeApiKey(provider: string, key: string): void {
     if (this.authStorage && typeof this.authStorage.setRuntimeApiKey === "function") {
       this.authStorage.setRuntimeApiKey(provider, key);
     }
@@ -2084,19 +2161,19 @@ export class PiService {
         contextPercent = contextUsage.percent;
         contextWindow = contextUsage.contextWindow;
       }
-    } catch { /* ignore */ }
+    } catch (e: unknown) { piWarn(`Non-critical failure (ignored): ${e instanceof Error ? e.message : String(e)}`); }
 
     return { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheWrite: totalCacheWrite, cost: totalCost, contextPercent, contextWindow };
   }
 
   // ── Getters ────────────────────────────────────────────
 
-  get isStreaming() { return this._isStreaming; }
-  get model() { return this._model; }
-  get thinkingLevel() { return this._thinkingLevel; }
+  get isStreaming(): boolean { return this._isStreaming; }
+  get model(): { id?: string; name?: string; provider?: string } | null { return this._model; }
+  get thinkingLevel(): string { return this._thinkingLevel; }
 
   /** Promote a follow-up message to a steering message. */
-  async promoteToSteer(text: string) {
+  async promoteToSteer(text: string): Promise<void> {
     if (!this.session) { return; }
     var existingSteer = this.session.getSteeringMessages ? [...this.session.getSteeringMessages()] : [];
     this.session.clearQueue();
@@ -2107,12 +2184,13 @@ export class PiService {
   }
 
   /** Clear all queued messages. */
-  async clearQueue() {
+  async clearQueue(): Promise<void> {
     if (!this.session) { return; }
     this.session.clearQueue();
   }
-  get effort() { return this._effort; }
+  get effort(): string { return this._effort; }
   get sdkRoot(): string | null { return this._piRoot; }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   get sessionManagerInstance(): any { return this.sessionManager; }
   /** The file path of the session file on disk (for persistence across reloads). */
   get sessionFilePath(): string | null {
@@ -2120,8 +2198,10 @@ export class PiService {
   }
   get sessionIdValue(): string | null { return this.sessionId; }
   get initialized(): boolean { return this.session !== null; }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   get rawSession(): any { return this.session; }
   /** Expose the model registry for dynamic model pickers in the webview */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   get modelRegistryInstance(): any { return this.modelRegistry; }
 
   /** Get the session display name from the session manager, if set. */
@@ -2198,6 +2278,7 @@ export class PiService {
     authType: "oauth" | "api_key",
   ): Array<{ id: string; name: string; authType: string; label: string; description: string }> {
     const oauthProviders = this.authStorage.getOAuthProviders();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const oauthProviderIds = new Set(oauthProviders.map((p: any) => p.id));
     const options: Array<{ id: string; name: string; authType: string; label: string; description: string }> = [];
 
@@ -2247,7 +2328,7 @@ export class PiService {
   ): Promise<T | undefined> {
     const vscode = await import("vscode");
     const picked = await vscode.window.showQuickPick(items, { placeHolder, matchOnDescription: true });
-    return picked as T | undefined;
+    return picked;
   }
 
   /** Show an info message */
@@ -2326,6 +2407,7 @@ export class PiService {
       // Refresh model registry and try to select a model for the provider
       this.modelRegistry.refresh();
       await this.completeLogin(providerId, providerName, "oauth", previousModel);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       if (error.message !== "Login cancelled") {
         await this.showErrorMessage(`Failed to login to ${providerName}: ${error.message ?? error}`);
@@ -2356,6 +2438,7 @@ export class PiService {
       this.authStorage.set(providerId, { type: "api_key", key: apiKey.trim() });
       this.modelRegistry.refresh();
       await this.completeLogin(providerId, providerName, "api_key", previousModel);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       if (error.message !== "Login cancelled") {
         await this.showErrorMessage(`Failed to save API key for ${providerName}: ${error.message ?? error}`);
@@ -2375,6 +2458,7 @@ export class PiService {
     // Try to select a default model for the provider if the current model is "unknown"
     if (this.AI && (!previousModel || previousModel.provider === "unknown")) {
       const availableModels = this.modelRegistry.getAvailable();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       const providerModels = availableModels.filter((m: any) => m.provider === providerId);
       if (providerModels.length > 0) {
         try {
@@ -2434,6 +2518,7 @@ export class PiService {
           ? `Logged out of ${pick.name}`
           : `Removed stored API key for ${pick.name}. Environment variables and models.json config are unchanged.`;
       await this.showInfoMessage(message);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       await this.showErrorMessage(`Logout failed: ${error.message ?? error}`);
     }
@@ -2441,19 +2526,20 @@ export class PiService {
 
   // ── Cleanup ────────────────────────────────────────────
 
-  dispose() {
+  dispose(): void {
     // Force-flush the session file to disk before tearing down.
     // The SDK defers all disk writes until the first assistant message
     // arrives, so if the model is slow or the user closes the tab early,
     // entries (including session_info with the tab name) exist only in
     // memory and would be lost.  _rewriteFile bypasses the deferral.
-    const sm = this.sessionManager as any;
+ 
+    const sm = this.sessionManager;
     if (sm && !sm.flushed && typeof sm._rewriteFile === "function") {
-      try { sm._rewriteFile(); } catch (e) { /* best-effort */ }
+      try { sm._rewriteFile(); } catch (e: unknown) { piWarn(`Best-effort failure: ${e instanceof Error ? e.message : String(e)}`); }
     }
     // Kill any running bash processes before tearing down the session.
     // Without this, processes orphaned by session close survive as zombies.
-    try { this.session?.abortBash?.(); } catch (e) { /* best-effort */ }
+    try { this.session?.abortBash?.(); } catch (e: unknown) { piWarn(`Best-effort failure: ${e instanceof Error ? e.message : String(e)}`); }
     if (this._widgetTimer) { clearInterval(this._widgetTimer); this._widgetTimer = null; }
     this.unsubscribe?.();
     this.session?.dispose();
