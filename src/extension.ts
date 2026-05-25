@@ -26,7 +26,7 @@ let sessionCounter = 0;
 let extContext: vscode.ExtensionContext | null = null;
 
 /** Persist the set of open session file paths so they can be restored on reload. */
-async function saveOpenSessionPaths() {
+async function saveOpenSessionPaths(): Promise<void> {
   if (!extContext) { return; }
   const paths: string[] = [];
   for (const sw of sessions) {
@@ -43,13 +43,14 @@ async function saveOpenSessionPaths() {
 /** The most recently focused (active) session window. */
 let activeSessionWindow: SessionWindow | null = null;
 
-function setActiveSession(sw: SessionWindow | null) {
+function setActiveSession(sw: SessionWindow | null): void {
   activeSessionWindow = sw;
 }
 let sessionTreeProvider: MultiSessionTreeProvider | null = null;
 let sessionTreeView: vscode.TreeView<SessionTreeItem> | null = null;
 
 let packagesTreeProvider: PiPackagesTreeProvider | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let packagesTreeView: vscode.TreeView<any> | null = null;
 let packageService: PiPackageService | null = null;
 
@@ -100,15 +101,15 @@ function handlePanelDispose(sw: SessionWindow): (piService: PiService) => void {
 
     // Refresh past sessions list from disk so the closed session appears
     // under Past Sessions immediately.
-    refreshPastSessionsList();
+    void refreshPastSessionsList();
     // Persist remaining open sessions for next reload
-    saveOpenSessionPaths();
+    void saveOpenSessionPaths();
   };
 }
 
 // ── Activate ───────────────────────────────────────────
 
-export async function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   extContext = context;
   console.log("Pi Code Gui extension activating...");
 
@@ -125,7 +126,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const primary = primarySession();
       if (primary) {
         setActiveSession(primary);
-        primary.webviewPanel.show();
+        void primary.webviewPanel.show();
       } else {
         addSession(context);
       }
@@ -143,7 +144,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const sw = sessions.find((s) => s.id === sessionId);
       if (sw) {
         setActiveSession(sw);
-        sw.webviewPanel.show();
+        void sw.webviewPanel.show();
       }
     }),
   );
@@ -194,7 +195,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!sw || !id) {
         const selection = sessionTreeView?.selection;
         if (selection && selection.length > 0) {
-          const item = selection[0] as SessionTreeItem;
+          const item = selection[0];
           if (item.contextValue === "sessionEntry" || item.contextValue?.startsWith("sessionEntry")) {
             const cmdArgs = item.command?.arguments;
             if (cmdArgs && cmdArgs.length >= 2) {
@@ -207,7 +208,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       if (sw && id) {
-        sw.webviewPanel.show();
+        void sw.webviewPanel.show();
         sw.webviewPanel.postMessage({ type: "revealEntry", entryId: id, toolCallId: tcId || "" });
       }
     }),
@@ -221,11 +222,12 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!item || (item.contextValue !== "sessionEntry" && !item.contextValue?.startsWith("sessionEntry"))) {
         const selection = sessionTreeView?.selection;
         if (selection && selection.length > 0) {
-          item = selection[0] as SessionTreeItem;
+          item = selection[0];
         }
       }
       if (!item || (item.contextValue !== "sessionEntry" && !item.contextValue?.startsWith("sessionEntry"))) { return; }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       var text = (item as any)._fullText;
       if (!text) {
         text = typeof item.tooltip === "string"
@@ -242,7 +244,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // ── Fork helpers ─────────────────────────────────────
 
   /** Fork at a specific entry within an already-open session. */
-  async function doForkFromOpenEntry(sessionId: string, entryId: string) {
+  async function doForkFromOpenEntry(sessionId: string, entryId: string): Promise<void> {
     const srcSw = sessions.find((s) => s.id === sessionId);
     if (!srcSw || !srcSw.piService.sessionManagerInstance) {
       throw new Error(`Source session not found (id=${sessionId}).`);
@@ -291,7 +293,7 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   /** Fork a past session at its current leaf (opens the session, then forks). */
-  async function doForkFromPastSession(sessionPath: string) {
+  async function doForkFromPastSession(sessionPath: string): Promise<void> {
     // Initialize a new PiService to load the session and get leaf ID
     const tempPi = new PiService();
     const result = await tempPi.initialize({ openPath: sessionPath });
@@ -322,10 +324,10 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   /** Create a new session window initialized from a forked session file. */
-  async function openForkedSession(forkedPath: string) {
+  async function openForkedSession(forkedPath: string): Promise<void> {
     const newSw = createSessionWindow(context);
     setActiveSession(newSw);
-    newSw.webviewPanel.show();
+    void newSw.webviewPanel.show();
     sessionTreeProvider?.refresh();
 
     await initSessionInBackground(context, newSw, { openPath: forkedPath });
@@ -347,6 +349,7 @@ export async function activate(context: vscode.ExtensionContext) {
   //   1. sessionEntry inside an open session → fork at that entry
   //   2. pastSessionEntry → resume the session, pick a message, fork there
   context.subscriptions.push(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     vscode.commands.registerCommand("pi-code-gui.forkSession", async (...rawArgs: any[]) => {
       // VS Code passes the TreeItem as the first argument when invoked from
       // a context menu. The tree item's command.arguments contain the actual
@@ -367,6 +370,7 @@ export async function activate(context: vscode.ExtensionContext) {
         } else {
           await doForkFromPastSession(cmdArgs[0] as string);
         }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         vscode.window.showErrorMessage(`Fork failed: ${e.message ?? e}`);
       }
@@ -393,6 +397,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       try {
         await doForkFromOpenEntry(sw.id, leafId);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         vscode.window.showErrorMessage(`Clone failed: ${e.message ?? e}`);
       }
@@ -413,6 +418,7 @@ export async function activate(context: vscode.ExtensionContext) {
         await sw.piService.rawSession.compact();
         vscode.window.showInformationMessage("Context compacted.");
         sessionTreeProvider?.refresh();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         vscode.window.showErrorMessage(`Compact failed: ${e.message ?? e}`);
       }
@@ -439,6 +445,7 @@ export async function activate(context: vscode.ExtensionContext) {
         if (!uri) { return; }
         const result = await sw.piService.rawSession.exportToHtml(uri.fsPath);
         vscode.window.showInformationMessage(`Session exported to: ${result}`);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         vscode.window.showErrorMessage(`Export failed: ${e.message ?? e}`);
       }
@@ -459,6 +466,7 @@ export async function activate(context: vscode.ExtensionContext) {
         // Push updated slash commands after extension reload
         sw.piService.emitSlashCommands();
         vscode.window.showInformationMessage("Extensions, skills, and keybindings reloaded.");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         vscode.window.showErrorMessage(`Reload failed: ${e.message ?? e}`);
       }
@@ -471,13 +479,16 @@ export async function activate(context: vscode.ExtensionContext) {
       let resolved: string | undefined;
       // When triggered from a context menu, VS Code passes the tree item as the first arg.
       if (filePath instanceof SessionTreeItem) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         resolved = (filePath as any).command?.arguments?.[0];
       } else if (typeof filePath === "string") {
         resolved = filePath;
       }
       if (!resolved) {
         const sel = sessionTreeView?.selection?.[0];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (sel && (sel as any).contextValue === "pastSessionEntry" && (sel as any).command?.arguments) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
           const arg = (sel as any).command.arguments[0];
           if (typeof arg === "string") { resolved = arg; }
         }
@@ -490,9 +501,10 @@ export async function activate(context: vscode.ExtensionContext) {
         // Create a new session tab (like Add Pi Session) and resume into it
         const sw = createSessionWindow(context);
         setActiveSession(sw);
-        sw.webviewPanel.show();
+        void sw.webviewPanel.show();
         sessionTreeProvider?.refresh();
-        initSessionInBackground(context, sw, { openPath: resolved });
+        void initSessionInBackground(context, sw, { openPath: resolved });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         vscode.window.showErrorMessage(`Resume failed: ${e.message ?? e}`);
       }
@@ -505,13 +517,16 @@ export async function activate(context: vscode.ExtensionContext) {
       let resolved: string | undefined;
       // When triggered from a context menu, VS Code passes the tree item as the first arg.
       if (filePath instanceof SessionTreeItem) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         resolved = (filePath as any).command?.arguments?.[0];
       } else if (typeof filePath === "string") {
         resolved = filePath;
       }
       if (!resolved) {
         const sel = sessionTreeView?.selection?.[0];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (sel && (sel as any).contextValue === "pastSessionEntry" && (sel as any).command?.arguments) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
           const arg = (sel as any).command.arguments[0];
           if (typeof arg === "string") { resolved = arg; }
         }
@@ -530,6 +545,7 @@ export async function activate(context: vscode.ExtensionContext) {
         await PiService.deleteSessionFile(resolved);
         await refreshPastSessionsList();
         sessionTreeProvider?.refreshPastOnly();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         vscode.window.showErrorMessage(`Delete failed: ${e.message ?? e}`);
       }
@@ -556,6 +572,7 @@ export async function activate(context: vscode.ExtensionContext) {
         }
         await refreshPastSessionsList();
         sessionTreeProvider?.refresh();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         vscode.window.showErrorMessage(`Delete all failed: ${e.message ?? e}`);
       }
@@ -615,7 +632,7 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage("No active Pi session.");
         return;
       }
-      sw.webviewPanel.show();
+      void sw.webviewPanel.show();
       if (await sw.piService.pickModel()) {
         sessionTreeProvider?.refresh();
       }
@@ -630,7 +647,7 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage("No active Pi session.");
         return;
       }
-      sw.webviewPanel.show();
+      void sw.webviewPanel.show();
       if (await sw.piService.pickThinkingLevel()) {
         sessionTreeProvider?.refresh();
       }
@@ -645,7 +662,7 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage("No active Pi session.");
         return;
       }
-      sw.webviewPanel.show();
+      void sw.webviewPanel.show();
       await sw.webviewPanel.triggerEffortPicker();
     }),
   );
@@ -658,14 +675,14 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage("No active Pi session.");
         return;
       }
-      sw.webviewPanel.show();
+      void sw.webviewPanel.show();
       await sw.webviewPanel.triggerContextBudgetPicker();
     }),
   );
 
   // ── Step 3: Create primary session ─────────────────────
   const primary = createSessionWindow(context);
-  primary.webviewPanel.show();
+  void primary.webviewPanel.show();
 
   // ── Step 3b: Register SDK-independent commands ─────
   // These must be registered synchronously so keybindings
@@ -679,11 +696,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const savedPaths: string[] = context.workspaceState.get("pi-code-gui.openSessionPaths") ?? [];
   const savedActivePath: string | undefined = context.workspaceState.get("pi-code-gui.activeSessionPath") ?? undefined;
 
-  initSessionInBackground(context, primary).then(() => {
+  void initSessionInBackground(context, primary).then(() => {
     if (primary.initialized) {
-      restoreAdditionalSessions(context, savedPaths, primary).then(() => {
+      void restoreAdditionalSessions(context, savedPaths, primary).then(() => {
         restoreActiveSession(savedActivePath);
-        saveOpenSessionPaths();
+        void saveOpenSessionPaths();
       });
     }
   });
@@ -698,21 +715,21 @@ export async function activate(context: vscode.ExtensionContext) {
  * Try to init packages view immediately.  If the SDK isn't available yet,
  * poll every 2 s until a session initialises (max 30 s).
  */
-function initPackagesViewDelayed(context: vscode.ExtensionContext) {
+function initPackagesViewDelayed(context: vscode.ExtensionContext): void {
   initPackagesView(context).catch(() => {
     // SDK not ready yet — poll until a session comes up
     const interval = setInterval(() => {
       const primary = primarySession();
       if (primary?.initialized) {
         clearInterval(interval);
-        initPackagesView(context);
+        void initPackagesView(context);
       }
     }, 2000);
     setTimeout(() => clearInterval(interval), 30_000);
   });
 }
 
-async function initPackagesView(context: vscode.ExtensionContext) {
+async function initPackagesView(context: vscode.ExtensionContext): Promise<void> {
   if (packagesTreeProvider) { return; } // already initialized
 
   packageService = new PiPackageService();
@@ -740,8 +757,9 @@ async function initPackagesView(context: vscode.ExtensionContext) {
 
   // Install a package from the marketplace
   context.subscriptions.push(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     vscode.commands.registerCommand("pi-code-gui.installPackage", async (item?: any) => {
-      const treeItem = resolvePackageTreeItem(item, "package-marketplace");
+      const treeItem = resolvePackageTreeItem(item);
       let marketPkg = treeItem?.marketData;
 
       if (!marketPkg) {
@@ -767,8 +785,9 @@ async function initPackagesView(context: vscode.ExtensionContext) {
 
   // Uninstall a package
   context.subscriptions.push(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     vscode.commands.registerCommand("pi-code-gui.uninstallPackage", async (item?: any) => {
-      const treeItem = resolvePackageTreeItem(item, "package-installed");
+      const treeItem = resolvePackageTreeItem(item);
       const pkg = treeItem?.installedData;
       if (!pkg) {
         vscode.window.showErrorMessage("Cannot uninstall: no package selected.");
@@ -794,6 +813,7 @@ async function initPackagesView(context: vscode.ExtensionContext) {
       const query = await vscode.window.showInputBox({
         prompt: "Search Pi packages on the marketplace",
         placeHolder: "e.g. web, subagent, mcp — or leave empty for popular",
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         value: (packagesTreeProvider as any)?.searchQuery ?? "",
       });
       if (query === undefined) { return; } // cancelled
@@ -810,8 +830,9 @@ async function initPackagesView(context: vscode.ExtensionContext) {
 
   // Update a single package
   context.subscriptions.push(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     vscode.commands.registerCommand("pi-code-gui.updatePackage", async (item?: any) => {
-      const treeItem = resolvePackageTreeItem(item, "package-installed");
+      const treeItem = resolvePackageTreeItem(item);
       const pkg = treeItem?.installedData;
       if (!pkg) {
         vscode.window.showErrorMessage("Cannot update: no package selected.");
@@ -840,6 +861,7 @@ async function initPackagesView(context: vscode.ExtensionContext) {
         await packageService!.update();
         vscode.window.showInformationMessage("All packages updated.");
         await packagesTreeProvider?.refreshAll();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         vscode.window.showErrorMessage(`Update failed: ${e.message ?? e}`);
       }
@@ -873,7 +895,8 @@ async function initPackagesView(context: vscode.ExtensionContext) {
 }
 
 /** Resolve a tree item from either a direct argument or the tree view selection. */
-function resolvePackageTreeItem(item: any, expectedContext: string): any {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- VS Code tree item types are dynamic
+function resolvePackageTreeItem(item: any): any {
   // Direct argument from TreeItem.command click
   if (item && (item.marketData || item.installedData)) {
     return item;
@@ -882,7 +905,7 @@ function resolvePackageTreeItem(item: any, expectedContext: string): any {
   // From tree selection — walk up to parent if we're on an action child
   const selection = packagesTreeView?.selection;
   if (selection && selection.length > 0) {
-    let sel = selection[0] as any;
+    const sel = selection[0];
     // If clicked on an action or overview child, walk up to the parent package item
     if (sel.installedData || sel.marketData) {
       return sel;
@@ -902,7 +925,7 @@ async function pickScope(): Promise<"user" | "project" | undefined> {
   return pick?.scope;
 }
 
-async function doInstallPackage(source: string, scope: "user" | "project" = "user") {
+async function doInstallPackage(source: string, scope: "user" | "project" = "user"): Promise<void> {
   if (!packageService) { return; }
 
   const label = source.startsWith("npm:") ? source.slice(4) : source;
@@ -920,7 +943,7 @@ async function doInstallPackage(source: string, scope: "user" | "project" = "use
   );
 }
 
-async function doUninstallPackage(source: string, scope: "user" | "project") {
+async function doUninstallPackage(source: string, scope: "user" | "project"): Promise<void> {
   if (!packageService) { return; }
 
   const label = source.startsWith("npm:") ? source.slice(4) : source;
@@ -938,7 +961,7 @@ async function doUninstallPackage(source: string, scope: "user" | "project") {
   );
 }
 
-async function doUpdatePackage(source: string) {
+async function doUpdatePackage(source: string): Promise<void> {
   if (!packageService) { return; }
 
   const label = source.startsWith("npm:") ? source.slice(4) : source;
@@ -949,6 +972,7 @@ async function doUpdatePackage(source: string) {
         await packageService!.update(source);
         vscode.window.showInformationMessage(`Updated ${label}`);
         await packagesTreeProvider?.refreshAll();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         vscode.window.showErrorMessage(`Update failed: ${e.message ?? e}`);
       }
@@ -958,12 +982,12 @@ async function doUpdatePackage(source: string) {
 
 // ── Add a new session window ──────────────────────────
 
-function addSession(context: vscode.ExtensionContext) {
+function addSession(context: vscode.ExtensionContext): void {
   const sw = createSessionWindow(context);
   setActiveSession(sw);
-  sw.webviewPanel.show();
+  void sw.webviewPanel.show();
   sessionTreeProvider?.refresh();
-  initSessionInBackground(context, sw, { fresh: true });
+  void initSessionInBackground(context, sw, { fresh: true });
 }
 
 // ── Early command registration (SDK-independent) ───────
@@ -974,7 +998,7 @@ function addSession(context: vscode.ExtensionContext) {
 // take seconds on slow startup — without this guard, VS Code
 // sees the keybinding mapped but the command missing.
 
-function registerEarlyCommands(context: vscode.ExtensionContext) {
+function registerEarlyCommands(context: vscode.ExtensionContext): void {
   // ── pickCommand (Cmd+/) ─────────────────────────────
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.pickCommand", async () => {
@@ -1023,7 +1047,7 @@ function registerEarlyCommands(context: vscode.ExtensionContext) {
         placeHolder: "Slash command (/)",
         matchOnDescription: true,
       });
-      if (picked && typeof picked !== "string" && (picked as vscode.QuickPickItem).kind !== vscode.QuickPickItemKind.Separator) {
+      if (picked && typeof picked !== "string" && (picked).kind !== vscode.QuickPickItemKind.Separator) {
         vscode.commands.executeCommand("pi-code-gui.sendSlashCommand", picked.label);
       }
     }),
@@ -1043,6 +1067,7 @@ function registerEarlyCommands(context: vscode.ExtensionContext) {
       if (picked && typeof picked !== "string") {
         vscode.commands.executeCommand(
           "pi-code-gui.referenceFile",
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
           vscode.workspace.asRelativePath((picked as any).uri),
         );
       }
@@ -1052,7 +1077,7 @@ function registerEarlyCommands(context: vscode.ExtensionContext) {
 
 // ── Initialize a single session ───────────────────────
 
-function ensureTreeProvider(context: vscode.ExtensionContext) {
+function ensureTreeProvider(context: vscode.ExtensionContext): void {
   if (!sessionTreeProvider) {
     sessionTreeProvider = new MultiSessionTreeProvider(sessions, context);
     sessionTreeView = vscode.window.createTreeView("pi-code-gui.sessions", {
@@ -1088,7 +1113,7 @@ function ensureTreeProvider(context: vscode.ExtensionContext) {
  * Refresh the past-sessions list from disk.  Called on activation and after
  * delete / resume operations that change the pool of saved sessions.
  */
-async function refreshPastSessionsList() {
+async function refreshPastSessionsList(): Promise<void> {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
   if (!sessionTreeProvider) {
     piWarn("refreshPastSessionsList: sessionTreeProvider is null, skipping");
@@ -1099,13 +1124,20 @@ async function refreshPastSessionsList() {
   piLog(`refreshPastSessionsList: done, found ${sessionTreeProvider.pastSessions.length} past sessions`);
 }
 
-async function initSessionInBackground(context: vscode.ExtensionContext, sw: SessionWindow, opts?: { fresh?: boolean; openPath?: string }) {
+async function initSessionInBackground(context: vscode.ExtensionContext, sw: SessionWindow, opts?: { fresh?: boolean; openPath?: string }): Promise<void> {
   const fresh = opts?.fresh ?? false;
   const openPath = opts?.openPath;
   // Ensure tree provider exists ASAP so the tree view shows something
   ensureTreeProvider(context);
 
 
+
+  // Start loading past sessions immediately — runs in parallel with SDK init.
+  // This prevents the tree from showing an empty "Past Sessions" header
+  // while the SDK loads on slow projects.
+  const pastSessionsPromise = sw === primarySession()
+    ? refreshPastSessionsList().catch((e: unknown) => { piWarn(`Early past-session load failed: ${e instanceof Error ? e.message : String(e)}`); })
+    : Promise.resolve();
 
   const status = await PiService.checkInstall();
 
@@ -1177,14 +1209,12 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   // Ensure tree provider is registered (safe to call multiple times)
   ensureTreeProvider(context);
 
-  // ── Load past sessions BEFORE registering the event handler ──
+  // ── Ensure past sessions are loaded (started earlier in parallel with SDK init) ──
   // The event handler calls sessionTreeProvider.refresh() on every pi event,
-  // which triggers VS Code to re-render the tree. If past sessions haven't
-  // been loaded yet, the tree renders with an empty "Past Sessions" header
-  // with collapsibleState = None. By awaiting refreshPastSessionsList first,
-  // we guarantee the tree shows the correct state on initial render.
+  // which triggers VS Code to re-render the tree. We wait for past sessions
+  // to finish loading so the initial render shows the correct state.
   if (sw === primarySession()) {
-    await refreshPastSessionsList();
+    await pastSessionsPromise;
   }
 
   // Auto-refresh tree when this session changes
@@ -1213,10 +1243,17 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
 
   sessionTreeProvider?.refresh();
 
+  // Safety net: VS Code can drop tree refreshes if they fire before the
+  // TreeView's internal setup is complete (which happens inside async
+  // initialization). A second refresh after yielding the microtask queue
+  // guarantees the tree picks up the new state.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  sessionTreeProvider?.refresh();
+
   console.log(`Pi Code Gui session ${sw.id} ready`);
 }
 
-function removeSession(sw: SessionWindow) {
+function removeSession(sw: SessionWindow): void {
   const idx = sessions.indexOf(sw);
   if (idx !== -1) {
     sessions.splice(idx, 1);
@@ -1237,7 +1274,7 @@ async function restoreAdditionalSessions(
   context: vscode.ExtensionContext,
   savedPaths: string[],
   primary: SessionWindow,
-) {
+): Promise<void> {
   if (savedPaths.length <= 1) { return; }
 
   const primaryPath = primary.piService.sessionFilePath;
@@ -1253,19 +1290,19 @@ async function restoreAdditionalSessions(
     if (!fs.existsSync(p)) { continue; }
 
     const sw = createSessionWindow(context);
-    sw.webviewPanel.show();
+    void sw.webviewPanel.show();
     sessionTreeProvider?.refresh();
-    initSessionInBackground(context, sw, { openPath: p });
+    void initSessionInBackground(context, sw, { openPath: p });
   }
 }
 
 /** Restore which session was focused before reload. */
-function restoreActiveSession(activePath: string | undefined) {
+function restoreActiveSession(activePath: string | undefined): void {
   if (!extContext || !activePath) { return; }
   for (const sw of sessions) {
     if (sw.piService.sessionFilePath === activePath) {
       setActiveSession(sw);
-      sw.webviewPanel.show();
+      void sw.webviewPanel.show();
       return;
     }
   }
@@ -1326,6 +1363,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   /** Track if past sessions header is expanded. */
   pastSessionsExpanded = false;
   /** Past sessions loaded from disk via SessionManager.list(). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _pastSessions: any[] = [];
   /** True while we are refreshing past sessions. */
   private _loadingPast = false;
@@ -1335,21 +1373,23 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   constructor(private sessions: SessionWindow[], private context: vscode.ExtensionContext) {}
 
   /** Called by TreeView expand/collapse events to track entries-header state. */
-  setEntryHeaderExpanded(sessionId: string, expanded: boolean) {
+  setEntryHeaderExpanded(sessionId: string, expanded: boolean): void {
     if (expanded) { this.expandedEntries.add(sessionId); }
     else { this.expandedEntries.delete(sessionId); }
   }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   get pastSessions(): any[] { return this._pastSessions; }
   /** Cached past-sessions header so targeted refreshes use the same object. */
   private _pastHeaderItem: SessionTreeItem | null = null;
 
   /** Reload past sessions from disk asynchronously and fire refresh. */
-  async refreshPastSessions(cwd: string) {
+  async refreshPastSessions(cwd: string): Promise<void> {
     this._loadingPast = true;
     try {
       this._pastSessions = await PiService.listSessions(cwd);
       piLog(`refreshPastSessions: loaded ${this._pastSessions.length} past sessions`);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       piWarn(`refreshPastSessions failed: ${e.message ?? e}`);
       this._pastSessions = [];
@@ -1364,10 +1404,10 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   }
 
   /** Lightweight refresh (does not re-fetch past sessions). */
-  refresh() { this._onDidChangeTreeData.fire(); }
+  refresh(): void { this._onDidChangeTreeData.fire(); }
 
   /** Refresh only past sessions children — preserves expand state. */
-  refreshPastOnly() {
+  refreshPastOnly(): void {
     // Use the cached header element so VS Code can match it by reference
     // to the one returned by getChildren().  A fresh SessionTreeItem with
     // the same id is not reference-equal and VS Code ignores the event.
@@ -1400,19 +1440,27 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
       const filteredCount = this.pastFilter
         ? this._pastSessions.filter((s) => this.matchesPastFilter(s)).length
         : pastCount;
-      let pastLabel = "Past Sessions";
-      if (pastCount > 0) {
+      let pastLabel: string;
+      let pastState: vscode.TreeItemCollapsibleState;
+      if (this._loadingPast) {
+        pastLabel = "Past Sessions (loading...)";
+        pastState = vscode.TreeItemCollapsibleState.None;
+      } else if (pastCount > 0) {
         pastLabel = this.pastFilter
           ? `Past Sessions (${filteredCount} of ${pastCount})`
           : `Past Sessions (${pastCount})`;
+        pastState = this.pastSessionsExpanded
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed;
+      } else {
+        pastLabel = "Past Sessions (none)";
+        pastState = vscode.TreeItemCollapsibleState.None;
       }
       const pastItem = new SessionTreeItem(
         pastLabel,
         "past-sessions-header",
         undefined,
-        pastCount > 0
-          ? (this.pastSessionsExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed)
-          : vscode.TreeItemCollapsibleState.None,
+        pastState,
       );
       pastItem.id = "__past_sessions_header__";
       if (this.pastFilter) {
@@ -1464,6 +1512,10 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
     sw.label = sw.initialized ? sessionName : sw.label;
 
     const entryCount = getEntryCount(sw);
+    // Always allow expanding — even before init, so the user can see loading placeholders
+    const collapsible = sw.initialized && entryCount === 0
+      ? vscode.TreeItemCollapsibleState.None
+      : vscode.TreeItemCollapsibleState.Collapsed;
     const item = new SessionTreeItem(
       label,
       "session",
@@ -1472,9 +1524,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
         title: "Focus Session",
         arguments: [sw.id],
       },
-      entryCount > 0
-        ? vscode.TreeItemCollapsibleState.Collapsed
-        : vscode.TreeItemCollapsibleState.None,
+      collapsible,
     );
     item.sessionId = sw.id;
     item.description = sw.initialized ? (sw.piService.model?.id ?? "...") : "initializing";
@@ -1487,7 +1537,17 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
 
   private getSessionChildren(element: SessionTreeItem): SessionTreeItem[] {
     const sw = this.sessions.find((s) => s.id === element.sessionId);
-    if (!sw || !sw.initialized) { return []; }
+    if (!sw) { return []; }
+
+    // Before initialization, show placeholder items so the user can see
+    // the tree structure even while the SDK is loading
+    if (!sw.initialized) {
+      const loading = new SessionTreeItem("Loading Pi SDK...", "loading");
+      loading.iconPath = new vscode.ThemeIcon("loading~spin");
+      loading.description = "please wait";
+      return [loading];
+    }
+
     const ps = sw.piService;
     const children: SessionTreeItem[] = [];
 
@@ -1556,6 +1616,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
     const entries = sm.getEntries();
     if (!entries || entries.length === 0) { return []; }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     return entries.map((entry: any) => {
       const { label, tooltip, type, fullText } = formatEntryLabel(entry);
       const item = new SessionTreeItem(label, type, {
@@ -1574,6 +1635,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
       } else {
         item.contextValue = "sessionEntry";
       }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       (item as any)._fullText = fullText;
       return item;
     });
@@ -1582,6 +1644,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   // ── Past session items ────────────────────────────────
 
   /** Check if a past session matches the current filter. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   private matchesPastFilter(s: any): boolean {
     if (!this.pastFilter) { return true; }
     const q = this.pastFilter.toLowerCase();
@@ -1592,6 +1655,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
     return false;
   }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   private makePastSessionItem(s: any): SessionTreeItem {
     const label = s.name
       ? s.name
@@ -1626,6 +1690,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
  * Format a session entry for display in the tree.
  * Mirrors the pi TUI's entry display logic (roles, compaction, tools, etc.).
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function formatEntryLabel(entry: any): { label: string; tooltip: string; type: string; fullText: string } {
   const maxLen = 60;
 
@@ -1702,12 +1767,15 @@ function getEntryCount(sw: SessionWindow): number {
     : 0;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractText(content: any): string {
   if (!content) { return ""; }
   if (typeof content === "string") { return content; }
   if (Array.isArray(content)) {
     return content
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       .filter((c: any) => c.type === "text")
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((c: any) => c.text)
       .join("\n");
   }
@@ -1776,7 +1844,7 @@ class SessionTreeItem extends vscode.TreeItem {
   }
 }
 
-export async function deactivate() {
+export async function deactivate(): Promise<void> {
   // Persist open sessions before disposing so we can restore on next activate
   await saveOpenSessionPaths();
   for (const sw of sessions) {

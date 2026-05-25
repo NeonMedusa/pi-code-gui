@@ -8,7 +8,9 @@ import * as path from "node:path";
  * Accepts `defineTool` and `Type` from the pi SDK so all tools use the
  * SDK's type-safe definition pattern.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createBridgeTools(defineTool: Function, Type: any): any[] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tools: any[] = [];
 
   // Helper: truncate text to reasonable limits
@@ -21,6 +23,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
     return output;
   };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   const boundedJson = (value: any): string => {
     const text = JSON.stringify(value) ?? "null";
     const lineCount = text.split("\n").length;
@@ -35,7 +38,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
     });
   };
 
-  const getWorkspaceFolders = () =>
+  const getWorkspaceFolders = (): Array<{ uri: string; name: string; index: number }> =>
     (vscode.workspace.workspaceFolders ?? []).map((f) => ({
       uri: f.uri.toString(),
       name: f.name,
@@ -82,6 +85,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
         const selection = editor?.selection;
         const doc = editor?.document;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         const state: any = {
           workspaceFolders: getWorkspaceFolders(),
           openEditors: vscode.window.visibleTextEditors.map((e) => ({
@@ -129,6 +133,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
         const doc = editor?.document;
         const selection = editor?.selection;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result: any = {
           filePath: doc?.uri.fsPath ?? null,
           languageId: doc?.languageId ?? null,
@@ -268,6 +273,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
           }),
         })),
       }, { additionalProperties: false }),
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       execute: async (_toolCallId: string, params: any) => {
         const resolved = resolvePath(params.filePath);
         if (!resolved) {
@@ -288,7 +294,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
         await vscode.window.showTextDocument(doc, {
           preview: params.preview ?? true,
           preserveFocus: params.preserveFocus ?? false,
-          selection,
+          ...(selection ? { selection } : {}),
         });
 
         return {
@@ -418,6 +424,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
           character: Type.Number({ description: "Zero-based character offset" }),
         }),
       }, { additionalProperties: false }),
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       execute: async (_toolCallId: string, params: any) => {
         const resolved = resolvePath(params.filePath);
         if (!resolved) {
@@ -463,6 +470,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
           character: Type.Number({ description: "Zero-based character offset" }),
         }),
       }, { additionalProperties: false }),
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       execute: async (_toolCallId: string, params: any) => {
         const resolved = resolvePath(params.filePath);
         if (!resolved) {
@@ -506,6 +514,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
           character: Type.Number({ description: "Zero-based character offset" }),
         }),
       }, { additionalProperties: false }),
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       execute: async (_toolCallId: string, params: any) => {
         const resolved = resolvePath(params.filePath);
         if (!resolved) {
@@ -592,6 +601,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
           character: Type.Number({ description: "Zero-based character offset" }),
         })),
       }, { additionalProperties: false }),
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       execute: async (_toolCallId: string, params: any) => {
         const resolved = resolvePath(params.filePath);
         if (!resolved) {
@@ -644,6 +654,7 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
           newText: Type.String({ description: "Replacement text" }),
         }), { description: "List of text replacements to apply through VS Code" }),
       }, { additionalProperties: false }),
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       execute: async (_toolCallId: string, params: { edits: any[] }) => {
         const we = new vscode.WorkspaceEdit();
         for (const edit of params.edits) {

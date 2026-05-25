@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { PiPackageService, InstalledPackage, MarketplacePackage } from "./pi-package-service.js";
+import type { PiPackageService, InstalledPackage, MarketplacePackage } from "./pi-package-service.js";
 
 /**
  * Tree data provider for the Pi Packages view.
@@ -69,7 +69,7 @@ export class PiPackagesTreeProvider implements vscode.TreeDataProvider<PkgTreeIt
 
   // ── Refresh ──────────────────────────────────────────
 
-  async refreshAll(searchQuery?: string) {
+  async refreshAll(searchQuery?: string): Promise<void> {
     const explicitSearch = searchQuery !== undefined;
     if (explicitSearch) { this.searchQuery = searchQuery; }
     this.loadInstalled();
@@ -83,12 +83,12 @@ export class PiPackagesTreeProvider implements vscode.TreeDataProvider<PkgTreeIt
     this._onDidChangeTreeData.fire();
   }
 
-  private loadInstalled() {
+  private loadInstalled(): void {
     try { this.installed = this.pkgService.listInstalled(); }
     catch { this.installed = []; }
   }
 
-  private async loadUpdates() {
+  private async loadUpdates(): Promise<void> {
     try {
       this.updatesAvail.clear();
       for (const u of (await this.pkgService.checkForUpdates())) {
@@ -97,7 +97,7 @@ export class PiPackagesTreeProvider implements vscode.TreeDataProvider<PkgTreeIt
     } catch { /* ignore */ }
   }
 
-  private async loadInstalledEnrichment() {
+  private async loadInstalledEnrichment(): Promise<void> {
     try {
       this.installedEnriched = await this.pkgService.enrichInstalledPackages(this.installed);
       // Fetch banners for enriched packages
@@ -114,7 +114,7 @@ export class PiPackagesTreeProvider implements vscode.TreeDataProvider<PkgTreeIt
     } catch { /* ignore */ }
   }
 
-  private async searchMarketplace() {
+  private async searchMarketplace(): Promise<void> {
     this.marketLoading = true;
     this.marketError = null;
     this._onDidChangeTreeData.fire();
@@ -133,8 +133,9 @@ export class PiPackagesTreeProvider implements vscode.TreeDataProvider<PkgTreeIt
           }).catch(() => {});
         }
       }
-    } catch (e: any) {
-      this.marketError = e.message ?? String(e);
+    } catch (e: unknown) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      this.marketError = err.message;
       this.market = [];
     } finally {
       this.marketLoading = false;
@@ -166,7 +167,7 @@ export class PiPackagesTreeProvider implements vscode.TreeDataProvider<PkgTreeIt
 
     if (element.contextValue === "packages-installed-header") {return this.buildInstalledList();}
     if (element.contextValue === "packages-marketplace-header") {return this.buildMarketplaceList();}
-    if (element.contextValue === "package-installed") {return this.buildOverview(element.installedData!, element);}
+    if (element.contextValue === "package-installed") {return this.buildOverview(element.installedData, element);}
     if (element.contextValue === "package-marketplace") {return this.buildOverview(undefined, element);}
 
     return [];
@@ -305,8 +306,6 @@ export class PiPackagesTreeProvider implements vscode.TreeDataProvider<PkgTreeIt
       mp = element.marketData;
     }
 
-    const pkgName = installed ? srcLabel(installed.source) : mp?.npmPackage ?? "?";
-
     // ── 1. Description ──
     const desc = mp?.description || "(no description)";
     const descItem = new PkgTreeItem(desc, "pkg-overview-desc");
@@ -441,7 +440,7 @@ export class PiPackagesTreeProvider implements vscode.TreeDataProvider<PkgTreeIt
   }
 
   /** Show a persistent error banner at the root of the tree. */
-  showError(message: string) {
+  showError(message: string): void {
     this.marketError = message;
     this._onDidChangeTreeData.fire();
   }

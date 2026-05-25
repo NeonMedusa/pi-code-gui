@@ -1,12 +1,11 @@
 import * as vscode from "vscode";
 import type { PiService } from "./pi-service.js";
 
-/** Register a command safely — ignore if already registered. */
-function safeRegister(context: vscode.ExtensionContext, command: string, callback: (...args: any[]) => any) {
+function safeRegister(context: vscode.ExtensionContext, command: string, callback: (...args: unknown[]) => unknown): void {
   try {
     context.subscriptions.push(vscode.commands.registerCommand(command, callback));
-  } catch (e: any) {
-    console.log(`[pi-gui] Command "${command}" already registered, skipping phase-4 duplicate.`);
+  } catch (e: unknown) {
+    console.log(`[pi-gui] Command "${command}" already registered, skipping phase-4 duplicate: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -17,8 +16,8 @@ export function registerPhase4Commands(
   safeRegister(context, "pi-code-gui.login", async () => {
     try {
       await piService.login();
-    } catch (e: any) {
-      vscode.window.showErrorMessage(`Login failed: ${e.message ?? e}`);
+    } catch (e: unknown) {
+      vscode.window.showErrorMessage(`Login failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   });
 
@@ -44,8 +43,8 @@ export function registerPhase4Commands(
     try {
       await piService.newSession();
       vscode.window.showInformationMessage("Context reloaded.");
-    } catch (e: any) {
-      vscode.window.showErrorMessage(e.message);
+    } catch (e: unknown) {
+      vscode.window.showErrorMessage(e instanceof Error ? e.message : String(e));
     }
   });
 }

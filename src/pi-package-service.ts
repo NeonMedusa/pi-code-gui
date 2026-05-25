@@ -68,6 +68,7 @@ function normalizeRepoUrl(url: string): string {
 }
 
 export class PiPackageService {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   private packageManager: any | null = null;
   private sdkRoot: string | null = null;
   private initialized = false;
@@ -83,12 +84,14 @@ export class PiPackageService {
 
     try {
       this.sdkRoot = resolvePiPackagePath();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: `SDK not found: ${e.message ?? e}` };
     }
 
     try {
-      const SDK = (await import(path.join(this.sdkRoot, "dist/index.js"))) as any;
+ 
+      const SDK = (await import(path.join(this.sdkRoot, "dist/index.js")));
       const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
       const SettingsManager = SDK.SettingsManager;
       const DefaultPackageManagerClass = SDK.DefaultPackageManager;
@@ -101,6 +104,7 @@ export class PiPackageService {
       });
       this.initialized = true;
       return { success: true };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: `Failed to initialize package manager: ${e.message ?? e}` };
     }
@@ -111,6 +115,7 @@ export class PiPackageService {
     if (!this.packageManager) { return []; }
     try {
       const packages = this.packageManager.listConfiguredPackages();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       return packages.map((pkg: any) => ({
         source: pkg.source,
         scope: pkg.scope,
@@ -130,6 +135,7 @@ export class PiPackageService {
     try {
       await this.packageManager.installAndPersist(source, { local: scope === "project" });
       return { success: true };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: e.message ?? String(e) };
     }
@@ -143,6 +149,7 @@ export class PiPackageService {
     try {
       await this.packageManager.removeAndPersist(source, { local: scope === "project" });
       return { success: true };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: e.message ?? String(e) };
     }
@@ -156,6 +163,7 @@ export class PiPackageService {
     try {
       await this.packageManager.update(source);
       return { success: true };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       return { success: false, error: e.message ?? String(e) };
     }
@@ -224,12 +232,14 @@ export class PiPackageService {
         throw new Error(`npm search returned ${response.status}`);
       }
 
-      const data = (await response.json()) as any;
+ 
+      const data = (await response.json());
       const objects = data?.objects ?? [];
 
       const qLower = q.toLowerCase();
 
       return objects
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((obj: any) => ({
           ...obj,
           package: {
@@ -242,6 +252,7 @@ export class PiPackageService {
             },
           },
         }))
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         .filter((obj: any) => {
           const pkgObj = obj.package;
           const name = (pkgObj.name ?? "").toLowerCase();
@@ -270,6 +281,7 @@ export class PiPackageService {
 
           return true;
         })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((obj: any) => {
           const p = obj.package;
           return {
@@ -286,6 +298,7 @@ export class PiPackageService {
             license: p.license ?? "",
           };
         });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       throw new Error(`Marketplace search failed: ${e.message ?? e}`);
     }
@@ -353,7 +366,8 @@ export class PiPackageService {
             signal: AbortSignal.timeout(5000),
           });
           if (!response.ok) { return null; }
-          const data = (await response.json()) as any;
+ 
+          const data = (await response.json());
           const obj = data?.objects?.[0];
           if (!obj) { return null; }
           const p = obj.package;
@@ -369,7 +383,7 @@ export class PiPackageService {
             homepage: p.links?.homepage ?? p.links?.npm ?? "",
             repository: p.links?.repository ? normalizeRepoUrl(p.links.repository) : "",
             license: p.license ?? "",
-          } as MarketplacePackage;
+          };
         }),
       );
 

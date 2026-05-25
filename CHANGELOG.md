@@ -1,6 +1,26 @@
 # Change Log
 
-## [0.0.45] — Past sessions targeted-refresh fix
+## [0.0.46] — Strict linting, type hardening, tree UX fixes
+
+### Changed
+- ESLint: 14 error-level rules (was 5 warns).  `no-explicit-any`, `no-empty`
+  (catches forbidden), `no-unused-vars` (catches included),
+  `no-floating-promises`, `explicit-function-return-type`.
+- tsconfig: `noUncheckedIndexedAccess: true`.
+
+### Fixed
+- 26 silent catch blocks now log via `piWarn()`.
+- 191 `any` usages documented with eslint-disable comments.
+- 78 functions given explicit return types.
+- 27 floating promises `void`-prefixed or chained.
+- Tree: session expandable before init (shows spinner, not locked).
+- Tree: Past Sessions shows "loading…" while fetching, "none" when empty.
+- Tree: past sessions load in parallel with SDK init.
+- Tree: double-refresh (0ms + 50ms) works around VS Code dropping tree events
+  during async setup.
+
+### Added
+- `agent-wiki/architecture/multi-backend.md` — Rust + TypeScript backend design.
 
 ### Fixed
 - **Past sessions empty on cold start.**  `refreshPastOnly()` created
