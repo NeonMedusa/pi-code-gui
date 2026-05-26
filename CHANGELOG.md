@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.0.48] — Tree stuck on "initializing" fix
+
+### Fixed
+- Session always expandable before init — shows loading spinner.
+- Past Sessions header shows "loading…" / "none" states.
+- Past sessions load in parallel with SDK init.
+
 ## [0.0.47] — Tree item in-place mutation fix
 
 ### Fixed

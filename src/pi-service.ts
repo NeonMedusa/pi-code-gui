@@ -787,11 +787,13 @@ export class PiService {
     this.emit({ type: "batch-end", data: { hasEntries } });
 
     this.reportStatus();
-    this.emitScopedModels();
-    this.emitSettings();
-
-    // Emit available slash commands for webview autocomplete
-    this.emitSlashCommands();
+    try {
+      this.emitScopedModels();
+      this.emitSettings();
+      this.emitSlashCommands();
+    } catch (e: unknown) {
+      piWarn(`Post-init emissions failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
 
     return { success: true };
   }
@@ -2026,12 +2028,13 @@ export class PiService {
   /** Get scoped models from the session */
   getScopedModels(): Array<{ provider: string; id: string; thinkingLevel: string }> {
     if (!this.session || !this.session.scopedModels) { return []; }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return this.session.scopedModels.map((s: any) => ({
-      provider: s.model.provider,
-      id: s.model.id,
-      thinkingLevel: s.thinkingLevel ?? "off",
-    }));
+    return this.session.scopedModels
+      .filter((s: Record<string, unknown>) => s.model !== null && s.model !== undefined)
+      .map((s: Record<string, unknown>) => ({
+        provider: (s.model as Record<string, unknown>).provider as string,
+        id: (s.model as Record<string, unknown>).id as string,
+        thinkingLevel: (s.thinkingLevel as string) ?? "off",
+      }));
   }
 
   emitScopedModels(): void {
