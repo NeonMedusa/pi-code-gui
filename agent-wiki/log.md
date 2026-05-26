@@ -5,6 +5,7 @@ starts with `## [YYYY-MM-DD] <action> | <description>`. Actions:
 `ingest` (new page), `update` (existing page changed), `lint` (quality
 pass performed), `archive` (page moved to archive).
 
+## [2026-05-25] archive | Architecture — Multi-Backend Architecture → `archive/multi-backend.md` (rejected: incompatible extension/UI model)
 ## [2026-05-25] ingest | Architecture — Multi-Backend Architecture (`architecture/multi-backend.md`)
 ## [2026-05-19] update | Webview Frontend — Steps 6-7 complete (interactive dialogs, persistent status bar); Component System Proposal all 7 steps done
 ## [2026-05-19] update | Webview Frontend — Layer 3 micro components (CodeBlock, ThinkingBlock, LiveCard, InlineCard, ToolBlock); Component System Proposal Layers 1-3 complete

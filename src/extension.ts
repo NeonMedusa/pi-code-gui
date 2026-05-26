@@ -1172,7 +1172,12 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
     return;
   }
 
-  const result = await sw.piService.initialize(openPath ? { openPath } : { fresh });
+  let result: { success: boolean; error?: string };
+  try {
+    result = await sw.piService.initialize(openPath ? { openPath } : { fresh });
+  } catch (e: unknown) {
+    result = { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
 
   if (!result.success) {
     sw.webviewPanel.postMessage({
@@ -1383,7 +1388,6 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
     else { this.expandedEntries.delete(sessionId); }
   }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
   get pastSessions(): SessionSummary[] { return this._pastSessions; }
   /** Cached past-sessions header so targeted refreshes use the same object. */
   private _pastHeaderItem: SessionTreeItem | null = null;
@@ -1416,7 +1420,6 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   refreshSession(sw: SessionWindow): void {
     const item = this._sessionItems.get(sw.id);
     if (item) {
-      // Recompute the item properties and mutate in-place
       this.makeSessionItem(sw);
       this._onDidChangeTreeData.fire(item);
     } else {
@@ -1534,12 +1537,13 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
       ? vscode.TreeItemCollapsibleState.None
       : vscode.TreeItemCollapsibleState.Collapsed;
 
-    // Reuse the cached item and mutate in-place so VS Code's tree diff
-    // picks up label/collapsibleState/description changes.  Creating a
-    // new TreeItem on every render caused VS Code to silently skip
-    // updates during async initialization.
     let item = this._sessionItems.get(sw.id);
     if (item) {
+      // Mutate in-place AND change the id when state transitions.
+      // VS Code uses id for internal diffing — a stable id across a
+      // state change can cause it to silently skip re-rendering.
+      const newId = `${sw.id}-${sw.initialized ? "rdy" : "init"}`;
+      item.id = newId;
       item.label = label;
       item.collapsibleState = collapsible;
       item.description = sw.initialized ? (sw.piService.model?.id ?? "...") : "initializing";
@@ -1557,7 +1561,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
         },
         collapsible,
       );
-      item.id = sw.id;
+      item.id = `${sw.id}-${sw.initialized ? "rdy" : "init"}`;
       item.sessionId = sw.id;
       item.description = sw.initialized ? (sw.piService.model?.id ?? "...") : "initializing";
       item.tooltip = new vscode.MarkdownString(
