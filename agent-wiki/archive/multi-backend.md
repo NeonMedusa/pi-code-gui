@@ -1,9 +1,42 @@
 # Multi-Backend Architecture
 
-> **Status:** evolving  
-> **Last updated:** 2026-05-25 — added installer coexistence notes, fallback binary names
+> **Status:** rejected — May 2025  
+> **Last updated:** 2026-05-25 — decision not to proceed; archived for reference
 
-## Overview
+## Verdict
+
+**Will not implement.**  The Rust Pi backend is technically viable at the session
+and RPC level, but the extension UX model is fundamentally incompatible.
+
+Pi Code Gui relies on a custom message renderer system: extensions inject
+JavaScript functions via `globalThis.__piRegisterMessageRenderer(customType,
+sourceCode)`.  The source code is forwarded to the webview, wrapped in a
+`<script nonce>` tag, and executed in the browser context to produce rich
+interactive cards (buttons, clickable rows, live polling, custom HTML).
+
+This mechanism works because TypeScript Pi extensions run **in-process** —
+they share the Node.js `globalThis` with our extension host.  Our injected
+handler catches the registration call before `SDK.createAgentSession()` runs.
+
+Rust Pi extensions run in an embedded QuickJS sandbox or as native Rust code.
+They have no access to the extension host's `globalThis`.  Their UI surface is
+the TUI hostcall system (`ui.setWidget`, `ui.notify`, `ui.setStatus`) —
+terminal widgets rendered via `rich_rust`.  There is no HTML, no webview, no
+DOM injection.  The RPC protocol forwards TUI-shaped data (ANSI-stripped text
+lines, status key/value pairs), not executable renderer code.
+
+Rebuilding the custom message renderer system on top of TUI widget output would
+require either upstream changes to the Rust Pi RPC protocol (adding a
+`registerMessageRenderer` event type and a webview-aware extension API) or a
+lossy translation layer that strips all interactivity from extension cards.
+Neither is worth the effort given that the TypeScript Pi backend works and the
+Rust Pi's extension ecosystem is a completely separate catalog.
+
+**The rest of this document is retained as archival design reference.**
+
+---
+
+## Original Design (archived)
 
 Pi Code Gui currently supports only the TypeScript Pi SDK (`@earendil-works/pi-coding-agent`). The Rust port (`pi_agent_rust`, [GitHub](https://github.com/dicklesworthstone/pi_agent_rust)) is a from-scratch reimplementation as a single binary (~21MB, zero unsafe code) that is faster, leaner, and where active Pi development is happening.
 
