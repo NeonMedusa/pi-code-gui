@@ -120,6 +120,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   initLogger(outputChannel);
   piLog("Pi Code Gui starting...");
 
+  // Catch unhandled rejections/exceptions so we can see what crashes the
+  // extension host before it restarts. VS Code restarts the host on
+  // unhandled rejections, which orphans webviews and resets tree providers.
+  process.on("unhandledRejection", (reason: unknown) => {
+    piWarn(`UNHANDLED REJECTION: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+  });
+  process.on("uncaughtException", (err: Error) => {
+    piWarn(`UNCAUGHT EXCEPTION: ${err.stack ?? err.message}`);
+  });
+
   // ── Step 1: Register ALL commands immediately ──────────
 
   context.subscriptions.push(
@@ -1223,17 +1233,30 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
     await pastSessionsPromise;
   }
 
-  // Auto-refresh tree when this session changes
+  // Refresh tree only when something the user can see actually changes.
+  // The tree shows session name, model, thinking level, streaming dot, entry
+  // count, and usage stats. Most of these change only a few times per session.
   sw.piService.onEvent((event) => {
-    // Track streaming state per session for the tree view dot
+    let changed = false;
+
     if (event.type === "agent-start") {
       sw.isStreaming = true;
+      changed = true;
     } else if (event.type === "agent-end") {
       sw.isStreaming = false;
+      changed = true;
     } else if (event.type === "status-update" && event.data) {
+      const was = sw.isStreaming;
       sw.isStreaming = !!event.data.isStreaming;
+      if (was !== sw.isStreaming) { changed = true; }
+    } else if (
+      event.type === "chat-message" ||
+      event.type === "compaction-summary-message"
+    ) {
+      changed = true; // entry count / usage stats changed
     }
-    sessionTreeProvider?.refresh();
+
+    if (changed) { sessionTreeProvider?.refresh(); }
   });
 
   // Notify webview that pi is ready
