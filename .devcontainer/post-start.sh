@@ -49,7 +49,6 @@ fi
 # Update project-local pi packages to latest on every start.
 echo "==> pi packages (latest)"
 if command -v pi &>/dev/null; then
-    pi install npm:pi-subagents -l
     pi install npm:pi-web-access -l
     echo "    pi packages updated"
 else

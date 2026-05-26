@@ -473,7 +473,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       try {
         await sw.piService.rawSession.reload();
-        sw.piService.sendInitialMessages();
+        await sw.piService.sendInitialMessages();
         // Push updated slash commands after extension reload
         sw.piService.emitSlashCommands();
         vscode.window.showInformationMessage("Extensions, skills, and keybindings reloaded.");
