@@ -779,7 +779,7 @@ export class PiService {
     // ── Step 12: Send initial message history (like TUI renderInitialMessages) ──
     const hasEntries = (this.sessionManager?.getEntries?.()?.length ?? 0) > 0;
     this.emit({ type: "batch-start", data: { hasEntries } });
-    this.sendInitialMessages();
+    await this.sendInitialMessages();
     this.emit({ type: "batch-end", data: { hasEntries } });
 
     this.reportStatus();
@@ -1038,7 +1038,7 @@ export class PiService {
   }
 
   /** Send existing session messages to the webview on initial load (or after reload). */
-  sendInitialMessages(): void {
+  async sendInitialMessages(): Promise<void> {
     // Build session context from the session manager
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let entries: any[];
@@ -1061,8 +1061,14 @@ export class PiService {
       }
     }
 
-    // Emit existing messages to populate the webview chat
-    for (const entry of entries) {
+    // Replay entries top-down (oldest first), yielding to the event loop
+    // between each entry.  This guarantees correct visual order (oldest at
+    // top, newest at bottom) and prevents the synchronous DOM flood that
+    // would crash the extension host on large sessions.
+    const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
       if (entry.type === "message" && entry.message) {
         const msg = entry.message;
         if (msg.role === "user") {
@@ -1131,6 +1137,9 @@ export class PiService {
           data: { summary: entry.summary ?? "", tokensBefore: entry.tokensBefore ?? 0, timestamp: entry.timestamp ?? Date.now(), entryId: entry.id },
         });
       }
+
+      // Yield after every entry so the webview paints incrementally.
+      await yieldTick();
     }
   }
 
@@ -1572,7 +1581,7 @@ export class PiService {
       case "reload": {
         await this.session.reload();
         // Re-send initial messages so the webview reflects updated extensions/skills
-        this.sendInitialMessages();
+        await this.sendInitialMessages();
         this.emitSlashCommands();
         return true;
       }

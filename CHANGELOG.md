@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.0.52] — Progressive session load
+
+### Fixed
+- Efficient loading of large sessions (many entries)
+
 ## [0.0.51] — Stability
 
 ### Added
