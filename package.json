@@ -4,7 +4,7 @@
   "author": "Jack Noppé",
   "displayName": "Pi Code Gui",
   "description": "Native VS Code editor experience for Pi coding agent",
-  "version": "0.0.48",
+  "version": "0.0.49",
   "license": "MIT",
   "sponsor": {
     "url": "https://github.com/sponsors/NimbleTronAI"
@@ -327,39 +327,6 @@
           "type": "string",
           "default": "",
           "description": "Custom session storage directory for session .jsonl files. Empty = use the pi SDK default (~/.pi/agent/sessions/). Equivalent to --session-dir."
-        },
-        "pi-code-gui.tools": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "read",
-              "bash",
-              "edit",
-              "write",
-              "grep",
-              "find",
-              "ls",
-              "vscode_get_editor_state",
-              "vscode_get_selection",
-              "vscode_get_diagnostics",
-              "vscode_get_open_editors",
-              "vscode_get_workspace_folders",
-              "vscode_open_file",
-              "vscode_check_document_dirty",
-              "vscode_save_document",
-              "vscode_get_document_symbols",
-              "vscode_get_definitions",
-              "vscode_get_hover",
-              "vscode_get_references",
-              "vscode_get_workspace_symbols",
-              "vscode_get_code_actions",
-              "vscode_apply_workspace_edit",
-              "vscode_format_document"
-            ]
-          },
-          "uniqueItems": true,
-          "markdownDescription": "Which tools the agent can use. This is an **exclusive allowlist** — only the listed tools are available. SDK built-ins, bridge tools, and **extension/skill tools are all blocked unless explicitly included**. Leave unset to enable all tools (SDK default).\n\nTo include an extension tool, add its registered name (e.g. `web_search`, `browser_navigate`) to the list. The enum shows all built-in and bridge tool names; extension names can be typed free-form (VS Code shows a warning icon but accepts the value)."
         }
       }
     },

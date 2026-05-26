@@ -284,6 +284,7 @@ export class PiService {
   private _thinkingLevel = "off";
   private _effort = "auto";
   private _isStreaming = false;
+  private _activeToolNames: string[] | null = null;
   private sessionId: string | null = null;
 
   // SDK root path (for re-importing individual modules)
@@ -728,15 +729,6 @@ export class PiService {
         cwd,
       };
 
-      // ── Tool allowlist from VS Code settings ───
-      // When set, only the listed tools are available.
-      // When unset (default), all registered tools are available.
-      const toolsSetting = cfg.get<string[]>("tools");
-      if (toolsSetting && toolsSetting.length > 0) {
-        opts.tools = toolsSetting;
-        piLog(`Tool allowlist set: ${toolsSetting.join(", ")}`);
-      }
-
       // Scoped models from registry (dynamic)
       if (this.cycleModels.length > 0) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -765,6 +757,11 @@ export class PiService {
     this.session = result.session;
     this._thinkingLevel = resumeThinkingLevel;
     this.sessionId = this.session.sessionId;
+
+    // Restore active tools from session file (if resuming)
+    if (isResuming) {
+      this._restoreActiveToolsFromSession();
+    }
 
     // Update cached model if resume overrode it
     if (resumeModel !== model) {
@@ -1026,6 +1023,7 @@ export class PiService {
       { cmd: "/login", desc: "Configure provider authentication", source: "builtin" },
       { cmd: "/logout", desc: "Remove provider authentication", source: "builtin" },
       { cmd: "/debug", desc: "Dump webview state for troubleshooting", source: "builtin" },
+      { cmd: "/tools", desc: "Select which tools are active", source: "builtin" },
     );
 
     return result;
@@ -1584,6 +1582,11 @@ export class PiService {
       case "clone":
         await vscode.commands.executeCommand("pi-code-gui.cloneSession");
         return true;
+
+      case "tools": {
+        await this.pickActiveTools();
+        return true;
+      }
 
       case "fork":
       case "resume":
@@ -2215,6 +2218,125 @@ export class PiService {
   /** Persist a display name to the session file so it survives tab close. */
   setSessionName(name: string): void {
     this.session?.setSessionName?.(name);
+  }
+
+  // ── Tools ───────────────────────────────────────────────
+
+  /** Get all configured tools available for selection. */
+  getAllTools(): Array<{ name: string; description: string; source: string }> {
+    if (!this.session || typeof this.session.getAllTools !== "function") { return []; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.session.getAllTools().map((t: any) => ({
+      name: t.name,
+      description: t.description ?? "",
+      source: t.sourceInfo?.source ?? "sdk",
+    }));
+  }
+
+  /** Get names of currently active tools. */
+  getActiveToolNames(): string[] {
+    if (!this.session || typeof this.session.getActiveToolNames !== "function") { return []; }
+    return this.session.getActiveToolNames();
+  }
+
+  /** Set which tools are active for the next agent turn. */
+  setActiveTools(toolNames: string[]): void {
+    if (!this.session || typeof this.session.setActiveToolsByName !== "function") {
+      piWarn("setActiveTools: session not initialized or method unavailable");
+      return;
+    }
+    this.session.setActiveToolsByName(toolNames);
+    this._activeToolNames = toolNames;
+    // Force-persist the tool selection so it survives session close/reopen
+    this._forcePersistEntry({
+      type: "tools_active_change",
+      id: `pi-ext-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      toolNames,
+    });
+    piLog(`setActiveTools: ${toolNames.length} tools active`);
+  }
+
+  /** Walk session entries in reverse to find and apply the last tools_active_change. */
+  private _restoreActiveToolsFromSession(): void {
+    const entries = this.sessionManager?.getEntries?.() ?? [];
+    if (!entries.length) { return; }
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const e = entries[i];
+      if (e.type === "tools_active_change" && Array.isArray(e.toolNames) && e.toolNames.length > 0) {
+        this._activeToolNames = e.toolNames;
+        this.session.setActiveToolsByName(e.toolNames);
+        piLog(`Restored active tools from session: ${e.toolNames.join(", ")}`);
+        return;
+      }
+    }
+  }
+
+  /** Open a QuickPick to select which tools are active for this session. */
+  async pickActiveTools(): Promise<boolean> {
+    if (!this.session) {
+      vscode.window.showWarningMessage("Pi session not ready yet.");
+      return false;
+    }
+
+    const allTools = this.getAllTools();
+    if (allTools.length === 0) {
+      vscode.window.showInformationMessage("No tools available.");
+      return false;
+    }
+
+    const activeNames = new Set(this.getActiveToolNames());
+
+    // Group by source for a cleaner pick list
+    const builtinTools = allTools.filter((t) => t.source === "builtin");
+    const bridgeTools = allTools.filter((t) => t.source === "sdk" && t.name.startsWith("vscode_"));
+    const extensionTools = allTools.filter((t) => t.source !== "builtin" && !t.name.startsWith("vscode_"));
+
+    const items: vscode.QuickPickItem[] = [];
+
+    const addGroup = (label: string, tools: typeof allTools): void => {
+      if (tools.length === 0) { return; }
+      const icon = label === "Built-in" ? "tools" : label === "VS Code Bridge" ? "extensions" : "symbol-misc";
+      items.push({ label: `$(${icon}) ${label}`, kind: vscode.QuickPickItemKind.Separator });
+      for (const t of tools) {
+        items.push({
+          label: t.name,
+          description: t.description,
+          detail: t.source,
+          picked: activeNames.has(t.name),
+        });
+      }
+    };
+
+    addGroup("Built-in", builtinTools);
+    addGroup("VS Code Bridge", bridgeTools);
+    addGroup("Extension", extensionTools);
+
+    const picked = await vscode.window.showQuickPick(items, {
+      canPickMany: true,
+      placeHolder: `Select tools (${activeNames.size} active)`,
+      matchOnDescription: true,
+    });
+
+    if (!picked) { return false; }
+
+    const selectedNames = picked
+      .filter((p) => p.kind !== vscode.QuickPickItemKind.Separator)
+      .map((p) => p.label);
+
+    this.setActiveTools(selectedNames);
+
+    const added = selectedNames.filter((n) => !activeNames.has(n)).length;
+    const removed = activeNames.size - selectedNames.filter((n) => activeNames.has(n)).length;
+    const parts: string[] = [];
+    if (added > 0) { parts.push(`+${added}`); }
+    if (removed > 0) { parts.push(`-${removed}`); }
+    vscode.window.showInformationMessage(
+      `Tools updated: ${selectedNames.length} active${parts.length > 0 ? ` (${parts.join(", ")})` : ""}`,
+    );
+
+    return true;
   }
 
   // ── Login / Logout ─────────────────────────────────────

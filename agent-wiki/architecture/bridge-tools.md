@@ -52,8 +52,26 @@ apply edits through VS Code (keeping buffers in sync), and format documents.
 
 ## Related
 
-- [PiService](pi-service.md) — where bridge tools are registered as customTools
+- [PiService](pi-service.md) — where bridge tools are registered as customTools and controlled via `setActiveTools`
 - [Event Translation](event-translation.md) — tool execution events flow through here
 - [Webview Frontend](webview-frontend.md) — renders tool execution results
 
-> **Last updated:** 2026-05-15 — initial documentation
+## Tool control
+
+Bridge tools participate in the SDK's `setActiveToolsByName` mechanism on equal
+footing with built-in tools — they are in the `_toolRegistry` by name and can be
+toggled via `setActiveTools`. PiService exposes this through:
+
+- **`/tools` slash command** — opens a grouped checkbox QuickPick (Built-in,
+  VS Code Bridge, Extension) pre-populated from the current active tool set.
+  Uses `canPickMany: true` for multi-select, reports `+N/-N` diffs.
+- **Session persistence** — active tool selection is persisted to the session
+  `.jsonl` as `tools_active_change` entries, matching the pattern used by
+  `model_change` and `thinking_level_change`. Restored on session resume.
+- **`PiService.setActiveTools()`** — programmatic entry point, delegates to
+  `session.setActiveToolsByName()`, triggers `_forcePersistEntry`.
+
+The older static `pi-code-gui.tools` VS Code setting has been removed in favor
+of runtime-per-session control.
+
+> **Last updated:** 2026-05-26 — added `/tools` command, persistence, replaced static allowlist

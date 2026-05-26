@@ -41,6 +41,14 @@ independently, leading to duplicated init logic and inconsistent error handling.
   previously lived in `extension.ts` and `webview-panel.ts`. `pickModel()`
   also surfaces SDK-reported pricing and context window in the `detail` field via
   `PiService.formatModelDetail()`.
+- **Tool management** — `getAllTools()`, `getActiveToolNames()`, `setActiveTools()`
+  expose the SDK's tool registry/activation for per-session control. The
+  `pickActiveTools()` method (bound to `/tools`) opens a grouped checkbox
+  QuickPick (Built-in, VS Code Bridge, Extension) pre-populated from the
+  current active set. Selection persists to the session file as
+  `tools_active_change` entries and restores on resume. The older static
+  `pi-code-gui.tools` VS Code settings allowlist has been removed in favor
+  of runtime-per-session control.
 - **Session listing** (`PiService.listSessions`, `PiService.deleteSessionFile`) —
   static methods for the Past Sessions tree view.
 
@@ -50,4 +58,4 @@ independently, leading to duplicated init logic and inconsistent error handling.
 - [Event Translation](event-translation.md) — how SDK events become PiServiceEvent types
 - [SDK Resolution & Init](../operations/sdk-resolution.md) — detailed walkthrough of the init sequence
 
-> **Last updated:** 2025-05-15 — added pickModel/pickThinkingLevel, de-duplicated pickers, added model pricing
+> **Last updated:** 2026-05-26 — added tool management API, `/tools` picker, persistence, removed static allowlist

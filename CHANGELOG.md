@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.0.49] — Runtime tool selection
+
+### Added
+- `/tools` slash command — opens a grouped checkbox QuickPick (Built-in, VS Code Bridge, Extension) to select which tools are active for the current session. Pre-populated from the SDK's active tool set. Changes take effect on the next agent turn.
+- Tool selection persists to the session file (`tools_active_change` entries) and restores on session resume, matching the model/thinking persistence pattern.
+- `PiService.getAllTools()`, `getActiveToolNames()`, `setActiveTools()` — public API for tool inspection and control, delegating to the SDK's `setActiveToolsByName`.
+
 ## [0.0.48] — Tree stuck on "initializing" fix
 
 ### Fixed
