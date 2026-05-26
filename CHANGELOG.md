@@ -1,5 +1,13 @@
 # Change Log
 
+## [0.0.51] — Stability
+
+### Added
+- Unhandled rejection and uncaught exception handlers log crash causes to the Pi Code Gui output channel, making extension host restarts diagnosable.
+
+### Fixed
+- Tree view no longer refreshes on every PiService event (hundreds per second during streaming). Now only refreshes on visible state changes: streaming start/stop, message arrival, compaction. Eliminated a likely trigger of extension host restarts that orphaned webviews and duplicated sessions.
+
 ## [0.0.50] — Tool fixes
 
 ### Fixed
