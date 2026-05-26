@@ -411,7 +411,40 @@ export const readToolRenderer = {
       return block;
     },
     update: function (el: ToolEl, partialResult: ToolPartialResult) {
-      // Read tool results come via tool-end, not incremental updates
+      // Parse complete args from tool-update or tool_execution_start DEDUP handler
+      // and patch the header with offset/limit range when they arrive (they often
+      // stream in after the initial tool-start from message_update).
+      if (!partialResult || !partialResult.content) {return;}
+      var text = partialResult.content
+        .filter(function (c: { type: string; text: string }) { return c.type === "text"; })
+        .map(function (c: { type: string; text: string }) { return c.text; })
+        .join("");
+      if (!text) {return;}
+      try {
+        var args = JSON.parse(text);
+        if (args && (args.offset !== undefined || args.limit !== undefined)) {
+          var offset = args.offset;
+          var limit = args.limit;
+          var rangeLabel = "";
+          if (offset !== undefined) {
+            rangeLabel = ":" + offset;
+            if (limit !== undefined) {rangeLabel += "-" + (offset + limit - 1);}
+          }
+          var tb = (el as any)._toolBlock;
+          if (tb) {
+            (tb as any).update({ pathExtra: rangeLabel } as any);
+          } else {
+            var pathEl = el.querySelector(".tool-path");
+            if (pathEl && pathEl.textContent) {
+              // Append range to existing path text (strip any old range first)
+              var base = pathEl.textContent.replace(/:\d+(-\d+)?$/, "");
+              pathEl.textContent = base + rangeLabel;
+            }
+          }
+        }
+      } catch (_e) {
+        // JSON incomplete during streaming — expected, not an error
+      }
     },
     finalize: function (el: ToolEl, result: ToolResult, isError: boolean, entryId?: string) {
       var tb = (el as any)._toolBlock;

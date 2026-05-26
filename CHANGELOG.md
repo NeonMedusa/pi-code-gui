@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.0.50] — Tool fixes
+
+### Fixed
+- Read tool header now shows offset/limit range (e.g. `file.ts:10-14`) even when args stream in after the initial `tool-start`. Previously `readToolRenderer.update` was a no-op and streaming-delayed args were silently dropped.
+- System prompt and virtual context files no longer hard-code specific bridge tool names. Previously the LLM saw instructions like "use vscode_get_editor_state" regardless of which tools were active via `/tools`, causing hallucinated calls to disabled tools.
+
+### Removed
+- `pi-code-gui.tools` VS Code settings allowlist. Replaced by the runtime `/tools` picker with per-session persistence.
+
 ## [0.0.49] — Runtime tool selection
 
 ### Added

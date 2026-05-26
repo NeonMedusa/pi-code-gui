@@ -123,21 +123,20 @@ export function resolvePiPackagePath(): string {
 /** Build the VS Code-aware system prompt */
 function buildSystemPrompt(): string {
   return `You are a coding assistant running inside VS Code through the Pi Code Gui extension.
-You have full access to the VS Code editor state through bridge tools.
+You have access to VS Code editor state through bridge tools (prefixed with vscode_)
+when they are enabled.
 
 Key information about your environment:
 - You are embedded in VS Code as an extension with a webview chat UI.
-- You can see open editors, selections, diagnostics, symbols, and more via vscode_* tools.
-- Use vscode_get_editor_state to see what the user is looking at.
-- Use vscode_open_file to open files in the editor.
-- Use vscode_apply_workspace_edit to edit files safely through VS Code (buffers stay in sync).
-- Use vscode_get_diagnostics to see lint/type errors.
-- Use vscode_get_hover and vscode_get_definitions for type info.
+- When bridge tools are active, you can inspect editor state, diagnostics, symbols,
+  hover info, definitions, references, and apply edits through VS Code.
+- For reading files, use the read tool (supports offset/limit for large files).
+- For editing files, use the edit or write tool.
 
 When the user asks you to fix something:
-1. Check diagnostics first with vscode_get_diagnostics.
-2. Look at the relevant code with the read tool.
-3. Make edits with the edit or write tool (they keep VS Code buffers in sync).
+1. Check diagnostics first if the diagnostics bridge tool is available.
+2. Look at the relevant code.
+3. Make edits.
 
 Be concise and helpful. Prefer editing existing files over creating new ones.`;
 }
@@ -172,13 +171,13 @@ function buildContextFiles(cwd: string): Array<{ path: string; content: string }
 ## Running in Pi Code Gui
 - You are an AI coding assistant inside VS Code.
 - The user interacts with you through a chat webview.
-- You have access to the full VS Code API via bridge tools (vscode_*).
-- Always check what the user has open with vscode_get_editor_state.
+- You have access to VS Code editor state through bridge tools when they are enabled.
+- Bridge tools (prefixed vscode_) let you inspect open editors, diagnostics, symbols, and more.
 
 ## Interaction Tips
-- Before making changes, check diagnostics with vscode_get_diagnostics.
+- Before making changes, check for diagnostics if the diagnostics tool is available.
 - If the user mentions a file, verify it exists and check its content.
-- When editing, use VS Code's workspace edit API to keep buffers in sync.`,
+- When editing, use the edit or write tool.`,
   });
 
   if (hasTypeScript) {
@@ -2246,6 +2245,9 @@ export class PiService {
       return;
     }
     this.session.setActiveToolsByName(toolNames);
+    // Verify the update took effect
+    const actualNames = this.session.getActiveToolNames();
+    piLog(`setActiveTools: requested ${toolNames.length}, actual ${actualNames.length} — ${actualNames.join(", ") || "(none)"}`);
     this._activeToolNames = toolNames;
     // Force-persist the tool selection so it survives session close/reopen
     this._forcePersistEntry({
@@ -2287,6 +2289,7 @@ export class PiService {
     }
 
     const activeNames = new Set(this.getActiveToolNames());
+    piLog(`pickActiveTools: ${activeNames.size} active tools — ${[...activeNames].join(", ") || "(none)"}`);
 
     // Group by source for a cleaner pick list
     const builtinTools = allTools.filter((t) => t.source === "builtin");
