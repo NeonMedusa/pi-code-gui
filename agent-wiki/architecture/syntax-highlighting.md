@@ -28,10 +28,11 @@ It applied regexes sequentially on `escapeHtml`'d text, which caused:
 ```typescript
 import hljs from "highlight.js/lib/core";
 import javascript from "highlight.js/lib/languages/javascript";
-// ... 11 more language imports
+// ... 15 language imports (bash, css, diff, go, java, javascript, json,
+// markdown, python, rust, sql, typescript, xml, yaml)
 
 hljs.registerLanguage("javascript", javascript);
-// ... 11 more registrations + aliases
+// ... 15 registrations + aliases (yml→yaml, html→xml, sh→bash, etc.)
 
 export function highlightCode(code: string, lang: string): string;
 ```
@@ -60,8 +61,8 @@ hardcoded fallback colors. This preserves VS Code theme compatibility.
 
 ## Bundle impact
 
-highlight.js core + 12 languages: ~36KB gzipped added to the webview bundle.
-The hand-rolled highlighters (~5KB) were removed. Net: +31KB.
+highlight.js core + 15 languages: ~39KB gzipped added to the webview bundle.
+The hand-rolled highlighters (~5KB) were removed. Net: +34KB.
 
 ## Related
 
@@ -70,4 +71,4 @@ The hand-rolled highlighters (~5KB) were removed. Net: +31KB.
   `renderFileContent`
 - [Build Pipeline](../operations/build-pipeline.md) — esbuild bundles highlight.js
 
-> **Last updated:** 2026-05-19 — initial documentation of highlight.js integration
+> **Last updated:** 2026-05-27 — added yaml, sql, diff; 12→15 languages

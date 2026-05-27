@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.0.53]
+
+### Fixed
+- `vscode_apply_workspace_edit` now auto-saves after applying edits so files don't remain dirty and open.
+- Added yaml, sql, and diff to highlight.js languages (was missing yaml causing console error flood).
+
 ## [0.0.52] — Progressive session load
 
 ### Fixed

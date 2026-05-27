@@ -33,11 +33,14 @@ The translation layer:
 |-----------|---------------------------|
 | `agent_start` | `agent-start` |
 | `agent_end` | `agent-end` + `status-update` |
-| `message_start` (user) | `chat-message` |
+| `message_start` (user) | `chat-message` (from `sendInitialMessages` replay) |
 | `message_start` (assistant) | `assistant-start` |
+| `message_end` (user) | *(no emission — user messages are emitted via `chat-message`)* |
 | `message_update` (text_delta) | `stream-delta` |
 | `message_update` (thinking_delta) | `thinking-delta` |
 | `message_update` (thinking_end) | `thinking-delta` (done:true) |
+| `message_update` (error) | `error` |
+| `turn_end` | *(consumed by tree view — triggers refresh)* |
 | `message_end` (assistant) | `assistant-end` + `status-update` |
 | `tool_execution_start` | `tool-start` or `bash-start` |
 | `tool_execution_update` | `tool-update` or `bash-output` |
@@ -59,4 +62,4 @@ the prompt. Previously they were silently dropped.
 - [Webview Panel](webview-panel.md) — consumes the translated events
 - [Types](https://github.com/NimbleTronAI/pi-code-gui/blob/main/src/types.ts) — the `PiServiceEvent` type union
 
-> **Last updated:** 2026-05-19 — added custom message display/details forwarding, diagnostic default case
+> **Last updated:** 2026-05-27 — added turn-end, message_update error, clarified user message_end

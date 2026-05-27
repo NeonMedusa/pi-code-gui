@@ -36,6 +36,13 @@ Key design decisions:
 - Past sessions are loaded asynchronously with a refresh-only mode
 - Tree items carry `command.arguments` for context menu action routing
 - The active session is tracked independently for command targeting
+- Entry children are cached by entry count — rebuilt only when the count changes,
+  avoiding redundant tree item construction on every refresh
+- Tree refresh is state-change-aware: only fires on visible changes
+  (streaming start/stop, message arrival, compaction, turn/assistant end)
+  rather than on every PiService event, preventing VS Code tree renderer overflow
+- Session entries replay progressively on resume (top-down, yielding between
+  each entry) — large sessions no longer crash the extension host
 
 ## Packages tree (`PiPackagesTreeProvider`)
 
@@ -61,4 +68,4 @@ Key design decisions:
 - [Session Window](session-window.md) — the data source for open sessions
 - [PiPackageService](https://github.com/NimbleTronAI/pi-code-gui/blob/main/src/pi-package-service.ts) — the data source for installed and marketplace packages
 
-> **Last updated:** 2026-05-15 — initial documentation
+> **Last updated:** 2026-05-27 — progressive load, entry caching, state-change-aware refresh

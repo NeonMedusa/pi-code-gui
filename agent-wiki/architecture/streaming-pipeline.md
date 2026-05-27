@@ -52,6 +52,12 @@ to `<body>` to suppress fade-in animations during history replay.
 measuring scroll position (prevents the "conversation not scrolled to bottom"
 bug on session restore).
 
+**Progressive replay:** `sendInitialMessages` now replays entries top-down, one at
+a time, yielding to the event loop with `setTimeout(0)` between each entry.
+This keeps the most recent messages at the bottom and prevents the synchronous
+DOM flood that would crash the extension host on large sessions (1000+ entries).
+Batch-start/end still wrap the entire replay for animation control.
+
 ## RAF throttling caveat
 
 `requestAnimationFrame` is throttled to ~1 FPS when the webview tab is hidden
@@ -68,4 +74,4 @@ rendering at 1 FPS. This is a platform limitation, not a bug.
 - [Tool Block Rendering](tool-block-rendering.md) — tool call arguments
   rendered during streaming
 
-> **Last updated:** 2026-05-19 — initial documentation of streaming pipeline
+> **Last updated:** 2026-05-27 — added progressive replay section

@@ -45,4 +45,4 @@ tracks all open sessions; `activeSessionWindow` tracks the currently focused one
 - [Webview Panel](webview-panel.md) — the UI panel paired with PiService
 - [Tree Views](tree-views.md) — how sessions appear in the sidebar
 
-> **Last updated:** 2026-05-15 — initial documentation
+> **Last updated:** 2026-05-27 — verified accurate; progressive replay, crash telemetry, tree refresh debounce now handled

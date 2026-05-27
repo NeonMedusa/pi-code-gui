@@ -58,4 +58,4 @@ independently, leading to duplicated init logic and inconsistent error handling.
 - [Event Translation](event-translation.md) — how SDK events become PiServiceEvent types
 - [SDK Resolution & Init](../operations/sdk-resolution.md) — detailed walkthrough of the init sequence
 
-> **Last updated:** 2026-05-26 — added tool management API, `/tools` picker, persistence, removed static allowlist
+> **Last updated:** 2026-05-27 — progressive replay in sendInitialMessages, removed _activeToolNames field

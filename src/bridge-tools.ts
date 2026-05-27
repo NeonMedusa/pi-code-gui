@@ -668,8 +668,18 @@ export function createBridgeTools(defineTool: Function, Type: any): any[] {
           we.replace(uri, range, edit.newText);
         }
         const success = await vscode.workspace.applyEdit(we);
+        // Save each edited file so the disk matches the buffer and subsequent
+        // read/edit operations see the current content.
+        const savedPaths = new Set<string>();
+        for (const edit of params.edits) {
+          const resolved = resolvePath(edit.filePath);
+          if (!resolved || savedPaths.has(resolved)) { continue; }
+          savedPaths.add(resolved);
+          const doc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === resolved);
+          if (doc?.isDirty) { await doc.save(); }
+        }
         return {
-          content: [{ type: "text", text: boundedJson({ applied: success, editCount: params.edits.length }) }],
+          content: [{ type: "text", text: boundedJson({ applied: success, editCount: params.edits.length, saved: savedPaths.size }) }],
           details: {},
         };
       },

@@ -283,7 +283,6 @@ export class PiService {
   private _thinkingLevel = "off";
   private _effort = "auto";
   private _isStreaming = false;
-  private _activeToolNames: string[] | null = null;
   private sessionId: string | null = null;
 
   // SDK root path (for re-importing individual modules)
@@ -2257,7 +2256,6 @@ export class PiService {
     // Verify the update took effect
     const actualNames = this.session.getActiveToolNames();
     piLog(`setActiveTools: requested ${toolNames.length}, actual ${actualNames.length} — ${actualNames.join(", ") || "(none)"}`);
-    this._activeToolNames = toolNames;
     // Force-persist the tool selection so it survives session close/reopen
     this._forcePersistEntry({
       type: "tools_active_change",
@@ -2276,7 +2274,6 @@ export class PiService {
     for (let i = entries.length - 1; i >= 0; i--) {
       const e = entries[i];
       if (e.type === "tools_active_change" && Array.isArray(e.toolNames) && e.toolNames.length > 0) {
-        this._activeToolNames = e.toolNames;
         this.session.setActiveToolsByName(e.toolNames);
         piLog(`Restored active tools from session: ${e.toolNames.join(", ")}`);
         return;
