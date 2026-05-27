@@ -29,7 +29,7 @@ The Pi coding agent is a powerful AI pair programmer, with an exceptional termin
 For people who prefer a GUI experience, this extension embeds Pi directly in VS Code's native UI:
 
 - **In-editor chat** — streaming responses, thinking blocks, and tool execution results rendered in a webview panel, not a terminal buffer.
-- **Native VS Code bridge** — 17 tools that call VS Code APIs directly. The agent can inspect your active editor, check diagnostics, find symbols, look up types, apply edits, and format code, all through the same APIs VS Code uses.
+- **Native VS Code bridge** — 16 tools that call VS Code APIs directly. The agent can inspect your active editor, check diagnostics, find symbols, look up types, apply edits, and format code, all through the same APIs VS Code uses.
 - **Session persistence** — conversation history survives VS Code restarts. Sessions are stored in Pi's standard `.jsonl` format alongside your project.
 - **Multi-session support** — multiple chat sessions in separate panels, each with independent model and thinking level settings.
 

@@ -4,6 +4,7 @@
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
 import css from "highlight.js/lib/languages/css";
+import diff from "highlight.js/lib/languages/diff";
 import go from "highlight.js/lib/languages/go";
 import java from "highlight.js/lib/languages/java";
 import javascript from "highlight.js/lib/languages/javascript";
@@ -11,11 +12,14 @@ import json from "highlight.js/lib/languages/json";
 import markdown from "highlight.js/lib/languages/markdown";
 import python from "highlight.js/lib/languages/python";
 import rust from "highlight.js/lib/languages/rust";
+import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml"; // covers html, xml, svg
+import yaml from "highlight.js/lib/languages/yaml";
 
 hljs.registerLanguage("bash", bash);
 hljs.registerLanguage("css", css);
+hljs.registerLanguage("diff", diff);
 hljs.registerLanguage("go", go);
 hljs.registerLanguage("java", java);
 hljs.registerLanguage("javascript", javascript);
@@ -23,8 +27,10 @@ hljs.registerLanguage("json", json);
 hljs.registerLanguage("markdown", markdown);
 hljs.registerLanguage("python", python);
 hljs.registerLanguage("rust", rust);
+hljs.registerLanguage("sql", sql);
 hljs.registerLanguage("typescript", typescript);
 hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("yaml", yaml);
 
 // Aliases
 hljs.registerAliases(["js", "jsx", "mjs", "cjs"], { languageName: "javascript" });
@@ -34,6 +40,7 @@ hljs.registerAliases(["rs"], { languageName: "rust" });
 hljs.registerAliases(["sh", "shell", "zsh"], { languageName: "bash" });
 hljs.registerAliases(["html", "htm", "svg"], { languageName: "xml" });
 hljs.registerAliases(["scss", "less"], { languageName: "css" });
+hljs.registerAliases(["yml"], { languageName: "yaml" });
 hljs.registerAliases(["md", "mdx"], { languageName: "markdown" });
 hljs.registerAliases(["golang"], { languageName: "go" });
 hljs.registerAliases(["yml", "yaml"], { languageName: "yaml" }); // bonus

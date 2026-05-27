@@ -2,7 +2,7 @@
 
 > **Status:** evolving
 
-Bridge Tools (`src/bridge-tools.ts`) are 17 VS Code API tools registered as Pi
+Bridge Tools (`src/bridge-tools.ts`) are 16 VS Code API tools registered as Pi
 SDK `customTools` that give the AI agent full visibility into the VS Code editor
 state. They are constructed with the SDK's `defineTool()` function and Typebox
 schemas — the same type-safe pattern the SDK's own built-in tools use.
@@ -35,7 +35,6 @@ apply edits through VS Code (keeping buffers in sync), and format documents.
 | `vscode_get_code_actions` | Quick fixes and code actions for a range | async |
 | `vscode_apply_workspace_edit` | Range-based text replacements via VS Code | sequential |
 | `vscode_format_document` | Run document formatter via VS Code | sequential |
-| `vscode_get_editor_state` | (also listed above — the primary entry point) | async |
 
 ## Design choices
 
@@ -74,4 +73,4 @@ toggled via `setActiveTools`. PiService exposes this through:
 The older static `pi-code-gui.tools` VS Code setting has been removed in favor
 of runtime-per-session control.
 
-> **Last updated:** 2026-05-26 — added `/tools` command, persistence, replaced static allowlist
+> **Last updated:** 2026-05-27 — corrected tool count (16, not 17), removed duplicate table row
