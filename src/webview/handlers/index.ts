@@ -110,7 +110,10 @@ export function createLiveCard(key: string, customType: string, label: string, c
     // Skip validation for high-frequency streaming types to avoid
     // per-token overhead (every delta would parse the full union).
     var skipValidation = msg.type === "stream-delta" || msg.type === "thinking-delta" ||
-                         msg.type === "tool-update" || msg.type === "bash-output";
+                         msg.type === "tool-update" || msg.type === "bash-output" ||
+                         msg.type === "switchTab" || msg.type === "sessionsList" ||
+                         msg.type === "tabChanged" || msg.type === "resumeResult" ||
+                         msg.type === "deleteSession";
     if (!skipValidation) {
       var vr = validateExtensionToWebview(msg);
       if (!vr.success) {
@@ -186,6 +189,13 @@ export function createLiveCard(key: string, customType: string, label: string, c
       case "widget-update":      handleWidgetUpdate(msg.data); break;
       case "registerMessageRenderer": handleRegisterMessageRenderer(msg.data); break;
       case "show_dialog":          handleShowDialog(msg.data); break;
+
+      // Sidebar tab navigation (handled in main.ts)
+      case "switchTab":
+      case "sessionsList":
+      case "tabChanged":
+      case "resumeResult":
+        break;
 
       default:
         // Surface unknown message types as visible notifications.

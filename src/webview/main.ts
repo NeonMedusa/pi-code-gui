@@ -59,3 +59,97 @@ document.addEventListener("visibilitychange", () => {
     }
   }
 });
+
+// ── Sidebar tab switching ────────────────────────────────
+
+// Handle switchTab messages from extension (title bar buttons)
+window.addEventListener("message", (event) => {
+  const message = event.data;
+  if (message.type === "switchTab") {
+    switchSidebarTab(message.data?.tab ?? "chat");
+  }
+  if (message.type === "sessionsList") {
+    renderHistoryList(message.data ?? []);
+  }
+});
+
+// New session button
+const newSessionBtn = document.getElementById("btn-new-session");
+newSessionBtn?.addEventListener("click", () => {
+  window.__vscode.postMessage({ type: "newSession" });
+  switchSidebarTab("chat");
+});
+
+function switchSidebarTab(tab: string): void {
+  document.querySelectorAll(".sidebar-panel").forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `panel-${tab}`);
+  });
+
+  if (tab === "history") {
+    window.__vscode.postMessage({ type: "listSessions" });
+  }
+}
+
+function renderHistoryList(sessions: any[]): void {
+  const container = document.getElementById("history-content");
+  if (!container) return;
+
+  if (!sessions || sessions.length === 0) {
+    container.innerHTML = '<p class="sidebar-placeholder">No past sessions</p>';
+    return;
+  }
+
+  let html = '<div class="history-list">';
+  for (const s of sessions) {
+    const name = s.name || s.summary || `Session ${s.id ?? ""}`;
+    const time = s.lastModified
+      ? new Date(s.lastModified).toLocaleDateString()
+      : "";
+    html += `<div class="history-item" data-path="${s.path ?? ""}">
+      <div class="history-item-content">
+        <div class="history-item-title">${escapeHtml(name)}</div>
+        <div class="history-item-time">${time}</div>
+      </div>
+      <button class="history-item-delete" title="Delete session">×</button>
+    </div>`;
+  }
+  html += "</div>";
+  container.innerHTML = html;
+
+  // Click to resume
+  container.querySelectorAll(".history-item").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      // Ignore clicks on the delete button
+      if ((e.target as HTMLElement).classList.contains("history-item-delete")) { return; }
+      const path = (el as HTMLElement).dataset.path;
+      if (path) {
+        window.__vscode.postMessage({ type: "resumeSession", path });
+        switchSidebarTab("chat");
+      }
+    });
+  });
+
+  // Delete button
+  container.querySelectorAll(".history-item-delete").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const item = (btn as HTMLElement).closest(".history-item") as HTMLElement;
+      const path = item?.dataset.path;
+      if (!path) { return; }
+      window.__vscode.postMessage({ type: "deleteSession", path });
+    });
+  });
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Listen for resumeResult
+window.addEventListener("message", (event) => {
+  const message = event.data;
+  if (message.type === "resumeResult" && !message.data?.success) {
+    console.error("Resume failed:", message.data?.error);
+  }
+});

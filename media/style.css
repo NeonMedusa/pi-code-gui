@@ -738,7 +738,7 @@
   /* ═══ Status bar ══════════════════════════════════════════ */
 
   #pi-status-bar {
-    display: flex; align-items: center; gap: 12px;
+    display: flex; align-items: center; gap: 4px;
     padding: 5px 12px;
     background: var(--bg-secondary, var(--vscode-sideBar-background));
     border-top: 1px solid var(--border-color, var(--vscode-sideBar-border));
@@ -1280,4 +1280,120 @@
 
 .pi-dialog-confirm:hover {
   background: var(--vscode-button-hoverBackground);
+}
+
+/* ═══ Sidebar tab navigation ════════════════════════════ */
+
+.sidebar-panel {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-panel.active {
+  display: flex;
+}
+
+.sidebar-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.panel-action-btn {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 2px;
+  width: 100%;
+}
+
+.panel-action-btn:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.sidebar-panel-body {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.sidebar-placeholder {
+  color: var(--fg-secondary);
+  text-align: center;
+  padding: 24px 12px;
+  font-size: 12px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.1s;
+}
+
+.history-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.history-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item-delete {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--fg-secondary);
+  font-size: 16px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+}
+
+.history-item:hover .history-item-delete {
+  opacity: 1;
+}
+
+.history-item-delete:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--error);
+}
+
+.history-item-title {
+  font-size: 12px;
+  color: var(--fg-primary);
+  font-weight: 500;
+}
+
+.history-item-time {
+  font-size: 11px;
+  color: var(--fg-secondary);
+  margin-top: 2px;
 }

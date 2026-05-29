@@ -198,6 +198,26 @@
       {
         "command": "pi-code-gui.openPiDevMarketplace",
         "title": "PiGui: Open Pi.dev Marketplace"
+      },
+      {
+        "command": "pi-code-gui.showChat",
+        "title": "PiGui: Show Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "pi-code-gui.showHistory",
+        "title": "PiGui: Show History",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "pi-code-gui.showPackages",
+        "title": "PiGui: Show Packages",
+        "icon": "$(package)"
+      },
+      {
+        "command": "pi-code-gui.showSettings",
+        "title": "PiGui: Show Settings",
+        "icon": "$(gear)"
       }
     ],
     "viewsContainers": {
@@ -212,16 +232,9 @@
     "views": {
       "pi-code-gui": [
         {
-          "type": "tree",
-          "id": "pi-code-gui.sessions",
-          "name": "Sessions",
-          "icon": "multiple-windows"
-        },
-        {
-          "type": "tree",
-          "id": "pi-code-gui.packages",
-          "name": "Packages",
-          "icon": "package"
+          "type": "webview",
+          "id": "pi-code-gui.chat",
+          "name": "Chat"
         }
       ]
     },
@@ -407,33 +420,23 @@
       ],
       "view/title": [
         {
-          "command": "pi-code-gui.addSession",
-          "when": "view == pi-code-gui.sessions",
+          "command": "pi-code-gui.showChat",
+          "when": "view == pi-code-gui.chat",
           "group": "navigation"
         },
         {
-          "command": "pi-code-gui.filterPastSessions",
-          "when": "view == pi-code-gui.sessions",
+          "command": "pi-code-gui.showHistory",
+          "when": "view == pi-code-gui.chat",
           "group": "navigation"
         },
         {
-          "command": "pi-code-gui.deleteAllPastSessions",
-          "when": "view == pi-code-gui.sessions",
+          "command": "pi-code-gui.showPackages",
+          "when": "view == pi-code-gui.chat",
           "group": "navigation"
         },
         {
-          "command": "pi-code-gui.searchPackages",
-          "when": "view == pi-code-gui.packages",
-          "group": "navigation"
-        },
-        {
-          "command": "pi-code-gui.refreshPackages",
-          "when": "view == pi-code-gui.packages",
-          "group": "navigation"
-        },
-        {
-          "command": "pi-code-gui.updateAllPackages",
-          "when": "view == pi-code-gui.packages",
+          "command": "pi-code-gui.showSettings",
+          "when": "view == pi-code-gui.chat",
           "group": "navigation"
         }
       ]

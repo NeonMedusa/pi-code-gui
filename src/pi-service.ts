@@ -478,6 +478,7 @@ export class PiService {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e2: any) {
       const msg = e2.message ?? String(e2);
+      // All paths failed — detect common dependency issues
       if (msg.match(/openai\/index\.js/) || msg.match(/@anthropic-ai\/sdk/)) {
         return {
           success: false,
@@ -1046,8 +1047,9 @@ export class PiService {
   }
 
   /** Send existing session messages to the webview on initial load (or after reload). */
-  async sendInitialMessages(): Promise<void> {
+  async sendInitialMessages(emitFn?: (event: PiServiceEvent) => void): Promise<void> {
     // Build session context from the session manager
+    const emit = emitFn ?? ((e: PiServiceEvent): void => { this.emit(e); });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let entries: any[];
     try {
@@ -1084,7 +1086,7 @@ export class PiService {
           if (text) {
             this._userMessages.push({ id: msg.id ?? `user-${Date.now()}`, text, timestamp: msg.timestamp });
             if (this._userMessages.length > 50) { this._userMessages.shift(); }
-            this.emit({ type: "chat-message", data: { role: "user", content: text, entryId: entry.id } });
+            emit({ type: "chat-message", data: { role: "user", content: text, entryId: entry.id } });
           }
         } else if (msg.role === "assistant") {
           const text = this.extractTextFromContent(msg.content);
@@ -1094,16 +1096,16 @@ export class PiService {
 
           // Always emit assistant messages — even tool-only ones with no text.
           // Skipping them makes tool executions invisible on reload/resume.
-          this.emit({ type: "assistant-start", data: { messageId: msg.id, entryId: entry.id } });
+          emit({ type: "assistant-start", data: { messageId: msg.id, entryId: entry.id } });
           // Emit thinking content first, then text
           if (thinking) {
-            this.emit({ type: "thinking-delta", data: { delta: thinking } });
-            this.emit({ type: "thinking-delta", data: { delta: "", done: true } });
+            emit({ type: "thinking-delta", data: { delta: thinking } });
+            emit({ type: "thinking-delta", data: { delta: "", done: true } });
           }
           if (text) {
-            this.emit({ type: "stream-delta", data: { delta: text } });
+            emit({ type: "stream-delta", data: { delta: text } });
           }
-          this.emit({
+          emit({
             type: "assistant-end",
             data: {
               stopReason: msg.stopReason,
@@ -1115,32 +1117,32 @@ export class PiService {
           for (const tc of toolCalls) {
             const toolResultEntry = toolResultsById.get(tc.id);
             if (tc.name === "bash" || tc.name === "exec") {
-              this.emit({ type: "bash-start", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", entryId: toolResultEntry?.id } });
+              emit({ type: "bash-start", data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", entryId: toolResultEntry?.id } });
               const outputText = toolResultEntry?.message
                 ? this.extractTextFromContent(toolResultEntry.message.content)
                 : "";
-              this.emit({
+              emit({
                 type: "bash-end",
                 data: { toolCallId: tc.id, command: tc.arguments?.command ?? "", exitCode: 0, cancelled: false, output: outputText, isError: false, entryId: toolResultEntry?.id },
               });
             } else {
-              this.emit({ type: "tool-start", data: { toolCallId: tc.id, toolName: tc.name, args: tc.arguments, fromMessage: true, entryId: toolResultEntry?.id } });
+              emit({ type: "tool-start", data: { toolCallId: tc.id, toolName: tc.name, args: tc.arguments, fromMessage: true, entryId: toolResultEntry?.id } });
               if (toolResultEntry?.message) {
-                this.emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: toolResultEntry.message, isError: false, entryId: toolResultEntry?.id } });
+                emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: toolResultEntry.message, isError: false, entryId: toolResultEntry?.id } });
               } else {
-                this.emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: { content: [{ type: "text", text: "(completed)" }] }, isError: false, entryId: toolResultEntry?.id } });
+                emit({ type: "tool-end", data: { toolCallId: tc.id, toolName: tc.name, result: { content: [{ type: "text", text: "(completed)" }] }, isError: false, entryId: toolResultEntry?.id } });
               }
             }
           }
         } else if (msg.role === "custom") {
-          this.emit({ type: "custom-message", data: { customType: msg.customType, content: msg.content, display: msg.display, details: msg.details, timestamp: msg.timestamp, entryId: entry.id } });
+          emit({ type: "custom-message", data: { customType: msg.customType, content: msg.content, display: msg.display, details: msg.details, timestamp: msg.timestamp, entryId: entry.id } });
         } else if (msg.role === "bashExecution") {
           const bashEntryId = entry.id ?? `bash-${Date.now()}`;
-          this.emit({ type: "bash-start", data: { toolCallId: bashEntryId, command: msg.command ?? "", entryId: entry.id } });
-          this.emit({ type: "bash-end", data: { toolCallId: bashEntryId, command: msg.command ?? "", exitCode: msg.exitCode, cancelled: msg.cancelled, output: msg.output ?? "", isError: msg.exitCode !== 0 && msg.exitCode !== null, entryId: entry.id } });
+          emit({ type: "bash-start", data: { toolCallId: bashEntryId, command: msg.command ?? "", entryId: entry.id } });
+          emit({ type: "bash-end", data: { toolCallId: bashEntryId, command: msg.command ?? "", exitCode: msg.exitCode, cancelled: msg.cancelled, output: msg.output ?? "", isError: msg.exitCode !== 0 && msg.exitCode !== null, entryId: entry.id } });
         }
       } else if (entry.type === "compaction") {
-        this.emit({
+        emit({
           type: "compaction-summary-message",
           data: { summary: entry.summary ?? "", tokensBefore: entry.tokensBefore ?? 0, timestamp: entry.timestamp ?? Date.now(), entryId: entry.id },
         });
@@ -1996,10 +1998,13 @@ export class PiService {
     // Offer to save as default if not already
     if (!picked.isDefault) {
       const save = await vscode.window.showQuickPick(
-        [{ label: "\u2605 Save as default", description: "Use this model for future sessions" }],
+        [
+          { label: "\u2605 Save as default", description: "Use this model for future sessions" },
+          { label: "Don't save", description: "Use for this session only" },
+        ],
         { placeHolder: `Use as default?` },
       );
-      if (save) { this.saveDefaultModel(); }
+      if (save?.label?.startsWith("\u2605")) { this.saveDefaultModel(); }
     }
 
     return true;
@@ -2035,10 +2040,13 @@ export class PiService {
     // Offer to save as default if not already
     if (!picked.isDefault) {
       const save = await vscode.window.showQuickPick(
-        [{ label: "\u2605 Save as default", description: "Use this thinking level for future sessions" }],
+        [
+          { label: "\u2605 Save as default", description: "Use this thinking level for future sessions" },
+          { label: "Don't save", description: "Use for this session only" },
+        ],
         { placeHolder: `Use "${picked.level}" thinking as the default?` },
       );
-      if (save) { this.saveDefaultThinking(); }
+      if (save?.label?.startsWith("\u2605")) { this.saveDefaultThinking(); }
     }
 
     return true;

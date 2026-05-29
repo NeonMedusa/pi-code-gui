@@ -2,8 +2,9 @@ import * as vscode from "vscode";
 import * as fs from "node:fs";
 import { PiService } from "./pi-service.js";
 import { PiWebviewPanel } from "./webview-panel.js";
-import { PiPackageService } from "./pi-package-service.js";
-import { PiPackagesTreeProvider } from "./pi-packages-tree-provider.js";
+import { PiChatViewProvider } from "./webview-view-provider.js";
+import type { PiPackageService } from "./pi-package-service.js";
+import type { PiPackagesTreeProvider } from "./pi-packages-tree-provider.js";
 import { initLogger, piLog, piWarn } from "./logger.js";
 import { registerPhase3Commands } from "./phase3-commands.js";
 import { registerPhase4Commands } from "./phase4-commands.js";
@@ -54,6 +55,9 @@ let packagesTreeProvider: PiPackagesTreeProvider | null = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let packagesTreeView: vscode.TreeView<any> | null = null;
 let packageService: PiPackageService | null = null;
+
+/** Sidebar chat webview provider (Pi icon in activity bar). */
+let chatViewProvider: PiChatViewProvider | null = null;
 
 /** The primary (first) session — used for status bar and tree provider */
 function primarySession(): SessionWindow | undefined {
@@ -693,7 +697,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // ── Step 3: Create primary session ─────────────────────
   const primary = createSessionWindow(context);
-  void primary.webviewPanel.show();
+
+  // ── Step 3a: Register sidebar webview provider ────────
+  chatViewProvider = new PiChatViewProvider(context);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider("pi-code-gui.chat", chatViewProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+  );
+
+  // ── Step 3b: Register view/title commands ──────────
+  // These post switchTab messages to the chat webview.
+  const registerViewCommand = (cmd: string, tab: string): void => {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(cmd, () => {
+        chatViewProvider?.postMessage({ type: "switchTab", data: { tab } });
+      }),
+    );
+  };
+  registerViewCommand("pi-code-gui.showChat", "chat");
+  registerViewCommand("pi-code-gui.showHistory", "history");
+  registerViewCommand("pi-code-gui.showPackages", "packages");
+  registerViewCommand("pi-code-gui.showSettings", "settings");
 
   // ── Step 3b: Register SDK-independent commands ─────
   // These must be registered synchronously so keybindings
@@ -709,6 +734,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   void initSessionInBackground(context, primary).then(() => {
     if (primary.initialized) {
+      // Connect sidebar provider to the primary session
+      chatViewProvider?.attachService(primary.piService);
       void restoreAdditionalSessions(context, savedPaths, primary).then(() => {
         restoreActiveSession(savedActivePath);
         void saveOpenSessionPaths();
@@ -716,57 +743,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   });
 
-  // ── Step 5: Initialize packages view ────────────────
-  initPackagesViewDelayed(context);
+  // ── Step 5: Package commands ────────────────────
+  registerPackageCommands(context);
 }
 
-// ── Packages view ───────────────────────────────────
+// ── Package service commands ─────────────────────────
 
-/**
- * Try to init packages view immediately.  If the SDK isn't available yet,
- * poll every 2 s until a session initialises (max 30 s).
- */
-function initPackagesViewDelayed(context: vscode.ExtensionContext): void {
-  initPackagesView(context).catch(() => {
-    // SDK not ready yet — poll until a session comes up
-    const interval = setInterval(() => {
-      const primary = primarySession();
-      if (primary?.initialized) {
-        clearInterval(interval);
-        void initPackagesView(context);
-      }
-    }, 2000);
-    setTimeout(() => clearInterval(interval), 30_000);
-  });
-}
-
-async function initPackagesView(context: vscode.ExtensionContext): Promise<void> {
-  if (packagesTreeProvider) { return; } // already initialized
-
-  packageService = new PiPackageService();
-  const result = await packageService.initialize();
-
-  // Create the tree view even if init failed — it will show a helpful
-  // placeholder so the user knows the view exists.
-  packagesTreeProvider = new PiPackagesTreeProvider(packageService);
-  packagesTreeView = vscode.window.createTreeView("pi-code-gui.packages", {
-    treeDataProvider: packagesTreeProvider,
-  });
-  context.subscriptions.push(packagesTreeView);
-
-  if (!result.success) {
-    console.log(`[pi-gui] Packages view: package service init failed: ${result.error}`);
-    // Show the error in the tree view itself
-    packagesTreeProvider.showError(`Pi SDK not ready: ${result.error}`);
-    return;
-  }
-
-  // Initial load
-  await packagesTreeProvider.refreshAll();
-
-  // ── Register package commands ────────────────
-
-  // Install a package from the marketplace
+function registerPackageCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vscode.commands.registerCommand("pi-code-gui.installPackage", async (item?: any) => {
@@ -901,9 +884,7 @@ async function initPackagesView(context: vscode.ExtensionContext): Promise<void>
       vscode.env.openExternal(vscode.Uri.parse("https://pi.dev/packages"));
     }),
   );
-
-  console.log("[pi-gui] Packages view ready");
-}
+} // end registerPackageCommands
 
 /** Resolve a tree item from either a direct argument or the tree view selection. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- VS Code tree item types are dynamic
@@ -943,7 +924,7 @@ async function doInstallPackage(source: string, scope: "user" | "project" = "use
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Installing ${label}...` },
     async () => {
-      const result = await packageService!.install(source, scope);
+      const result = await packageService.install(source, scope);
       if (result.success) {
         vscode.window.showInformationMessage(`Installed ${label} (${scope})`);
         await packagesTreeProvider?.refreshAll();
@@ -961,7 +942,7 @@ async function doUninstallPackage(source: string, scope: "user" | "project"): Pr
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Removing ${label}...` },
     async () => {
-      const result = await packageService!.uninstall(source, scope);
+      const result = await packageService.uninstall(source, scope);
       if (result.success) {
         vscode.window.showInformationMessage(`Removed ${label}`);
         await packagesTreeProvider?.refreshAll();
@@ -980,7 +961,7 @@ async function doUpdatePackage(source: string): Promise<void> {
     { location: vscode.ProgressLocation.Notification, title: `Updating ${label}...` },
     async () => {
       try {
-        await packageService!.update(source);
+        await packageService.update(source);
         vscode.window.showInformationMessage(`Updated ${label}`);
         await packagesTreeProvider?.refreshAll();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1088,36 +1069,8 @@ function registerEarlyCommands(context: vscode.ExtensionContext): void {
 
 // ── Initialize a single session ───────────────────────
 
-function ensureTreeProvider(context: vscode.ExtensionContext): void {
-  if (!sessionTreeProvider) {
-    sessionTreeProvider = new MultiSessionTreeProvider(sessions, context);
-    sessionTreeView = vscode.window.createTreeView("pi-code-gui.sessions", {
-      treeDataProvider: sessionTreeProvider,
-    });
-    context.subscriptions.push(sessionTreeView);
-
-    // Track expand/collapse of entries headers to preserve state across refreshes
-    sessionTreeView.onDidExpandElement((e) => {
-      if (e.element.contextValue === "entries-header") {
-        sessionTreeProvider!.setEntryHeaderExpanded(e.element.sessionId!, true);
-      }
-      if (e.element.contextValue === "past-sessions-header") {
-        sessionTreeProvider!.pastSessionsExpanded = true;
-      }
-    });
-    sessionTreeView.onDidCollapseElement((e) => {
-      if (e.element.contextValue === "entries-header") {
-        sessionTreeProvider!.setEntryHeaderExpanded(e.element.sessionId!, false);
-      }
-      if (e.element.contextValue === "past-sessions-header") {
-        sessionTreeProvider!.pastSessionsExpanded = false;
-      }
-    });
-
-    // We rely on TreeItem.command for single-click navigation (standard VS Code
-    // pattern).  Context menus also work because VS Code passes the TreeItem's
-    // command arguments to the action handler automatically.
-  }
+function ensureTreeProvider(): void {
+  // Tree views removed — sessions are now managed in the sidebar webview.
 }
 
 /**
@@ -1127,7 +1080,7 @@ function ensureTreeProvider(context: vscode.ExtensionContext): void {
 async function refreshPastSessionsList(): Promise<void> {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
   if (!sessionTreeProvider) {
-    piWarn("refreshPastSessionsList: sessionTreeProvider is null, skipping");
+    piLog("refreshPastSessionsList: sessionTreeProvider is null, skipping");
     return;
   }
   piLog(`refreshPastSessionsList: loading past sessions for cwd=${cwd}`);
@@ -1139,10 +1092,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   const fresh = opts?.fresh ?? false;
   const openPath = opts?.openPath;
   // Ensure tree provider exists ASAP so the tree view shows something
-  ensureTreeProvider(context);
-
-
-
+  ensureTreeProvider();
   // Start loading past sessions immediately — runs in parallel with SDK init.
   // This prevents the tree from showing an empty "Past Sessions" header
   // while the SDK loads on slow projects.
@@ -1223,7 +1173,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   }
 
   // Ensure tree provider is registered (safe to call multiple times)
-  ensureTreeProvider(context);
+  ensureTreeProvider();
 
   // ── Ensure past sessions are loaded (started earlier in parallel with SDK init) ──
   // The event handler calls sessionTreeProvider.refresh() on every pi event,
@@ -1271,16 +1221,15 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   });
 
   if (!sessionTreeProvider) {
-    piWarn("sessionTreeProvider is null at refresh time — forcing creation");
-    ensureTreeProvider(context);
+    ensureTreeProvider();
   }
   // Use targeted refresh — fires with the specific session item so VS Code
   // updates its label/collapsibleState in-place rather than diffing new
   // objects (which it can silently drop during async init).
-  sessionTreeProvider!.refreshSession(sw);
+  sessionTreeProvider?.refreshSession(sw);
 
   await new Promise((resolve) => setTimeout(resolve, 50));
-  sessionTreeProvider!.refreshSession(sw);
+  sessionTreeProvider?.refreshSession(sw);
 
   console.log(`Pi Code Gui session ${sw.id} ready`);
 }
