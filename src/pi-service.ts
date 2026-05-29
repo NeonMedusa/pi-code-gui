@@ -17,7 +17,7 @@ function reverseFind<T>(arr: T[], pred: (el: T) => boolean): T | undefined {
  * Dynamic import with retry — handles the race where npm is still populating
  * node_modules when the extension host first activates.
  */
-async function importWithRetry(
+export async function importWithRetry(
   modulePath: string,
   maxAttempts: number,
   delayMs: number,
@@ -25,7 +25,11 @@ async function importWithRetry(
 ): Promise<any> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await import(modulePath);
+      return await import(
+        process.platform === "win32" && !modulePath.startsWith("file://")
+          ? "file:///" + modulePath.replace(/\\/g, "/")
+          : modulePath
+      );
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       if (attempt === maxAttempts) { throw e; }
@@ -76,12 +80,13 @@ export function resolvePiPackagePath(): string {
   // Project-local from pi packages (workspace install)
   candidates.push(path.resolve(".pi/npm/node_modules/@earendil-works/pi-coding-agent"));
 
-  // Global npm / yarn / pnpm locations
+  // Global npm / yarn / pnpm / bun locations
   const home = process.env.HOME || process.env.USERPROFILE || "";
   if (home) {
     candidates.push(
       path.join(home, ".npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
       path.join(home, ".local/lib/node_modules/@earendil-works/pi-coding-agent"),
+      path.join(home, ".bun", "install", "global", "node_modules", "@earendil-works", "pi-coding-agent"),
     );
   }
 
@@ -462,23 +467,22 @@ export class PiService {
     }
 
     try {
-      this.AI = (await importWithRetry(
-        path.join(this._piRoot, "node_modules/@earendil-works/pi-ai/dist/index.js"), 5, 500
-      )) as PiAi;
+      this.AI = (await Promise.any([
+        importWithRetry(
+          path.join(this._piRoot, "node_modules/@earendil-works/pi-ai/dist/index.js"), 1, 0
+        ),
+        importWithRetry(
+          path.join(this._piRoot, "../../@earendil-works/pi-ai/dist/index.js"), 1, 0
+        ),
+      ])) as PiAi;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (e: any) {
-      const msg = e.message ?? String(e);
-      // Detect common missing-dependency patterns caused by broken npm global
-      // installs and give a specific fix instruction.
-      const openaiMatch = msg.match(/openai\/index\.js/);
-      const anthroMatch = msg.match(/@anthropic-ai\/sdk/);
-      if (openaiMatch || anthroMatch) {
+    } catch (e2: any) {
+      const msg = e2.message ?? String(e2);
+      if (msg.match(/openai\/index\.js/) || msg.match(/@anthropic-ai\/sdk/)) {
         return {
           success: false,
-          error:
-            `Missing dependency (${openaiMatch ? "openai" : "@anthropic-ai/sdk"}). ` +
-            `This is usually caused by a broken npm global install. ` +
-            `Fix: npm uninstall -g @earendil-works/pi-coding-agent && npm install -g @earendil-works/pi-coding-agent`,
+          error: `Missing dependency (${msg.match(/openai\/index\.js/) ? "openai" : "@anthropic-ai/sdk"}). ` +
+            `Reinstall with: npm uninstall -g @earendil-works/pi-coding-agent && npm install -g @earendil-works/pi-coding-agent`,
         };
       }
       return { success: false, error: `Failed to load pi-ai: ${msg}` };
@@ -488,15 +492,20 @@ export class PiService {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let Type: any;
     try {
-      const Typebox = await importWithRetry(
-        path.join(this._piRoot, "node_modules/typebox/build/index.mjs"),
-        5,  // max attempts
-        500 // delay ms between attempts
-      );
+      const Typebox = await Promise.any([
+        importWithRetry(
+          path.join(this._piRoot, "node_modules/typebox/build/index.mjs"),
+          1, 0
+        ),
+        importWithRetry(
+          path.join(this._piRoot, "../../typebox/build/index.mjs"),
+          1, 0
+        ),
+      ]);
       Type = Typebox.Type ?? Typebox;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (e: any) {
-      return { success: false, error: `Failed to load typebox: ${e.message ?? e}` };
+    } catch (e2: any) {
+      return { success: false, error: `Failed to load typebox: ${e2.message ?? e2}` };
     }
 
     const SDK = this.SDK;

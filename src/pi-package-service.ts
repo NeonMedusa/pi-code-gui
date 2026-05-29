@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { resolvePiPackagePath } from "./pi-service.js";
+import { resolvePiPackagePath, importWithRetry } from "./pi-service.js";
 
 /**
  * Wraps the Pi SDK's DefaultPackageManager for use in the VS Code extension.
@@ -91,7 +91,7 @@ export class PiPackageService {
 
     try {
  
-      const SDK = (await import(path.join(this.sdkRoot, "dist/index.js")));
+      const SDK = (await importWithRetry(path.join(this.sdkRoot, "dist/index.js"), 5, 500));
       const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
       const SettingsManager = SDK.SettingsManager;
       const DefaultPackageManagerClass = SDK.DefaultPackageManager;
