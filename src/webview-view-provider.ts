@@ -158,6 +158,20 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
           case "toggleShowImages":
             await this._piService?.toggleShowImages();
             break;
+
+          case "setFontSize":
+            if (typeof message.fontSize === "number") {
+              await vscode.workspace.getConfiguration("pi-code-gui").update("fontSize", message.fontSize, vscode.ConfigurationTarget.Global);
+            }
+            break;
+
+          case "getSettings":
+            const cfg = vscode.workspace.getConfiguration("pi-code-gui");
+            this.postMessage({
+              type: "settingsUpdate",
+              data: { fontSize: cfg.get("fontSize") ?? 0 },
+            });
+            break;
         }
       },
     );
@@ -315,8 +329,13 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
       <span class="panel-title">Settings</span>
     </div>
     <div class="sidebar-panel-body">
-      <p class="sidebar-placeholder">Coming soon</p>
+      <div class="setting-row">
+        <label class="setting-label">Font size</label>
+        <input type="number" id="setting-font-size" class="setting-number" min="0" max="30" value="0">
+        <span class="setting-unit">px (0 = default)</span>
+      </div>
     </div>
+  </div>
   </div>
 
   <div id="pi-status-bar">

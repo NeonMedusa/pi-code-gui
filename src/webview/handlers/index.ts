@@ -114,6 +114,10 @@ export function createLiveCard(key: string, customType: string, label: string, c
                          msg.type === "switchTab" || msg.type === "sessionsList" ||
                          msg.type === "tabChanged" || msg.type === "resumeResult" ||
                          msg.type === "deleteSession";
+                         
+  // Settings messages
+  var settingsTypes = ["settingsUpdate", "setZoom", "setFontSize", "getSettings"];
+  if (settingsTypes.indexOf(msg.type) >= 0) { skipValidation = true; }
     if (!skipValidation) {
       var vr = validateExtensionToWebview(msg);
       if (!vr.success) {
@@ -195,6 +199,7 @@ export function createLiveCard(key: string, customType: string, label: string, c
       case "sessionsList":
       case "tabChanged":
       case "resumeResult":
+      case "settingsUpdate":
         break;
 
       default:

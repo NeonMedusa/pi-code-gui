@@ -41,6 +41,9 @@ setupCodeBlockHandlers();
 // Set initial streaming state (show/hide buttons)
 updateStreamingState();
 
+// Request initial settings (zoom, font)
+window.__vscode.postMessage({ type: "getSettings" });
+
 // ── Scroll tracking ─────────────────────────────────────────
 state.chatContainer.addEventListener("scroll", () => {
   const threshold = 50;
@@ -88,6 +91,9 @@ function switchSidebarTab(tab: string): void {
   if (tab === "history") {
     window.__vscode.postMessage({ type: "listSessions" });
   }
+  if (tab === "settings") {
+    window.__vscode.postMessage({ type: "getSettings" });
+  }
 }
 
 function renderHistoryList(sessions: any[]): void {
@@ -119,7 +125,6 @@ function renderHistoryList(sessions: any[]): void {
   // Click to resume
   container.querySelectorAll(".history-item").forEach((el) => {
     el.addEventListener("click", (e) => {
-      // Ignore clicks on the delete button
       if ((e.target as HTMLElement).classList.contains("history-item-delete")) { return; }
       const path = (el as HTMLElement).dataset.path;
       if (path) {
@@ -152,4 +157,36 @@ window.addEventListener("message", (event) => {
   if (message.type === "resumeResult" && !message.data?.success) {
     console.error("Resume failed:", message.data?.error);
   }
+});
+
+// ── Settings (font size) ──────────────────────────────────
+
+// Apply font size via CSS variable
+function applyFontSize(size: number): void {
+  if (size > 0) {
+    document.documentElement.style.setProperty("--pi-font-size", size + "px");
+  } else {
+    document.documentElement.style.removeProperty("--pi-font-size");
+  }
+  const el = document.getElementById("setting-font-size") as HTMLInputElement | null;
+  if (el) { el.value = String(size); }
+}
+
+// Handle settingsUpdate message from extension
+window.addEventListener("message", (event) => {
+  const msg = event.data;
+  if (msg.type === "settingsUpdate") {
+    applyFontSize(msg.data.fontSize ?? 0);
+  }
+});
+
+// Font size input
+const fontInput = document.getElementById("setting-font-size") as HTMLInputElement | null;
+fontInput?.addEventListener("input", () => {
+  const raw = parseInt(fontInput.value);
+  if (isNaN(raw)) { return; }
+  const size = Math.max(0, Math.min(30, raw));
+  if (String(size) !== fontInput.value) { fontInput.value = String(size); }
+  applyFontSize(size);
+  window.__vscode.postMessage({ type: "setFontSize", fontSize: size });
 });

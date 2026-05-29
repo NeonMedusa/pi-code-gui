@@ -336,6 +336,13 @@
           "default": 0,
           "description": "Per-session token budget. 0 = use model default. Increase for longer conversations before auto-compaction."
         },
+        "pi-code-gui.fontSize": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 30,
+          "description": "Override chat font size in px (0 = use editor default)"
+        },
         "pi-code-gui.sessionDir": {
           "type": "string",
           "default": "",

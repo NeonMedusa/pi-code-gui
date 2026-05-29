@@ -22,7 +22,12 @@
     --success:       var(--vscode-terminal-ansiGreen);
     --thinking-bg:   var(--vscode-textBlockQuote-background);
     --tool-bg:       var(--vscode-textCodeBlock-background);
+    --pi-font-size:  13px;
   }
+}
+
+body {
+  font-size: var(--pi-font-size) !important;
 }
 
 /* ── Base: reset, layout, animations ─────────────────────── */
@@ -32,9 +37,7 @@
 
   body {
     font-family: var(--vscode-editor-font-family);
-    font-size:   var(--vscode-editor-font-size);
     color:       var(--fg-primary);
-    background:  var(--bg-primary);
     height:      100vh;
     display:     flex;
     flex-direction: column;
@@ -740,10 +743,8 @@
   #pi-status-bar {
     display: flex; align-items: center; gap: 4px;
     padding: 5px 12px;
-    background: var(--bg-secondary, var(--vscode-sideBar-background));
-    border-top: 1px solid var(--border-color, var(--vscode-sideBar-border));
-    font-size: 0.8em;
-    color: var(--fg-secondary, var(--vscode-descriptionForeground));
+    font-size: 11px;
+    color: var(--fg-primary);
     min-height: 30px;
     flex-shrink: 0;
     user-select: none;
@@ -886,8 +887,7 @@
   #input-area {
     display: flex; gap: 8px;
     padding: 10px 16px;
-    background: var(--bg-secondary);
-    border-top: 1px solid var(--border-color);
+    border-top: none;
   }
 
   #prompt-input {
@@ -898,7 +898,7 @@
     border-radius: 8px;
     padding: 10px 14px;
     font-family: var(--vscode-editor-font-family);
-    font-size: var(--vscode-editor-font-size);
+    font-size: var(--pi-font-size);
     resize: none;
     min-height: 40px; max-height: 100px;
     outline: none; overflow-y: hidden;
@@ -1396,4 +1396,35 @@
   font-size: 11px;
   color: var(--fg-secondary);
   margin-top: 2px;
+}
+
+/* ═══ Settings panel ═════════════════════════════════ */
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.setting-label {
+  font-size: 12px;
+  color: var(--fg-primary);
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+.setting-number {
+  width: 60px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  padding: 3px 6px;
+  font-size: 12px;
+  text-align: right;
+}
+
+.setting-unit {
+  font-size: 11px;
+  color: var(--fg-secondary);
 }
