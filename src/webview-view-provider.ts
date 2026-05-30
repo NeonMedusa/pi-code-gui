@@ -38,10 +38,14 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let statusInterval: any = null;
     const startPolling = (): void => {
-      if (statusInterval) { return; }
+      if (statusInterval) {
+        return;
+      }
       statusInterval = setInterval(() => {
         const ps = this._piService;
-        if (!ps) { return; }
+        if (!ps) {
+          return;
+        }
         const model = ps.model;
         this.postMessage({
           type: "status",
@@ -60,7 +64,13 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
         }
       }, 500);
     };
-    const cleanupInterval = { dispose: () => { if (statusInterval) { clearInterval(statusInterval); } } };
+    const cleanupInterval = {
+      dispose: () => {
+        if (statusInterval) {
+          clearInterval(statusInterval);
+        }
+      },
+    };
     this._disposables.push(cleanupInterval);
 
     webviewView.webview.onDidReceiveMessage(
@@ -70,13 +80,19 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
           case "prompt":
             if (this._piService) {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              this._piService.sendPrompt(message.text, message.images, message.mode).catch((error: any) => {
-                let errMsg = error.message ?? String(error);
-                if (/api.?key|login|authenticate|provider/i.test(errMsg)) {
-                  errMsg += "\n\n[Set up an API key →](https://pi.dev/docs/latest/quickstart)";
-                }
-                this.postMessage({ type: "error", data: { message: errMsg } });
-              });
+              this._piService
+                .sendPrompt(message.text, message.images, message.mode)
+                .catch((error: any) => {
+                  let errMsg = error.message ?? String(error);
+                  if (/api.?key|login|authenticate|provider/i.test(errMsg)) {
+                    errMsg +=
+                      "\n\n[Set up an API key →](https://pi.dev/docs/latest/quickstart)";
+                  }
+                  this.postMessage({
+                    type: "error",
+                    data: { message: errMsg },
+                  });
+                });
             }
             break;
 
@@ -89,11 +105,15 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
             break;
 
           case "setThinkingLevel":
-            if (this._piService) { await this._piService.setThinkingLevel(message.level); }
+            if (this._piService) {
+              await this._piService.setThinkingLevel(message.level);
+            }
             break;
 
           case "setEffort":
-            if (this._piService) { await this._piService.setEffort(message.effort); }
+            if (this._piService) {
+              await this._piService.setEffort(message.effort);
+            }
             break;
 
           case "pickModel":
@@ -109,11 +129,21 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
             break;
 
           case "switchTab":
-            webviewView.webview.postMessage({ type: "tabChanged", data: { tab: message.tab } });
+            webviewView.webview.postMessage({
+              type: "tabChanged",
+              data: { tab: message.tab },
+            });
             break;
 
           case "newSession":
             await this._piService?.newSession();
+            this.postMessage({ type: "sessionReset" });
+            // Refresh history list
+            {
+              const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+              const sessions = await PiService.listSessions(cwd);
+              this.postMessage({ type: "sessionsList", data: sessions ?? [], activePath: null });
+            }
             break;
 
           case "resumeSession":
@@ -125,9 +155,16 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 
           case "listSessions":
             if (this._piService && this._piService.sdkRoot) {
-              const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+              const cwd =
+                vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
+                process.cwd();
               const sessions = await PiService.listSessions(cwd);
-              this.postMessage({ type: "sessionsList", data: sessions ?? [] });
+              const activePath = this._piService?.sessionFilePath ?? null;
+              this.postMessage({
+                type: "sessionsList",
+                data: sessions ?? [],
+                activePath,
+              });
             }
             break;
 
@@ -138,12 +175,21 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
                 { modal: true },
                 "Delete",
               );
-              if (confirm !== "Delete") { break; }
+              if (confirm !== "Delete") {
+                break;
+              }
               await PiService.deleteSessionFile(message.path);
               // Refresh list after deletion
-              const cwd2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+              const cwd2 =
+                vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
+                process.cwd();
               const sessions2 = await PiService.listSessions(cwd2);
-              this.postMessage({ type: "sessionsList", data: sessions2 ?? [] });
+              const activePath = this._piService?.sessionFilePath ?? null;
+              this.postMessage({
+                type: "sessionsList",
+                data: sessions2 ?? [],
+                activePath,
+              });
             }
             break;
 
@@ -161,7 +207,13 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 
           case "setFontSize":
             if (typeof message.fontSize === "number") {
-              await vscode.workspace.getConfiguration("pi-code-gui").update("fontSize", message.fontSize, vscode.ConfigurationTarget.Global);
+              await vscode.workspace
+                .getConfiguration("pi-code-gui")
+                .update(
+                  "fontSize",
+                  message.fontSize,
+                  vscode.ConfigurationTarget.Global,
+                );
             }
             break;
 
@@ -189,7 +241,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
   /** Attach a PiService and register as an event listener. */
   attachService(piService: PiService): void {
     this._piService = piService;
-    this._disposables.push({ dispose: piService.onEvent((event) => this.handleAgentEvent(event)) });
+    this._disposables.push({
+      dispose: piService.onEvent((event) => this.handleAgentEvent(event)),
+    });
     if (this._view) {
       this.updateTitle();
       const model = piService.model;
@@ -204,7 +258,15 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
       });
       // Send initial status-update for context budget / usage
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const stats = (piService as any).getUsageStats?.() ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextPercent: null, contextWindow: 0 };
+      const stats = (piService as any).getUsageStats?.() ?? {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: 0,
+        contextPercent: null,
+        contextWindow: 0,
+      };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sessionId = (piService as any).sessionId ?? undefined;
       this.postMessage({
@@ -226,7 +288,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private handleAgentEvent(event: any): void {
-    if (!this._view) { return; }
+    if (!this._view) {
+      return;
+    }
 
     // Track streaming state for title indicator
     if (event.type === "assistant-start") {
@@ -247,13 +311,13 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
   // ── Title & tab indicator ──────────────────────────
 
   updateTitle(): void {
-    if (!this._view) { return; }
+    if (!this._view) {
+      return;
+    }
 
     const indicator = this._tabStreaming ? "●" : "○";
     const summary = this._tabSummary ?? "";
-    const title = summary
-      ? `${indicator} ${summary}`
-      : "Pi Code Gui";
+    const title = summary ? `${indicator} ${summary}` : "Pi Code Gui";
 
     this._view.title = title;
   }
@@ -262,7 +326,8 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 
   private getNonce(): string {
     let text = "";
-    const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const possible =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     for (let i = 0; i < 32; i++) {
       text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
@@ -308,6 +373,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 
   <div id="panel-history" class="sidebar-panel">
     <div class="sidebar-panel-header">
+      <button id="btn-current-session" class="panel-action-btn">◂ Current Session</button>
       <button id="btn-new-session" class="panel-action-btn">+ New Session</button>
     </div>
     <div id="history-content">
@@ -359,7 +425,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 
   private async triggerEffortPicker(): Promise<void> {
     const ps = this._piService;
-    if (!ps) { return; }
+    if (!ps) {
+      return;
+    }
     const levels = [
       { label: "auto", description: "Let the model decide" },
       { label: "none", description: "No effort" },
@@ -372,8 +440,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
       label: `${l.label === currentEffort ? "$(check) " : ""}${l.label}`,
       description: l.description,
     }));
-    const picked = await vscode.window.showQuickPick(items, { placeHolder: "Select effort level" });
-    if (!picked) { return; }
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: "Select effort level",
+    });
+    if (!picked) {
+      return;
+    }
     await ps.setEffort(picked.label);
   }
 

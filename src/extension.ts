@@ -716,7 +716,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   };
   registerViewCommand("pi-code-gui.showChat", "chat");
-  registerViewCommand("pi-code-gui.showHistory", "history");
   registerViewCommand("pi-code-gui.showPackages", "packages");
   registerViewCommand("pi-code-gui.showSettings", "settings");
 

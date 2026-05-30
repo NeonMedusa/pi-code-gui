@@ -72,7 +72,7 @@ window.addEventListener("message", (event) => {
     switchSidebarTab(message.data?.tab ?? "chat");
   }
   if (message.type === "sessionsList") {
-    renderHistoryList(message.data ?? []);
+    renderHistoryList(message.data ?? [], message.activePath ?? null);
   }
 });
 
@@ -83,10 +83,40 @@ newSessionBtn?.addEventListener("click", () => {
   switchSidebarTab("chat");
 });
 
+// Current session button (in history panel)
+const currentSessionBtn = document.getElementById("btn-current-session");
+currentSessionBtn?.addEventListener("click", () => {
+  switchSidebarTab("chat");
+});
+
+// Tracks which tab the 💬 button should show next (remembers across tab switches)
+let _lastChatTab = "chat";
+
 function switchSidebarTab(tab: string): void {
+  // 💬 button remembers last toggle state
+  if (tab === "chat") {
+    const chatPanel = document.getElementById("panel-chat");
+    const historyPanel = document.getElementById("panel-history");
+    const onChat = chatPanel?.classList.contains("active");
+    const onHistory = historyPanel?.classList.contains("active");
+
+    if (onChat) {
+      tab = "history";            // toggle: chat → history
+    } else if (onHistory) {
+      tab = "chat";               // toggle: history → chat
+    } else {
+      tab = _lastChatTab;         // restore: packages/settings → last state
+    }
+  }
+
   document.querySelectorAll(".sidebar-panel").forEach((panel) => {
     panel.classList.toggle("active", panel.id === `panel-${tab}`);
   });
+
+  // Remember which tab was last shown (for restore from packages/settings)
+  if (tab === "chat" || tab === "history") {
+    _lastChatTab = tab;
+  }
 
   if (tab === "history") {
     window.__vscode.postMessage({ type: "listSessions" });
@@ -96,7 +126,7 @@ function switchSidebarTab(tab: string): void {
   }
 }
 
-function renderHistoryList(sessions: any[]): void {
+function renderHistoryList(sessions: any[], activePath: string | null): void {
   const container = document.getElementById("history-content");
   if (!container) return;
 
@@ -108,13 +138,12 @@ function renderHistoryList(sessions: any[]): void {
   let html = '<div class="history-list">';
   for (const s of sessions) {
     const name = s.name || s.summary || `Session ${s.id ?? ""}`;
-    const time = s.lastModified
-      ? new Date(s.lastModified).toLocaleDateString()
-      : "";
-    html += `<div class="history-item" data-path="${s.path ?? ""}">
+    const time = timeAgo(s.modified);
+    const isActive = s.path && s.path === activePath;
+    html += `<div class="history-item${isActive ? " active" : ""}" data-path="${s.path ?? ""}">
       <div class="history-item-content">
         <div class="history-item-title">${escapeHtml(name)}</div>
-        <div class="history-item-time">${time}</div>
+        ${time ? `<div class="history-item-time">${time}</div>` : ""}
       </div>
       <button class="history-item-delete" title="Delete session">×</button>
     </div>`;
@@ -143,6 +172,20 @@ function renderHistoryList(sessions: any[]): void {
       window.__vscode.postMessage({ type: "deleteSession", path });
     });
   });
+}
+
+function timeAgo(ts: string | number | undefined): string {
+  if (!ts) return "";
+  const diff = Date.now() - new Date(ts).getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString();
 }
 
 function escapeHtml(text: string): string {

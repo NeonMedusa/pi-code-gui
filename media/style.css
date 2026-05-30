@@ -1297,10 +1297,9 @@ body {
 
 .sidebar-panel-header {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border-color);
 }
 
 .panel-action-btn {
@@ -1347,12 +1346,67 @@ body {
   align-items: center;
   padding: 8px 12px;
   cursor: pointer;
-  border-bottom: 1px solid var(--border-color);
   transition: background 0.1s;
+}
+
+.history-item:nth-child(odd) {
+  background: color-mix(in srgb, var(--bg-primary) 90%, var(--fg-primary) 10%);
 }
 
 .history-item:hover {
   background: var(--vscode-list-hoverBackground);
+}
+
+.history-item.active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.history-item.active .history-item-time {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.history-item.active .history-item-delete {
+  color: inherit;
+}
+
+.history-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item-title {
+  font-size: 12px;
+  color: var(--fg-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item-time {
+  font-size: 10px;
+  color: var(--fg-secondary);
+  margin-top: 3px;
+}
+
+.history-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.history-item.active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.history-item.active .history-item-time {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.history-item.active .history-item-delete {
+  color: inherit;
 }
 
 .history-item-content {

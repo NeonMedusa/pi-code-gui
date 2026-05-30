@@ -205,11 +205,6 @@
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "pi-code-gui.showHistory",
-        "title": "PiGui: Show History",
-        "icon": "$(list-tree)"
-      },
-      {
         "command": "pi-code-gui.showPackages",
         "title": "PiGui: Show Packages",
         "icon": "$(package)"
@@ -428,11 +423,6 @@
       "view/title": [
         {
           "command": "pi-code-gui.showChat",
-          "when": "view == pi-code-gui.chat",
-          "group": "navigation"
-        },
-        {
-          "command": "pi-code-gui.showHistory",
           "when": "view == pi-code-gui.chat",
           "group": "navigation"
         },
