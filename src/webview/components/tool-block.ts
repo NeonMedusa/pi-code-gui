@@ -1,19 +1,3 @@
-// ── ToolBlock component ───────────────────────────────────────
-//
-// Shared chrome for write/edit/read tool blocks: header with
-// tool name, file path (clickable), and status badge.  Provides
-// content and result containers where child components plug in.
-//
-// Replaces per-tool create() DOM builders in tools/index.ts.
-//
-// Props:
-//   toolName   — "write", "edit", "read", etc.
-//   toolCallId — unique ID for the tool call
-//   entryId    — optional session entry ID
-//   filePath   — optional file path (shown in header, clickable)
-//   status     — "pending" | "running" | "done" | "error"
-//   pathExtra  — extra text after path (e.g. " (3 edits)")
-
 import type { Component } from "./types.js";
 import { html } from "../render/html.js";
 
@@ -33,10 +17,13 @@ export class ToolBlock implements Component<ToolBlockProps> {
   private nameEl: HTMLElement;
   private pathEl: HTMLElement | null = null;
   private statusEl: HTMLElement;
+  private bodyEl: HTMLElement;
   private contentEl: HTMLElement;
   private resultEl: HTMLElement;
+  private arrowEl: HTMLElement;
 
   private _filePath: string | null = null;
+  private _collapsed = false;
 
   constructor(props: ToolBlockProps) {
     this.el = document.createElement("div");
@@ -44,7 +31,6 @@ export class ToolBlock implements Component<ToolBlockProps> {
     this.el.id = props.entryId
       ? "entry-" + props.entryId
       : "tool-" + props.toolCallId;
-    // Always store toolCallId for reveal-entry lookup
     this.el.setAttribute("data-tool-call-id", props.toolCallId);
     if (props.entryId) { this.el.setAttribute("data-entry-id", props.entryId); }
     this.el.setAttribute("data-status", props.status || "pending");
@@ -53,21 +39,49 @@ export class ToolBlock implements Component<ToolBlockProps> {
     this._filePath = fp;
     const pathDisplay = fp || "...";
 
+    const toolsIcon: Record<string, string> = { write: "✏️", read: "📖", edit: "🔧" };
+    const icon = toolsIcon[props.toolName] || "🛠️";
+
     this.el.innerHTML = html`
-      <div class="tool-header">
-        <span class="tool-name">${props.toolName}</span>
-        <span class="tool-path" data-path="${fp}" title="Click to open file">${pathDisplay}${props.pathExtra || ""}</span>
-        <span class="tool-status ${props.status || "pending"}">${props.status || "pending"}</span>
-      </div>
-      <div class="tool-content"></div>
-      <div class="tool-result"></div>`;
+      <div class="tool-block-inner">
+        <div class="tool-header">
+          <span class="tool-header-icon">${icon}</span>
+          <span class="tool-name">${props.toolName}</span>
+          <span class="tool-path" data-path="${fp}" title="Click to open file">${pathDisplay}${props.pathExtra || ""}</span>
+          <span class="tool-status ${props.status || "pending"}">${props.status || "pending"}</span>
+          <span class="tool-arrow">▼</span>
+        </div>
+        <div class="tool-body">
+          <div class="tool-content"></div>
+          <div class="tool-result"></div>
+        </div>
+      </div>`;
 
     this.headerEl = this.el.querySelector(".tool-header")!;
     this.nameEl = this.el.querySelector(".tool-name")!;
     this.pathEl = this.el.querySelector(".tool-path");
     this.statusEl = this.el.querySelector(".tool-status")!;
+    this.bodyEl = this.el.querySelector(".tool-body")!;
     this.contentEl = this.el.querySelector(".tool-content")!;
     this.resultEl = this.el.querySelector(".tool-result")!;
+    this.arrowEl = this.el.querySelector(".tool-arrow")!;
+
+    // Wire toggle
+    this.headerEl.addEventListener("click", (e) => {
+      // Don't toggle when clicking the file path (it has its own action)
+      if ((e.target as HTMLElement).classList.contains("tool-path")) { return; }
+      this.toggle();
+    });
+
+    // Wire file path click → open in VS Code
+    if (this.pathEl) {
+      this.pathEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (this._filePath) {
+          window.__vscode.postMessage({ type: "openFile", path: this._filePath });
+        }
+      });
+    }
   }
 
   mount(container: HTMLElement): void {
@@ -79,6 +93,13 @@ export class ToolBlock implements Component<ToolBlockProps> {
       this.el.setAttribute("data-status", props.status);
       this.statusEl.textContent = props.status;
       this.statusEl.className = "tool-status " + props.status;
+
+      // Auto-collapse when done
+      if (props.status === "done" || props.status === "error") {
+        this._collapsed = true;
+        this.bodyEl.style.display = "none";
+        this.arrowEl.textContent = "▼";
+      }
     }
     if (props.filePath !== undefined) {
       this._filePath = props.filePath;
@@ -101,29 +122,40 @@ export class ToolBlock implements Component<ToolBlockProps> {
     this.el.remove();
   }
 
+  // ── Collapse/expand ─────────────────────────────────
+
+  set streaming(val: boolean) {
+    if (val) {
+      this._collapsed = false;
+      this.bodyEl.style.display = "";
+      this.arrowEl.textContent = "▲";
+    }
+  }
+
+  private toggle(): void {
+    this._collapsed = !this._collapsed;
+    this.bodyEl.style.display = this._collapsed ? "none" : "";
+    this.arrowEl.textContent = this._collapsed ? "▼" : "▲";
+  }
+
   // ── Public accessors ─────────────────────────────────
 
-  /** The tool-content container (where child components mount). */
   getContentEl(): HTMLElement {
     return this.contentEl;
   }
 
-  /** The tool-result container (for errors / output). */
   getResultEl(): HTMLElement {
     return this.resultEl;
   }
 
-  /** The tool-header element. */
   getHeaderEl(): HTMLElement {
     return this.headerEl;
   }
 
-  /** The file path element (if visible). */
   getPathEl(): HTMLElement | null {
     return this.pathEl;
   }
 
-  /** The status display element. */
   getStatusEl(): HTMLElement {
     return this.statusEl;
   }

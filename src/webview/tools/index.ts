@@ -310,12 +310,8 @@ export const editToolRenderer = {
       }
 
       var tr = el.querySelector(".tool-result");
-      if (tr && text) {
-        if (isError) {
-          tr.innerHTML = html`<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">${formatToolError(text, "edit")}</div>`;
-        } else {
-          tr.innerHTML = '<div style="margin-top:4px;">' + renderDiffIfApplicable(text) + '</div>';
-        }
+      if (tr && text && isError) {
+        tr.innerHTML = html`<div style="color:var(--vscode-errorForeground);white-space:pre-wrap;font-size:0.85em;">${formatToolError(text, "edit")}</div>`;
       }
     },
   };
@@ -345,7 +341,7 @@ export function renderEditPreviews(el: ToolEl, edits: Array<{ oldText: string; n
 
     var scrollView = tc!.querySelector(".tool-scroll-view");
     if (!scrollView) {
-      tc.innerHTML = html`<div class="tool-scroll-view" style="${scrollStyle}">${safe(result)}</div>`;
+      tc.innerHTML = html`<div class="edit-diff-wrapper"><div class="tool-scroll-view" style="${scrollStyle}">${safe(result)}</div></div>`;
       scrollView = tc.querySelector(".tool-scroll-view");
     } else {
       scrollView!.setAttribute("style", scrollStyle);
@@ -534,7 +530,7 @@ export const readToolRenderer = {
       if (hasMore) {
         var contEl = document.createElement("div");
         contEl.style.cssText = "margin-top:6px;font-size:0.8em;color:var(--vscode-descriptionForeground);cursor:pointer;text-decoration:underline;";
-        contEl.textContent = "\u25BC Continue reading (" + contRemaining + " lines remaining)";
+        contEl.textContent = "\u25BC Continue reading (" + contRemaining + " line" + (contRemaining > 1 ? "s" : "") + " remaining)";
         contEl.addEventListener("click", function () {
           // Insert into the input bar — user reviews and presses Enter.
           // Auto-submitting would create a new agent turn / read block,

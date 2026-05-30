@@ -79,9 +79,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
         switch (message.type) {
           case "prompt":
             if (this._piService) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               this._piService
                 .sendPrompt(message.text, message.images, message.mode)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 .catch((error: any) => {
                   let errMsg = error.message ?? String(error);
                   if (/api.?key|login|authenticate|provider/i.test(errMsg)) {
@@ -203,6 +203,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 
           case "toggleShowImages":
             await this._piService?.toggleShowImages();
+            break;
+
+          case "openFile":
+            if (message.path && typeof message.path === "string") {
+              vscode.window.showTextDocument(vscode.Uri.file(message.path));
+            }
             break;
 
           case "setFontSize":
