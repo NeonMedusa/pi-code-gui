@@ -610,9 +610,17 @@ export const bashToolRenderer = {
       var cmd = (data.args?.command as string) || "";
       if ((cmd as string).length > 120) {cmd = cmd!.slice(0, 120) + "\u2026";}
       block.innerHTML = html`
-        <div class="bash-header">$ ${cmd}</div>
-        <div class="bash-output"></div>
-        <div class="bash-footer"><span class="bash-spinner"></span> <span class="cancel-hint">running\u2026</span></div>`;
+        <div class="bash-collapsible">
+          <div class="bash-header">
+            <span class="bash-header-icon">💻</span>
+            <span class="bash-header-cmd">$ ${cmd}</span>
+            <span class="tool-status running">running</span>
+            <span class="bash-arrow">▲</span>
+          </div>
+          <div class="bash-body">
+            <div class="bash-output"></div>
+          </div>
+        </div>`;
       state.bashBlocks[data.toolCallId] = block;
       state.bashOutputs[data.toolCallId] = "";
       return block;
@@ -634,18 +642,20 @@ export const bashToolRenderer = {
       }
       var outEl = el.querySelector(".bash-output");
       if (outEl && text) {morphRender(outEl, escapeHtml(text));}
-      var footer = el.querySelector(".bash-footer");
-      var details = result && result.details ? result.details : {};
-      var exitCode = details.exitCode !== undefined ? details.exitCode : 0;
-      if (footer) {
-        footer.innerHTML = html`
-          <span class="exit-code${isError ? " error" : ""}">exit: ${exitCode}</span>
-          ${details.cancelled ? " <span>(cancelled)</span>" : ""}`;
+      // Update status badge
+      var statusEl = el.querySelector(".tool-status");
+      if (statusEl) {
+        statusEl.textContent = isError ? "error" : "done";
+        statusEl.className = "tool-status " + (isError ? "error" : "done");
       }
-      if (entryId && !el.id.startsWith("entry-")) {
-        el.id = "entry-" + entryId;
+      // Auto-collapse when done
+      var body = el.querySelector(".bash-body");
+      var arrow = el.querySelector(".bash-arrow");
+      if (body && arrow) {
+        body.style.display = "none";
+        arrow.textContent = "▼";
       }
-      el.setAttribute("data-status", isError ? "error" : "complete");
+      el.setAttribute("data-status", isError ? "error" : "done");
       delete state.bashBlocks[toolCallId];
       delete state.bashOutputs[toolCallId];
     },

@@ -85,8 +85,8 @@ body {
     animation: fadeIn 0.2s ease-in;
 
     &.user {
-      align-self: flex-start;
-      margin-top: 8px;
+      /*align-self: flex-start;
+      margin-top: 8px;*/
 
       .message-content {
         background: var(--vscode-input-background);
@@ -110,6 +110,7 @@ body {
 
         /* ── Rich content inside assistant messages ────── */
         p  { margin: 2px 0; }
+        .thinking-block { margin: 0 0 var(--block-gap); }
         ol, ul { padding-left: 2em; margin: 4px 0; }
         li { margin-bottom: 2px; }
 
@@ -157,9 +158,6 @@ body {
 
           code { background: none; padding: 0; line-height: 1.55; }
         }
-
-        /* .code-block uses CodeBlock component — override the pre fallback above */
-        .code-block { background: rgba(0, 0, 0, 0.15); }
 
         /* Tables */
         table {
@@ -336,24 +334,51 @@ body {
   .hljs-doctag     { color: var(--vscode-symbolIcon-keywordForeground,  #c586c0); }
   .hljs-section    { color: var(--vscode-symbolIcon-classForeground,  #4ec9b0); font-weight: 700; }
 
+  /* ── Shared collapsible block styles ───────────────── */
+
+  .thinking-block,
+  .tool-block-inner,
+  .code-collapsible,
+  .bash-collapsible {
+    background: rgba(0, 0, 0, 0.15);
+    border-left: 3px solid var(--fg-secondary);
+    border-radius: 0 6px 6px 0;
+  }
+
+  .thinking-header,
+  .tool-header,
+  .code-collapsible-header,
+  .bash-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 600;
+  }
+
+  .thinking-arrow,
+  .tool-arrow,
+  .code-collapsible-arrow,
+  .bash-arrow {
+    margin-left: auto;
+    font-size: 0.7em;
+    flex-shrink: 0;
+  }
+
+  .tool-body,
+  .code-collapsible-body,
+  .bash-body {
+    border-top: 1px solid var(--border-color);
+  }
+
   /* ═══ Thinking blocks ════════════════════════════════════ */
 
   .thinking-block {
-    background: rgba(0, 0, 0, 0.15);
-    border-left: 3px solid var(--fg-secondary);
     padding: 6px 14px;
-    /* Bottom gap matches --block-gap for consistent spacing below thinking */
-    margin: 0 0 var(--block-gap);
-    border-radius: 0 6px 6px 0;
+    /*margin: 0 0 var(--block-gap);*/
     color: var(--fg-secondary);
-
-    .thinking-content {
-      white-space: pre-wrap; word-break: break-word;
-      font-family: var(--vscode-editor-font-family);
-      line-height: 1.5;
-      color: var(--fg-secondary);
-      margin-top: 4px;
-    }
+  }
 
     .thinking-spinner {
       display: inline-block;
@@ -367,24 +392,13 @@ body {
   }
 
   .thinking-header {
-    display: flex; align-items: center;
-    gap: 4px; margin-bottom: 0;
-    font-weight: 600;
     color: var(--fg-secondary);
-    cursor: pointer;
-    user-select: none;
   }
 
   .thinking-label       { font-weight: 700; }
-  .thinking-line-count   { font-weight: 400; opacity: 0.6; font-size: 0.85em; }
+  .thinking-line-count   { font-weight: 400; opacity: 0.6; }
 
   .thinking-icon { flex-shrink: 0; }
-
-  .thinking-arrow {
-    margin-left: auto;
-    font-size: 0.7em;
-    flex-shrink: 0;
-  }
 
   .thinking-collapsed .thinking-content {
     display: none;
@@ -412,18 +426,12 @@ body {
   }
 
   .tool-block-inner {
-    background: rgba(0, 0, 0, 0.15);
-    border-left: 3px solid var(--fg-secondary);
-    border-radius: 0 6px 6px 0;
     padding: 6px 14px;
     color: var(--fg-secondary);
   }
 
   .tool-header {
-    display: flex; align-items: center; gap: 4px;
-    font-weight: 600;
-    cursor: pointer;
-    user-select: none;
+    color: var(--fg-secondary);
   }
 
   .tool-header-icon { flex-shrink: 0; }
@@ -446,7 +454,7 @@ body {
   }
 
   .tool-status {
-    font-size: 0.8em; padding: 2px 6px; border-radius: 3px;
+    padding: 2px 6px; border-radius: 3px;
 
     &.running { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
     &.done,
@@ -455,20 +463,13 @@ body {
     &.pending { background: var(--vscode-textBlockQuote-background); color: var(--vscode-descriptionForeground); }
   }
 
-  .tool-arrow {
-    margin-left: auto;
-    font-size: 0.7em;
-    flex-shrink: 0;
-  }
-
   .tool-body {
-    border-top: 1px solid var(--border-color);
     margin-top: 6px;
     padding-top: 4px;
   }
 
   .tool-args {
-      margin-top: 6px; font-size: 0.85em; opacity: 0.7;
+      margin-top: 6px; opacity: 0.7;
       max-height: 100px; overflow-y: auto;
 
       code { white-space: pre-wrap; word-break: break-word; }
@@ -485,6 +486,7 @@ body {
         background: transparent;
         border: none;
         border-radius: 0;
+        padding: 0 12px 12px;
       }
 
       p  { margin: 4px 0; white-space: pre-wrap; word-break: break-word; }
@@ -496,7 +498,6 @@ body {
 
       code {
         font-family: var(--vscode-editor-font-family);
-        font-size: 0.9em;
         background: var(--vscode-textCodeBlock-background);
         padding: 1px 4px;
         border-radius: 3px;
@@ -515,10 +516,10 @@ body {
     }
 
     .tool-content {
-      margin-top: 4px; font-size: 0.85em;
+      margin-top: 4px;
 
       .code-block-wrapper { margin: 4px 0; }
-      .code-block { max-height: 500px; overflow-y: auto; background: transparent; border: none; border-radius: 0; }
+      .code-block { max-height: 500px; overflow-y: auto; background: transparent; border: none; border-radius: 0; padding: 0 12px 12px; }
       /* But when inside a tool-scroll-view, the wrapper handles scrolling —
          disable inner scroll to prevent double scrollbars. */
       .tool-scroll-view .code-block-wrapper .code-block,
@@ -613,60 +614,100 @@ body {
 
   /* ═══ Bash execution blocks ══════════════════════════════ */
 
-  .bash-execution {
-    flex-shrink: 0;
-    border: 1px solid var(--border-color);
-    border-radius: 8px; overflow: hidden;
+  .bash-collapsible {
     margin: 8px 0;
-    background: var(--vscode-textCodeBlock-background);
+  }
 
-    .bash-header {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 12px;
-      background: var(--vscode-sideBar-background);
-      border-bottom: 1px solid var(--border-color);
-      font-weight: 600;
-      font-family: var(--vscode-editor-font-family);
-      font-size: 0.85em;
-      color: var(--accent);
-    }
+  .bash-header {
+    padding: 6px 14px;
+    color: var(--fg-secondary);
+  }
 
-    .bash-output {
-      padding: 8px 12px;
-      font-family: var(--vscode-editor-font-family);
-      font-size: 0.85em;
-      white-space: pre-wrap; word-break: break-word;
-      max-height: 300px; overflow-y: auto;
-      color: var(--fg-secondary);
+  .bash-header-icon { flex-shrink: 0; }
 
-      &.expanded { max-height: none; }
-    }
+  .bash-header-cmd {
+    font-weight: 400;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
-    .bash-footer {
-      padding: 4px 12px; font-size: 0.75em;
-      color: var(--vscode-descriptionForeground);
-      border-top: 1px solid var(--border-color);
-      background: var(--vscode-sideBar-background);
-      display: flex; align-items: center; gap: 8px;
+  .bash-arrow {
+    margin-left: auto;
+    font-size: 0.7em;
+    flex-shrink: 0;
+  }
 
-      .exit-code {
-        font-weight: 600;
+  .bash-body {
+    border-top: 1px solid var(--border-color);
+  }
 
-        &.error { color: var(--vscode-errorForeground); }
-      }
+  .bash-output {
+    padding: 8px 12px;
+    font-family: var(--vscode-editor-font-family);
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 300px; overflow-y: auto;
+    color: var(--fg-secondary);
 
-      .cancel-hint { opacity: 0.6; }
+    &.expanded { max-height: none; }
+  }
 
-      .bash-spinner {
-        display: inline-block;
-        width: 10px; height: 10px;
-        border: 2px solid var(--vscode-descriptionForeground);
-        border-top-color: transparent;
-        border-radius: 50%;
-        animation: think-spin 0.8s linear infinite;
-        vertical-align: middle;
-      }
-    }
+  /* ── Code collapsible (AI-generated code blocks) ── */
+
+  .code-collapsible {
+    margin: 8px 0;
+  }
+
+  .code-collapsible-header {
+    padding: 6px 14px;
+    color: var(--fg-secondary);
+  }
+
+  .code-collapsible-icon { flex-shrink: 0; }
+  .code-collapsible-body.collapsed { display: none; }
+  .code-collapsible-body .code-block-wrapper {
+    margin: 4px 8px 8px;
+    position: relative;
+  }
+  .code-collapsible-body .code-block-wrapper .code-block {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0 12px 12px;
+  }
+  .code-collapsible-body .code-block-wrapper .code-block-header {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--vscode-sideBar-background);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 8px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 1;
+    font-size: 0.8em;
+  }
+  .code-collapsible-body .code-block-wrapper:hover .code-block-header {
+    opacity: 1;
+  }
+  .code-collapsible-body .code-lang-label { display: none; }
+  .code-collapsible-body .code-copy-btn {
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
+    border: none;
+    padding: 2px 6px;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-family: inherit;
+    border-radius: 3px;
+  }
+  .code-collapsible-body .code-copy-btn:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+    color: var(--vscode-button-secondaryForeground);
   }
 
   /* ═══ Compaction summary ═════════════════════════════════ */

@@ -270,7 +270,16 @@ function postProcessMarkedHTML(html: string): string {
 
 export function renderCodeBlockHTML(code: string, lang: string): string {
   const cb = new CodeBlock({ code, lang, showHeader: true, showCopy: true });
-  return cb.el.outerHTML;
+  const bodyHtml = cb.el.outerHTML;
+  const label = lang || "code";
+  return '<div class="code-collapsible">'
+    + '<div class="code-collapsible-header">'
+    + '<span class="code-collapsible-icon">&lt;/&gt;</span>'
+    + '<span class="code-collapsible-label">' + label + '</span>'
+    + '<span class="code-collapsible-arrow">&#x25BC;</span>'
+    + '</div>'
+    + '<div class="code-collapsible-body">' + bodyHtml + '</div>'
+    + '</div>';
 }
 
 export function renderFileContent(content: string, lang: string): string {

@@ -233,3 +233,45 @@ fontInput?.addEventListener("input", () => {
   applyFontSize(size);
   window.__vscode.postMessage({ type: "setFontSize", fontSize: size });
 });
+
+// ── Delegated events (for HTML-injected code blocks) ──────
+
+document.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+
+  // Code collapsible toggle
+  const header = target.closest(".code-collapsible-header") as HTMLElement | null;
+  if (header) {
+    const body = header.parentElement?.querySelector(".code-collapsible-body") as HTMLElement | null;
+    const arrow = header.querySelector(".code-collapsible-arrow") as HTMLElement | null;
+    if (body && arrow) {
+      const collapsed = body.classList.toggle("collapsed");
+      arrow.textContent = collapsed ? "▶" : "▼";
+    }
+    return;
+  }
+
+  // Bash collapsible toggle
+  const bashHeader = target.closest(".bash-header") as HTMLElement | null;
+  if (bashHeader) {
+    const body = bashHeader.parentElement?.querySelector(".bash-body") as HTMLElement | null;
+    const arrow = bashHeader.querySelector(".bash-arrow") as HTMLElement | null;
+    if (body && arrow) {
+      const hidden = body.style.display === "none";
+      body.style.display = hidden ? "" : "none";
+      arrow.textContent = hidden ? "▲" : "▼";
+    }
+    return;
+  }
+
+  // Copy button in AI-generated code blocks
+  const copyBtn = target.closest(".code-copy-btn") as HTMLElement | null;
+  if (copyBtn) {
+    const pre = copyBtn.closest("pre") as HTMLElement | null;
+    if (pre) {
+      navigator.clipboard.writeText(pre.textContent || "");
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy"; }, 2000);
+    }
+  }
+});
