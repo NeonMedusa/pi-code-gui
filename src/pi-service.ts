@@ -787,10 +787,15 @@ export class PiService {
 
     // ── Step 12: Clear previous chat and send initial message history ──
     this.emit({ type: "sessionReset" });
-    const hasEntries = (this.sessionManager?.getEntries?.()?.length ?? 0) > 0;
-    this.emit({ type: "batch-start", data: { hasEntries } });
-    await this.sendInitialMessages();
-    this.emit({ type: "batch-end", data: { hasEntries } });
+    const allEntries2 = this.sessionManager?.getEntries?.() ?? [];
+    const total2 = allEntries2?.length ?? 0;
+    const hasEntries2 = total2 > 0;
+    const initialLimit2 = 50;
+    const from2 = Math.max(0, total2 - initialLimit2);
+    const loaded2 = Math.min(initialLimit2, total2);
+    this.emit({ type: "batch-start", data: { hasEntries: hasEntries2, totalEntries: total2, loadedCount: loaded2 } });
+    await this.sendInitialMessages(undefined, from2, loaded2);
+    this.emit({ type: "batch-end", data: { hasEntries: hasEntries2 } });
 
     this.reportStatus();
     try {
@@ -1048,34 +1053,36 @@ export class PiService {
   }
 
   /** Send existing session messages to the webview on initial load (or after reload). */
-  async sendInitialMessages(emitFn?: (event: PiServiceEvent) => void): Promise<void> {
+  async sendInitialMessages(emitFn?: (event: PiServiceEvent) => void, start?: number, limit?: number): Promise<void> {
     // Build session context from the session manager
     const emit = emitFn ?? ((e: PiServiceEvent): void => { this.emit(e); });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let entries: any[];
+    let allEntries: any[];
     try {
-      entries = this.sessionManager.getEntries();
-      piLog(`sendInitialMessages: ${entries?.length ?? 0} entries`);
+      allEntries = this.sessionManager.getEntries();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       piWarn(`sendInitialMessages: getEntries failed: ${e.message}`);
       return;
     }
-    if (!entries || entries.length === 0) { return; }
+    if (!allEntries || allEntries.length === 0) { return; }
 
-    // Pre-index tool results by call ID (O(n) instead of O(n²) .find() per entry)
+    // Determine range
+    const total = allEntries.length;
+    const from = start !== undefined ? Math.max(0, Math.min(start, total - 1)) : 0;
+    const count = limit !== undefined ? Math.min(limit, total - from) : total;
+    const entries = allEntries.slice(from, from + count);
+    piLog(`sendInitialMessages: ${count}/${total} entries (from=${from})`);
+
+    // Pre-index tool results by call ID
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const toolResultsById = new Map<string, any>();
-    for (const e of entries) {
+    for (const e of allEntries) {
       if (e.type === "message" && e.message?.role === "toolResult") {
         toolResultsById.set(e.message.toolCallId, e);
       }
     }
 
-    // Replay entries top-down (oldest first), yielding to the event loop
-    // between each entry.  This guarantees correct visual order (oldest at
-    // top, newest at bottom) and prevents the synchronous DOM flood that
-    // would crash the extension host on large sessions.
     const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
     for (let i = 0; i < entries.length; i++) {

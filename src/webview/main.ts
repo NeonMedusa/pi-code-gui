@@ -53,6 +53,14 @@ state.chatContainer.addEventListener("scroll", () => {
       state.chatContainer.clientHeight <
     threshold;
   state.hasScrolledUp = !atBottom;
+
+  // Lazy load: detect scroll-to-top
+  if (!state._inBatch && !state._isLoadingMore &&
+      state._loadedUpTo < state._totalEntries &&
+      state.chatContainer.scrollTop < threshold) {
+    state._isLoadingMore = true;
+    window.__vscode.postMessage({ type: "loadMoreMessages" });
+  }
 });
 
 document.addEventListener("visibilitychange", () => {

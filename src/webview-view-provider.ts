@@ -10,6 +10,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
   private _tabInitialized = false;
   private _tabStreaming = false;
   private _tabSummary: string | null = null;
+  private _sidebarLoadedUpTo = 0;
 
   constructor(private context: vscode.ExtensionContext) {}
 
@@ -151,6 +152,10 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
               const result = await this._piService.resumeSession(message.path);
               this.postMessage({ type: "resumeResult", data: result });
             }
+            break;
+
+          case "loadMoreMessages":
+            void this.handleLoadMoreMessages();
             break;
 
           case "listSessions":
@@ -307,10 +312,14 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
       // with batch wrapping so the webview suppresses scroll during replay.
       var pm = (event: any) => this.postMessage(event);
       pm({ type: "sessionReset" });
-      var entries = piService.sessionManagerInstance?.getEntries?.() ?? [];
-      pm({ type: "batch-start", data: { hasEntries: entries.length > 0 } });
-      void piService.sendInitialMessages(pm).then(function () {
-        pm({ type: "batch-end", data: { hasEntries: entries.length > 0 } });
+      var entries2 = piService.sessionManagerInstance?.getEntries?.() ?? [];
+      var total3 = entries2.length;
+      var initialLimit3 = Math.min(50, total3);
+      var from3 = Math.max(0, total3 - initialLimit3);
+      this._sidebarLoadedUpTo = initialLimit3;
+      pm({ type: "batch-start", data: { hasEntries: initialLimit3 > 0, totalEntries: total3, loadedCount: initialLimit3 } });
+      void piService.sendInitialMessages(pm, from3, initialLimit3).then(function () {
+        pm({ type: "batch-end", data: { hasEntries: initialLimit3 > 0 } });
       });
     }
   }
@@ -361,6 +370,30 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
       text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
     return text;
+  }
+
+  /** Load older session messages (triggered by scrolling to top in sidebar webview). */
+  private async handleLoadMoreMessages(): Promise<void> {
+    const ps = this._piService;
+    if (!ps) { return; }
+    const allEntries = ps.sessionManagerInstance?.getEntries?.() ?? [];
+    const total = allEntries?.length ?? 0;
+    if (this._sidebarLoadedUpTo >= total) { return; }
+    const remaining = total - this._sidebarLoadedUpTo;
+    const count = Math.min(50, remaining);
+    const from = Math.max(0, total - this._sidebarLoadedUpTo - count);
+    if (count <= 0) { return; }
+    this._sidebarLoadedUpTo += count;
+    this.postMessage({
+      type: "batch-start",
+      data: { hasEntries: true, prepend: true, totalEntries: total, loadedCount: this._sidebarLoadedUpTo },
+    });
+    await ps.sendInitialMessages(
+      (event) => this.postMessage(event),
+      from,
+      count,
+    );
+    this.postMessage({ type: "batch-end", data: { hasEntries: true } });
   }
 
   private getWebviewContent(webview: vscode.Webview): string {

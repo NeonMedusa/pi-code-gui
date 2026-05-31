@@ -701,36 +701,79 @@ export function handleStatus(data: any) {
 
 export function handleBatchStart(data: any) {
     state._inBatch = true;
+    state._batchPrepend = !!data.prepend;
+    console.log("[pi] batch-start prepend=" + state._batchPrepend + " loaded=" + data.loadedCount + "/" + data.totalEntries);
+    if (data.totalEntries !== undefined) {
+      state._totalEntries = data.totalEntries;
+    }
+    if (data.loadedCount !== undefined) {
+      state._loadedUpTo = data.loadedCount;
+    }
     if (data.hasEntries) {
       hideWelcome();
-      addLoadingIndicator();
-      // Freeze chat container during replay: hide scrollbar, disable
-      // interaction so invisible elements don't flicker the cursor.
-      state.chatContainer.style.overflow = "hidden";
-      state.chatContainer.style.pointerEvents = "none";
+      if (!data.prepend) {
+        addLoadingIndicator();
+        // Freeze only during initial load (hidden replay)
+        state.chatContainer.style.overflow = "hidden";
+        state.chatContainer.style.pointerEvents = "none";
+      }
     }
-    document.body.classList.add("no-animate");
+    if (state._batchPrepend) {
+      // Insert sentinel at the end — new content appends after it.
+      var sentinel = document.createElement("div");
+      sentinel.style.display = "none";
+      state.chatContainer.appendChild(sentinel);
+      state._batchFragment = sentinel as any;
+    } else {
+      document.body.classList.add("no-animate");
+    }
   }
 
 export function handleBatchEnd(data: any) {
     state._inBatch = false;
-    // Restore container, then scroll to bottom and reveal.
     state.chatContainer.style.overflow = "";
     state.chatContainer.style.pointerEvents = "";
-    requestAnimationFrame(function () {
+    if (state._batchPrepend && state._batchFragment) {
+      var container = state.chatContainer;
+      var sentinel = state._batchFragment as any;
+      var firstOld = container.firstChild as HTMLElement | null;
+      // Collect new content into a fragment, then insert all at once
+      var frag = document.createDocumentFragment();
+      var next = sentinel.nextSibling;
+      while (next) {
+        var current = next;
+        next = next.nextSibling;
+        frag.appendChild(current);
+      }
+      sentinel.remove();
+      state._batchFragment = null;
+      if (frag.childElementCount > 0 && firstOld && firstOld.parentNode) {
+        container.insertBefore(frag, container.firstChild);
+        container.scrollTop = firstOld.offsetTop;
+      }
+    }
+    if (state._batchPrepend) {
+      state._batchPrepend = false;
+      state._isLoadingMore = false;
+      document.body.classList.remove("no-animate");
+      removeLoadingIndicator();
+    } else {
+      // Normal initial load: scroll to bottom and reveal
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
-          var container = state.chatContainer;
-          if (container.lastElementChild) {
-            container.lastElementChild.scrollIntoView({ block: "end", behavior: "instant" });
-          } else {
-            container.scrollTop = container.scrollHeight;
-          }
-          document.body.classList.remove("no-animate");
-          removeLoadingIndicator();
+          requestAnimationFrame(function () {
+            var container = state.chatContainer;
+            if (container.lastElementChild) {
+              container.lastElementChild.scrollIntoView({ block: "end", behavior: "instant" });
+            } else {
+              container.scrollTop = container.scrollHeight;
+            }
+            document.body.classList.remove("no-animate");
+            removeLoadingIndicator();
+          });
         });
       });
-    });
+    }
   }
 
 export function handleQueueUpdate(data: any) {

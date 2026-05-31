@@ -16,6 +16,8 @@ export class PiWebviewPanel {
   private _tabInitialized = false;
   private _tabStreaming = false;
   private _tabSummary: string | null = null;
+  /** Tracks how many entries have been loaded for lazy-scroll */
+  private _loadedUpTo = 0;
 
   /** Callback invoked when the panel is disposed (VS Code tab closed) */
   private _onDispose: PanelDisposeCallback | null = null;
@@ -228,6 +230,10 @@ export class PiWebviewPanel {
           case "clearQueue":
             await this.piService.clearQueue();
             break;
+
+          case "loadMoreMessages":
+            void this.handleLoadMoreMessages();
+            break;
         }
       },
       undefined,
@@ -240,6 +246,11 @@ export class PiWebviewPanel {
     this.cleanupPiListener();
     this.piCleanup = this.piService.onEvent((event: PiServiceEvent) => {
       this.postMessage(event);
+
+      // Track lazy load state from batch metadata
+      if (event.type === "batch-start" && event.data?.loadedCount !== undefined) {
+        this._loadedUpTo = event.data.loadedCount;
+      }
 
       // Capture first user input for tab title summary.
       // Only generate if the session does NOT already have a stored name
@@ -555,6 +566,30 @@ export class PiWebviewPanel {
     } else if (picked.label.includes("Context budget")) {
       await this.triggerContextBudgetPicker();
     }
+  }
+
+  /** Load older session messages (triggered by scrolling to top in webview). */
+  private async handleLoadMoreMessages(): Promise<void> {
+    const ps = this.piService;
+    const allEntries = ps.sessionManagerInstance?.getEntries?.() ?? [];
+    const total = allEntries?.length ?? 0;
+    const loadedCount = Math.min(50, total - (this._loadedUpTo ?? 0));
+    if (loadedCount <= 0) { return; }
+    const from = Math.max(0, total - loadedCount - 50);
+    const count = Math.min(50, total - from);
+    if (count <= 0) { return; }
+    const hasEntries = count > 0;
+    this._loadedUpTo = (this._loadedUpTo ?? 0) + count;
+    this.postMessage({
+      type: "batch-start",
+      data: { hasEntries: true, prepend: true, totalEntries: total, loadedCount: this._loadedUpTo },
+    });
+    await ps.sendInitialMessages(
+      (event) => this.postMessage(event),
+      from,
+      count,
+    );
+    this.postMessage({ type: "batch-end", data: { hasEntries } });
   }
 
   dispose(): void {

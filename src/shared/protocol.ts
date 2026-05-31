@@ -257,7 +257,7 @@ const ExtensionToWebviewSchema = z.discriminatedUnion("type", [
   // Batch replay
   z.object({
     type: z.literal("batch-start"),
-    data: z.object({ hasEntries: z.boolean().optional() }).optional(),
+    data: z.object({ hasEntries: z.boolean().optional(), prepend: z.boolean().optional(), totalEntries: z.number().optional(), loadedCount: z.number().optional() }).optional(),
   }),
   z.object({
     type: z.literal("batch-end"),
@@ -388,6 +388,7 @@ const WebviewToExtensionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("clearQueue") }),
   z.object({ type: z.literal("resendUserMessage"), text: z.string() }),
   z.object({ type: z.literal("extension_ui_response"), id: z.string(), value: z.unknown() }),
+  z.object({ type: z.literal("loadMoreMessages") }),
 ]);
 
 // ═══ Derived TypeScript types ═════════════════════════════

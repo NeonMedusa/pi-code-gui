@@ -16,6 +16,14 @@ export interface AppState {
   _batchFragment: DocumentFragment | null;
   /** Original chatContainer.appendChild, saved during batch */
   _batchAppend: ((el: Node) => Node) | null;
+  /** Whether we're prepending older messages (lazy load) */
+  _batchPrepend: boolean;
+  /** Index of the oldest loaded entry (total - loadedCount) */
+  _loadedUpTo: number;
+  /** Total entries available in the session */
+  _totalEntries: number;
+  /** Prevent duplicate load requests */
+  _isLoadingMore: boolean;
 
   // ── DOM element references (current streaming state)
   currentAssistantEl: HTMLElement | null;
@@ -126,6 +134,10 @@ export const state: AppState = {
   _inBatch: false,
   _batchFragment: null,
   _batchAppend: null,
+  _batchPrepend: false,
+  _loadedUpTo: 0,
+  _totalEntries: 0,
+  _isLoadingMore: false,
 
   currentAssistantEl: null,
   currentThinkingEl: null,
