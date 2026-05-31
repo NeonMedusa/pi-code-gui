@@ -304,7 +304,14 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
         },
       });
       // Replay existing session entries to the sidebar webview
-      void piService.sendInitialMessages((event) => this.postMessage(event));
+      // with batch wrapping so the webview suppresses scroll during replay.
+      var pm = (event: any) => this.postMessage(event);
+      pm({ type: "sessionReset" });
+      var entries = piService.sessionManager?.getEntries?.() ?? [];
+      pm({ type: "batch-start", data: { hasEntries: entries.length > 0 } });
+      void piService.sendInitialMessages(pm).then(function () {
+        pm({ type: "batch-end", data: { hasEntries: entries.length > 0 } });
+      });
     }
   }
 

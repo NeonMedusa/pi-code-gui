@@ -701,18 +701,22 @@ export function handleStatus(data: any) {
 
 export function handleBatchStart(data: any) {
     state._inBatch = true;
-    // If restoring history, hide state.welcome immediately — no flash
-    if (data.hasEntries) { hideWelcome(); }
+    if (data.hasEntries) {
+      hideWelcome();
+      addLoadingIndicator();
+      // Freeze chat container during replay: hide scrollbar, disable
+      // interaction so invisible elements don't flicker the cursor.
+      state.chatContainer.style.overflow = "hidden";
+      state.chatContainer.style.pointerEvents = "none";
+    }
     document.body.classList.add("no-animate");
   }
 
 export function handleBatchEnd(data: any) {
     state._inBatch = false;
-    document.body.classList.remove("no-animate");
-    // Force-scroll to bottom after batch replay.  Triple-rAF ensures
-    // layout has settled (highlight.js code blocks, syntax spans, etc.)
-    // before we read scrollHeight.  Falls back to scrollIntoView which
-    // triggers a layout pass if needed.
+    // Restore container, then scroll to bottom and reveal.
+    state.chatContainer.style.overflow = "";
+    state.chatContainer.style.pointerEvents = "";
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
@@ -722,6 +726,8 @@ export function handleBatchEnd(data: any) {
           } else {
             container.scrollTop = container.scrollHeight;
           }
+          document.body.classList.remove("no-animate");
+          removeLoadingIndicator();
         });
       });
     });
@@ -887,6 +893,25 @@ export function addWorkingIndicator(): void {
 
 export function removeWorkingIndicator(): void {
     var el = document.getElementById("working-indicator");
+    if (el) {
+      if (el._spinnerInterval) {clearInterval(el._spinnerInterval);}
+      el.remove();
+    }
+  }
+
+export function addLoadingIndicator(): void {
+    var existing = document.getElementById("loading-indicator");
+    if (existing) {return;}
+    var el = document.createElement("div");
+    el.id = "loading-indicator";
+    el.style.cssText = "flex:1; display:flex; align-items:center; justify-content:center; font-size: 1.5em; color: var(--vscode-descriptionForeground);";
+    el.textContent = "Loading...";
+    // Insert before chat container so it's visible (outside no-animate's scope)
+    state.chatContainer.parentNode?.insertBefore(el, state.chatContainer);
+  }
+
+export function removeLoadingIndicator(): void {
+    var el = document.getElementById("loading-indicator");
     if (el) {
       if (el._spinnerInterval) {clearInterval(el._spinnerInterval);}
       el.remove();

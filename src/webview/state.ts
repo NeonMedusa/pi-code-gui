@@ -12,6 +12,10 @@ export interface AppState {
   isCompacting: boolean;
   isRetrying: boolean;
   _inBatch: boolean;
+  /** DocumentFragment collecting DOM nodes during batch replay */
+  _batchFragment: DocumentFragment | null;
+  /** Original chatContainer.appendChild, saved during batch */
+  _batchAppend: ((el: Node) => Node) | null;
 
   // ── DOM element references (current streaming state)
   currentAssistantEl: HTMLElement | null;
@@ -120,6 +124,8 @@ export const state: AppState = {
   isCompacting: false,
   isRetrying: false,
   _inBatch: false,
+  _batchFragment: null,
+  _batchAppend: null,
 
   currentAssistantEl: null,
   currentThinkingEl: null,

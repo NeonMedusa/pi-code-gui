@@ -208,6 +208,7 @@ export function resetChat() {
 }
 
 export function scrollToBottom(): void {
+  if (state._inBatch) { return; }
   if (!state.hasScrolledUp) {
     requestAnimationFrame(function () {
       state.chatContainer.scrollTop = state.chatContainer.scrollHeight;
