@@ -94,9 +94,9 @@ body {
         border: 1px solid var(--border-color);
         padding: 8px 14px;
         border-radius: 8px;
-        max-width: 80%;
         font-weight: 400;
-        display: inline-block;
+        overflow-wrap: break-word;
+        word-break: break-word;
       }
     }
 
@@ -107,6 +107,8 @@ body {
       .message-content {
         padding: 4px 0 0;
         line-height: 1.6;
+        overflow-wrap: break-word;
+        word-break: break-word;
 
         /* ── Rich content inside assistant messages ────── */
         p  { margin: 2px 0; }

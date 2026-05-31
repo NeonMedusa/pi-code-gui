@@ -359,8 +359,11 @@ export function handleChatMessage(data: any) {
     }
     var mc = el.querySelector(".message-content");
     if (mc) {
-      // Use block rendering for user messages (one-shot, no streaming)
-      if (state._markedAvailable) {
+      if (data.role === "user") {
+        // User messages: plain text, no markdown rendering
+        mc.innerHTML = escapeHtml(data.content).replace(/\n/g, '<br>');
+      } else if (state._markedAvailable) {
+        // Assistant messages: full markdown rendering
         var tokens = marked.lexer(data.content);
         for (var ti = 0; ti < tokens.length; ti++) {
           mc.appendChild(renderBlock(tokens[ti]));
