@@ -614,8 +614,8 @@ export class PiService {
         agentDir: getAgentDir ? getAgentDir() : undefined,
         // Custom system prompt with VS Code context
         systemPromptOverride: () => buildSystemPrompt(),
-        // Prevent DefaultResourceLoader from appending default append files
-        appendSystemPromptOverride: () => [],
+        // Preserve SDK default append file discovery (.pi/APPEND_SYSTEM.md)
+        appendSystemPromptOverride: (base: string[]) => base,
         // Inject virtual context files with project-specific guidelines
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         agentsFilesOverride: (current: any) => ({
