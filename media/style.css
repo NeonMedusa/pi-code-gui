@@ -1571,6 +1571,16 @@ body {
   text-align: right;
 }
 
+.setting-select {
+  flex: 1;
+  min-width: 0;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border);
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
 .setting-unit {
   font-size: 11px;
   color: var(--fg-secondary);

@@ -648,12 +648,13 @@ export const bashToolRenderer = {
         statusEl.textContent = isError ? "error" : "done";
         statusEl.className = "tool-status " + (isError ? "error" : "done");
       }
-      // Auto-collapse when done
+      // Auto-collapse when done (unless default is expanded)
       var body = el.querySelector(".bash-body");
       var arrow = el.querySelector(".bash-arrow");
       if (body && arrow) {
-        body.style.display = "none";
-        arrow.textContent = "▼";
+        var keepExpanded = window.__blockDefaults?.bash === "expanded";
+        body.style.display = keepExpanded ? "" : "none";
+        arrow.textContent = keepExpanded ? "▲" : "▼";
       }
       el.setAttribute("data-status", isError ? "error" : "done");
       delete state.bashBlocks[toolCallId];

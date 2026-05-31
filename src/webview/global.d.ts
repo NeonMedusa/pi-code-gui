@@ -50,6 +50,14 @@ interface Window {
   ) => void;
   __vscode: ReturnType<typeof acquireVsCodeApi>;
   morphdom: typeof morphdom;
+  __blockDefaults?: {
+    thinking: string;
+    read: string;
+    write: string;
+    edit: string;
+    code: string;
+    bash: string;
+  };
 }
 
 // Event data shape (from extension host to webview)

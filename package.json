@@ -338,6 +338,42 @@
           "maximum": 30,
           "description": "Override chat font size in px (0 = use editor default)"
         },
+        "pi-code-gui.defaultThinkingState": {
+          "type": "string",
+          "default": "expanded",
+          "enum": ["collapsed", "expanded"],
+          "description": "Default state for thinking blocks"
+        },
+        "pi-code-gui.defaultReadState": {
+          "type": "string",
+          "default": "expanded",
+          "enum": ["collapsed", "expanded"],
+          "description": "Default state for read tool blocks"
+        },
+        "pi-code-gui.defaultWriteState": {
+          "type": "string",
+          "default": "expanded",
+          "enum": ["collapsed", "expanded"],
+          "description": "Default state for write tool blocks"
+        },
+        "pi-code-gui.defaultEditState": {
+          "type": "string",
+          "default": "expanded",
+          "enum": ["collapsed", "expanded"],
+          "description": "Default state for edit tool blocks"
+        },
+        "pi-code-gui.defaultCodeState": {
+          "type": "string",
+          "default": "expanded",
+          "enum": ["collapsed", "expanded"],
+          "description": "Default state for AI-generated code blocks"
+        },
+        "pi-code-gui.defaultBashState": {
+          "type": "string",
+          "default": "collapsed",
+          "enum": ["collapsed", "expanded"],
+          "description": "Default state for bash execution blocks"
+        },
         "pi-code-gui.sessionDir": {
           "type": "string",
           "default": "",

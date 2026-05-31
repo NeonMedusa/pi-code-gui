@@ -94,11 +94,18 @@ export class ToolBlock implements Component<ToolBlockProps> {
       this.statusEl.textContent = props.status;
       this.statusEl.className = "tool-status " + props.status;
 
-      // Auto-collapse when done
+      // Auto-collapse when done (unless per-tool default is expanded)
       if (props.status === "done" || props.status === "error") {
-        this._collapsed = true;
-        this.bodyEl.style.display = "none";
-        this.arrowEl.textContent = "▼";
+        var keepExpanded = (window.__blockDefaults as any)?.[props.toolName] === "expanded";
+        if (keepExpanded) {
+          this._collapsed = false;
+          this.bodyEl.style.display = "";
+          this.arrowEl.textContent = "▲";
+        } else {
+          this._collapsed = true;
+          this.bodyEl.style.display = "none";
+          this.arrowEl.textContent = "▼";
+        }
       }
     }
     if (props.filePath !== undefined) {

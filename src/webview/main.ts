@@ -202,7 +202,17 @@ window.addEventListener("message", (event) => {
   }
 });
 
-// ── Settings (font size) ──────────────────────────────────
+// ── Settings ─────────────────────────────────────────────
+
+let defaultBlockState = {
+  thinking: "expanded",
+  read: "expanded",
+  write: "expanded",
+  edit: "expanded",
+  code: "expanded",
+  bash: "collapsed",
+};
+window.__blockDefaults = defaultBlockState;
 
 // Apply font size via CSS variable
 function applyFontSize(size: number): void {
@@ -219,6 +229,13 @@ function applyFontSize(size: number): void {
 window.addEventListener("message", (event) => {
   const msg = event.data;
   if (msg.type === "settingsUpdate") {
+    if (msg.data.defaultThinkingState) { defaultBlockState.thinking = msg.data.defaultThinkingState; const sel = document.getElementById("setting-thinking-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultThinkingState; }
+    if (msg.data.defaultReadState) { defaultBlockState.read = msg.data.defaultReadState; const sel = document.getElementById("setting-read-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultReadState; }
+    if (msg.data.defaultWriteState) { defaultBlockState.write = msg.data.defaultWriteState; const sel = document.getElementById("setting-write-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultWriteState; }
+    if (msg.data.defaultEditState) { defaultBlockState.edit = msg.data.defaultEditState; const sel = document.getElementById("setting-edit-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultEditState; }
+    if (msg.data.defaultCodeState) { defaultBlockState.code = msg.data.defaultCodeState; const sel = document.getElementById("setting-code-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultCodeState; }
+    if (msg.data.defaultBashState) { defaultBlockState.bash = msg.data.defaultBashState; const sel = document.getElementById("setting-bash-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultBashState; }
+    window.__blockDefaults = defaultBlockState;
     applyFontSize(msg.data.fontSize ?? 0);
   }
 });
@@ -234,6 +251,15 @@ fontInput?.addEventListener("input", () => {
   window.__vscode.postMessage({ type: "setFontSize", fontSize: size });
 });
 
+// Default state dropdowns
+["thinking", "read", "write", "edit", "code", "bash"].forEach((key) => {
+  const el = document.getElementById("setting-" + key + "-state") as HTMLSelectElement | null;
+  el?.addEventListener("change", () => {
+    defaultBlockState[key as keyof typeof defaultBlockState] = el.value;
+    window.__vscode.postMessage({ type: "setDefaultState", key: "default" + key.charAt(0).toUpperCase() + key.slice(1) + "State", value: el.value });
+  });
+});
+
 // ── Delegated events (for HTML-injected code blocks) ──────
 
 document.addEventListener("click", (e) => {
@@ -246,7 +272,7 @@ document.addEventListener("click", (e) => {
     const arrow = header.querySelector(".code-collapsible-arrow") as HTMLElement | null;
     if (body && arrow) {
       const collapsed = body.classList.toggle("collapsed");
-      arrow.textContent = collapsed ? "▶" : "▼";
+      arrow.textContent = collapsed ? "▼" : "▲";
     }
     return;
   }

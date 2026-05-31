@@ -227,8 +227,24 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
             const cfg = vscode.workspace.getConfiguration("pi-code-gui");
             this.postMessage({
               type: "settingsUpdate",
-              data: { fontSize: cfg.get("fontSize") ?? 0 },
+              data: {
+                fontSize: cfg.get("fontSize") ?? 0,
+                defaultThinkingState: cfg.get("defaultThinkingState") ?? "expanded",
+                defaultReadState: cfg.get("defaultReadState") ?? "expanded",
+                defaultWriteState: cfg.get("defaultWriteState") ?? "expanded",
+                defaultEditState: cfg.get("defaultEditState") ?? "expanded",
+                defaultCodeState: cfg.get("defaultCodeState") ?? "expanded",
+                defaultBashState: cfg.get("defaultBashState") ?? "collapsed",
+              },
             });
+            break;
+
+          case "setDefaultState":
+            if (message.key && message.value) {
+              await vscode.workspace
+                .getConfiguration("pi-code-gui")
+                .update(message.key, message.value, vscode.ConfigurationTarget.Global);
+            }
             break;
         }
       },
@@ -405,6 +421,48 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
         <label class="setting-label">Font size</label>
         <input type="number" id="setting-font-size" class="setting-number" min="0" max="30" value="0">
         <span class="setting-unit">px (0 = default)</span>
+      </div>
+      <div class="setting-row">
+        <label class="setting-label">💡 Thinking</label>
+        <select id="setting-thinking-state" class="setting-select">
+          <option value="collapsed">Collapsed</option>
+          <option value="expanded" selected>Expanded</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label class="setting-label">📖 Read</label>
+        <select id="setting-read-state" class="setting-select">
+          <option value="collapsed">Collapsed</option>
+          <option value="expanded" selected>Expanded</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label class="setting-label">✏️ Write</label>
+        <select id="setting-write-state" class="setting-select">
+          <option value="collapsed">Collapsed</option>
+          <option value="expanded" selected>Expanded</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label class="setting-label">🔧 Edit</label>
+        <select id="setting-edit-state" class="setting-select">
+          <option value="collapsed">Collapsed</option>
+          <option value="expanded" selected>Expanded</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label class="setting-label">&lt;/&gt; Code</label>
+        <select id="setting-code-state" class="setting-select">
+          <option value="collapsed">Collapsed</option>
+          <option value="expanded" selected>Expanded</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label class="setting-label">💻 Bash</label>
+        <select id="setting-bash-state" class="setting-select">
+          <option value="collapsed" selected>Collapsed</option>
+          <option value="expanded">Expanded</option>
+        </select>
       </div>
     </div>
   </div>

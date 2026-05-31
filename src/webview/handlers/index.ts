@@ -116,7 +116,7 @@ export function createLiveCard(key: string, customType: string, label: string, c
                          msg.type === "deleteSession";
                          
   // Settings messages
-  var settingsTypes = ["settingsUpdate", "setZoom", "setFontSize", "getSettings"];
+  var settingsTypes = ["settingsUpdate", "setZoom", "setFontSize", "getSettings", "setDefaultState"];
   if (settingsTypes.indexOf(msg.type) >= 0) { skipValidation = true; }
     if (!skipValidation) {
       var vr = validateExtensionToWebview(msg);
@@ -200,6 +200,7 @@ export function createLiveCard(key: string, customType: string, label: string, c
       case "tabChanged":
       case "resumeResult":
       case "settingsUpdate":
+      case "setDefaultState":
         break;
 
       default:

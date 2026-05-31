@@ -83,11 +83,18 @@ export class ThinkingBlock implements Component<ThinkingBlockProps> {
   private updateDisplay(done?: boolean): void {
     if (done) {
       this.spinnerEl.remove();
-      // Done: auto-collapse
-      this.el.classList.add("thinking-collapsed");
-      this._collapsed = true;
+      // Done: auto-collapse unless default is expanded
+      var keepExpanded = window.__blockDefaults?.thinking === "expanded";
+      if (keepExpanded) {
+        this.el.classList.remove("thinking-collapsed");
+        this._collapsed = false;
+        this.arrowEl.textContent = "▲";
+      } else {
+        this.el.classList.add("thinking-collapsed");
+        this._collapsed = true;
+        this.arrowEl.textContent = "▼";
+      }
       this.expandBtn.style.display = "none";
-      this.arrowEl.textContent = "▼";
     } else if (this.contentEl.textContent.length > 0) {
       // Streaming with content: auto-expand
       this.el.classList.remove("thinking-collapsed");
