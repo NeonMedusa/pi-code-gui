@@ -228,13 +228,13 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
             this.postMessage({
               type: "settingsUpdate",
               data: {
-                fontSize: cfg.get("fontSize") ?? 0,
-                defaultThinkingState: cfg.get("defaultThinkingState") ?? "expanded",
-                defaultReadState: cfg.get("defaultReadState") ?? "expanded",
+                fontSize: cfg.get("fontSize") ?? 14,
+                defaultThinkingState: cfg.get("defaultThinkingState") ?? "collapsed",
+                defaultReadState: cfg.get("defaultReadState") ?? "collapsed",
                 defaultWriteState: cfg.get("defaultWriteState") ?? "expanded",
                 defaultEditState: cfg.get("defaultEditState") ?? "expanded",
                 defaultCodeState: cfg.get("defaultCodeState") ?? "expanded",
-                defaultBashState: cfg.get("defaultBashState") ?? "collapsed",
+                defaultBashState: cfg.get("defaultBashState") ?? "expanded",
               },
             });
             break;
@@ -419,7 +419,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
     <div class="sidebar-panel-body">
       <div class="setting-row">
         <label class="setting-label">Font size</label>
-        <input type="number" id="setting-font-size" class="setting-number" min="0" max="30" value="0">
+        <input type="number" id="setting-font-size" class="setting-number" min="0" max="30" value="14">
         <span class="setting-unit">px (0 = default)</span>
       </div>
       <div class="setting-row">

@@ -205,12 +205,12 @@ window.addEventListener("message", (event) => {
 // ── Settings ─────────────────────────────────────────────
 
 let defaultBlockState = {
-  thinking: "expanded",
-  read: "expanded",
+  thinking: "collapsed",
+  read: "collapsed",
   write: "expanded",
   edit: "expanded",
   code: "expanded",
-  bash: "collapsed",
+  bash: "expanded",
 };
 window.__blockDefaults = defaultBlockState;
 
@@ -236,7 +236,7 @@ window.addEventListener("message", (event) => {
     if (msg.data.defaultCodeState) { defaultBlockState.code = msg.data.defaultCodeState; const sel = document.getElementById("setting-code-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultCodeState; }
     if (msg.data.defaultBashState) { defaultBlockState.bash = msg.data.defaultBashState; const sel = document.getElementById("setting-bash-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultBashState; }
     window.__blockDefaults = defaultBlockState;
-    applyFontSize(msg.data.fontSize ?? 0);
+    applyFontSize(msg.data.fontSize ?? 14);
   }
 });
 

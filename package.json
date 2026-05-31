@@ -333,20 +333,20 @@
         },
         "pi-code-gui.fontSize": {
           "type": "number",
-          "default": 0,
+          "default": 14,
           "minimum": 0,
           "maximum": 30,
           "description": "Override chat font size in px (0 = use editor default)"
         },
         "pi-code-gui.defaultThinkingState": {
           "type": "string",
-          "default": "expanded",
+          "default": "collapsed",
           "enum": ["collapsed", "expanded"],
           "description": "Default state for thinking blocks"
         },
         "pi-code-gui.defaultReadState": {
           "type": "string",
-          "default": "expanded",
+          "default": "collapsed",
           "enum": ["collapsed", "expanded"],
           "description": "Default state for read tool blocks"
         },
@@ -370,7 +370,7 @@
         },
         "pi-code-gui.defaultBashState": {
           "type": "string",
-          "default": "collapsed",
+          "default": "expanded",
           "enum": ["collapsed", "expanded"],
           "description": "Default state for bash execution blocks"
         },
