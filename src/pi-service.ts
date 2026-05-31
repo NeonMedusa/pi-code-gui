@@ -785,7 +785,8 @@ export class PiService {
     // ── Step 11: Bind extensions with webview-bridged UIContext ─
     await this.bindExtensionUI();
 
-    // ── Step 12: Send initial message history (like TUI renderInitialMessages) ──
+    // ── Step 12: Clear previous chat and send initial message history ──
+    this.emit({ type: "sessionReset" });
     const hasEntries = (this.sessionManager?.getEntries?.()?.length ?? 0) > 0;
     this.emit({ type: "batch-start", data: { hasEntries } });
     await this.sendInitialMessages();
