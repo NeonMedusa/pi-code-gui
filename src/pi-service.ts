@@ -1148,10 +1148,8 @@ export class PiService {
           data: { summary: entry.summary ?? "", tokensBefore: entry.tokensBefore ?? 0, timestamp: entry.timestamp ?? Date.now(), entryId: entry.id },
         });
       }
-
-      // Yield after every entry so the webview paints incrementally.
-      await yieldTick();
     }
+    await yieldTick();
   }
 
   // ── Agent event → PiServiceEvent translation ────────────

@@ -307,7 +307,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
       // with batch wrapping so the webview suppresses scroll during replay.
       var pm = (event: any) => this.postMessage(event);
       pm({ type: "sessionReset" });
-      var entries = piService.sessionManager?.getEntries?.() ?? [];
+      var entries = piService.sessionManagerInstance?.getEntries?.() ?? [];
       pm({ type: "batch-start", data: { hasEntries: entries.length > 0 } });
       void piService.sendInitialMessages(pm).then(function () {
         pm({ type: "batch-end", data: { hasEntries: entries.length > 0 } });
