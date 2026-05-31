@@ -608,16 +608,16 @@ export const bashToolRenderer = {
       if (data.entryId) { block.setAttribute("data-entry-id", data.entryId); }
       block.setAttribute("data-status", "running");
       var cmd = (data.args?.command as string) || "";
-      if ((cmd as string).length > 120) {cmd = cmd!.slice(0, 120) + "\u2026";}
       block.innerHTML = html`
         <div class="bash-collapsible">
           <div class="bash-header">
             <span class="bash-header-icon">💻</span>
-            <span class="bash-header-cmd">$ ${cmd}</span>
+            <span>bash</span>
             <span class="tool-status running">running</span>
             <span class="bash-arrow">▲</span>
           </div>
           <div class="bash-body">
+            <div class="bash-cmd">$ ${cmd}</div>
             <div class="bash-output"></div>
           </div>
         </div>`;

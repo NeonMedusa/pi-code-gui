@@ -37,7 +37,7 @@ export class ToolBlock implements Component<ToolBlockProps> {
 
     const fp = props.filePath || "";
     this._filePath = fp;
-    const pathDisplay = fp || "...";
+    const pathDisplay = shortPath(fp) || "...";
 
     const toolsIcon: Record<string, string> = { write: "✏️", read: "📖", edit: "🔧" };
     const icon = toolsIcon[props.toolName] || "🛠️";
@@ -111,13 +111,13 @@ export class ToolBlock implements Component<ToolBlockProps> {
     if (props.filePath !== undefined) {
       this._filePath = props.filePath;
       if (this.pathEl) {
-        this.pathEl.textContent = props.filePath || "...";
+        this.pathEl.textContent = shortPath(props.filePath) || "...";
         this.pathEl.setAttribute("data-path", props.filePath || "");
       }
     }
     if (props.pathExtra !== undefined && this.pathEl) {
       const fp = this._filePath || "...";
-      this.pathEl.textContent = fp + props.pathExtra;
+      this.pathEl.textContent = shortPath(fp) + props.pathExtra;
     }
     if (props.entryId) {
       this.el.id = "entry-" + props.entryId;
@@ -166,4 +166,12 @@ export class ToolBlock implements Component<ToolBlockProps> {
   getStatusEl(): HTMLElement {
     return this.statusEl;
   }
+}
+
+/** Extract filename from a full path */
+function shortPath(path: string): string {
+  if (!path) { return ""; }
+  var normalized = path.replace(/\\/g, "/");
+  var parts = normalized.split("/");
+  return parts[parts.length - 1] || path;
 }
