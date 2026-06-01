@@ -839,30 +839,30 @@ body {
   /* ═══ Status bar ══════════════════════════════════════════ */
 
   #pi-status-bar {
-    display: flex; align-items: center; gap: 4px;
-    padding: 5px 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "m  e  btn"
+      "t  u  btn";
+    align-items: center;
+    gap: 0 6px;
+    padding: 4px 16px;
     font-size: 11px;
     color: var(--fg-primary);
-    min-height: 30px;
-    flex-shrink: 0;
     user-select: none;
+    flex-shrink: 0;
 
     .pi-sb-item {
       display: flex; align-items: center; gap: 3px;
       cursor: pointer;
       padding: 1px 5px; border-radius: 3px;
-      white-space: nowrap;
 
       &:hover { background: var(--vscode-list-hoverBackground); }
-
-      &.spacer {
-        flex: 1; cursor: default; pointer-events: none;
-        &:hover { background: none; }
-      }
     }
   }
 
-  #pi-sb-dot { font-size: 0.9em; flex-shrink: 0; }
+
 
   /* ═══ Live panel (extension TUI widgets) ══════════════════ */
 
@@ -1041,14 +1041,22 @@ body {
   }
 
   #abort-button, #queue-button {
-    background: var(--vscode-button-secondaryBackground);
-    color: var(--vscode-button-secondaryForeground);
     border: none; border-radius: 8px;
     padding: 8px 14px;
     cursor: pointer;
     font-size: 0.9em;
     align-self: flex-end;
+  }
 
+  #abort-button {
+    background: #c1272d;
+    color: #fff;
+    &:hover { background: #e03e3e; }
+  }
+
+  #queue-button {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
     &:hover { background: var(--vscode-button-secondaryHoverBackground); }
   }
 

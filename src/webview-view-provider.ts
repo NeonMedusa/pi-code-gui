@@ -425,11 +425,6 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
     <div id="attachment-bar"></div>
     <div id="input-area">
       <textarea id="prompt-input" placeholder="Ask pi to do something..." rows="1" disabled></textarea>
-      <div id="steer-split">
-        <button id="send-button" disabled title="Submit (Enter)">↵</button>
-        <button id="steer-dropdown" class="hidden" title="Switch to Queue">▾</button>
-      </div>
-      <button id="abort-button" class="hidden">■ Stop</button>
     </div>
   </div>
 
@@ -509,11 +504,15 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div id="pi-status-bar">
-    <span id="pi-sb-dot" style="flex-shrink:0; font-weight:700;">○</span>
-    <div class="pi-sb-item" id="pi-sb-model" title="Click to change model">π Pi</div>
-    <div class="pi-sb-item" id="pi-sb-thinking" title="Click to change thinking level">thinking: off</div>
-    <div class="pi-sb-item" id="pi-sb-effort" title="Click to change effort">effort: auto</div>
-    <div class="pi-sb-item" id="pi-sb-usage" title="Click to set context budget" style="margin-left:auto">0%</div>
+    <div class="pi-sb-item" id="pi-sb-model" title="Click to change model" style="grid-area: m;">model: ...</div>
+    <div class="pi-sb-item" id="pi-sb-effort" title="Click to change effort" style="grid-area: e;">effort: auto</div>
+    <div class="pi-sb-item" id="pi-sb-thinking" title="Click to change thinking level" style="grid-area: t;">thinking: off</div>
+    <div class="pi-sb-item" id="pi-sb-usage" title="Click to set context budget" style="grid-area: u;">0%</div>
+    <div id="steer-split" style="grid-area: btn; display: flex; align-items: center; justify-content: flex-end; align-self: center;">
+      <button id="abort-button" class="hidden" style="margin-right: 2px;">■ Stop</button>
+      <button id="send-button" disabled title="Submit (Enter)">↵</button>
+      <button id="steer-dropdown" class="hidden" title="Switch to Queue">▾</button>
+    </div>
   </div>
 
   <div class="user-msg-selector-overlay" id="user-msg-overlay"></div>

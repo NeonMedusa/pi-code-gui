@@ -644,13 +644,12 @@ export function setSbDot(state: string) {
   }
 
 export function sbModelText(modelId: string) {
-    var short = modelId || "Pi";
-    // Shorten known prefixes for compact display
+    var short = modelId || "...";
     if (short.startsWith("anthropic/")) {short = short.slice(10);}
     else if (short.startsWith("openai/")) {short = short.slice(7);}
     else if (short.startsWith("google/")) {short = short.slice(7);}
     if (short.length > 24) {short = short.slice(0, 22) + "\u2026";}
-    return "\u03C0 " + short;
+    return "model: " + short;
   }
 
 export function handleStatusUpdate(data: any) {
