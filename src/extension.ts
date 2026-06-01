@@ -63,7 +63,7 @@ function primarySession(): SessionWindow | undefined {
 }
 
 /** Create a new session (sidebar-only, no webview panel). */
-function createSession(context: vscode.ExtensionContext): SessionWindow {
+function createSession(_context: vscode.ExtensionContext): SessionWindow {
   const id = `session-${++sessionCounter}`;
   const piService = new PiService();
   const sw: SessionWindow = {
@@ -83,14 +83,6 @@ function getGenericSessionLabel(id: string): string {
 }
 
 /** Clean up session when it's closed. */
-function handleSessionDispose(sw: SessionWindow): void {
-  sw.piService.dispose();
-  removeSession(sw);
-  void refreshPastSessionsList();
-  void saveOpenSessionPaths();
-}
-
-
 // ── Activate ───────────────────────────────────────────
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {

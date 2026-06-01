@@ -28,6 +28,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 
     if (this._piService) {
       this.attachService(this._piService);
+      this.updateTitle();
+      this.sendStatus(this._piService);
+      this.replayMessages();
     }
 
     this.setupWebviewHandlers(webviewView);
@@ -267,61 +270,49 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 
   /** Attach a PiService and register as an event listener. */
   attachService(piService: PiService): void {
+    if (this._piService === piService) {
+      // Already listening to this service — just replay messages
+      if (this._view) { this.replayMessages(); }
+      return;
+    }
+    if (this._piService) { this.detachService(); }
     this._piService = piService;
     this._disposables.push({
       dispose: piService.onEvent((event) => this.handleAgentEvent(event)),
     });
     if (this._view) {
       this.updateTitle();
-      const model = piService.model;
-      this.postMessage({
-        type: "status",
-        data: {
-          model: model?.id ?? "loading...",
-          thinkingLevel: piService.thinkingLevel,
-          effort: piService.effort,
-          ready: model !== null,
-        },
-      });
-      // Send initial status-update for context budget / usage
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const stats = (piService as any).getUsageStats?.() ?? {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        cost: 0,
-        contextPercent: null,
-        contextWindow: 0,
-      };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sessionId = (piService as any).sessionId ?? undefined;
-      this.postMessage({
-        type: "status-update",
-        data: {
-          model: piService.model?.id ?? piService.model?.name ?? "pi",
-          thinkingLevel: piService.thinkingLevel,
-          effort: piService.effort,
-          isStreaming: false,
-          sessionId,
-          usage: stats,
-          contextBudget: piService.getContextBudget(),
-        },
-      });
-      // Replay existing session entries to the sidebar webview
-      // with batch wrapping so the webview suppresses scroll during replay.
-      var pm = (event: any) => this.postMessage(event);
-      pm({ type: "sessionReset" });
-      var entries2 = piService.sessionManagerInstance?.getEntries?.() ?? [];
-      var total3 = entries2.length;
-      var initialLimit3 = Math.min(50, total3);
-      var from3 = Math.max(0, total3 - initialLimit3);
-      this._sidebarLoadedUpTo = initialLimit3;
-      pm({ type: "batch-start", data: { hasEntries: initialLimit3 > 0, totalEntries: total3, loadedCount: initialLimit3 } });
-      void piService.sendInitialMessages(pm, from3, initialLimit3).then(function () {
-        pm({ type: "batch-end", data: { hasEntries: initialLimit3 > 0 } });
-      });
+      this.sendStatus(piService);
+      this.replayMessages();
     }
+  }
+
+  /** Send status and replay session messages to the webview. */
+  private replayMessages(): void {
+    var ps = this._piService;
+    if (!ps || !this._view) { return; }
+    var pm = (event: Record<string, unknown>): void => this.postMessage(event);
+    pm({ type: "sessionReset" });
+    var entries = ps.sessionManagerInstance?.getEntries?.() ?? [];
+    var total = entries.length;
+    var initialLimit = Math.min(50, total);
+    var from = Math.max(0, total - initialLimit);
+    this._sidebarLoadedUpTo = initialLimit;
+    pm({ type: "batch-start", data: { hasEntries: initialLimit > 0, totalEntries: total, loadedCount: initialLimit } });
+    void ps.sendInitialMessages(pm, from, initialLimit).then(function () {
+      pm({ type: "batch-end", data: { hasEntries: initialLimit > 0 } });
+    });
+  }
+
+  /** Send current status to the webview. */
+  private sendStatus(piService: PiService): void {
+    if (!this._view) { return; }
+    var model = piService.model;
+    this.postMessage({ type: "status", data: { model: model?.id ?? "loading...", thinkingLevel: piService.thinkingLevel, effort: piService.effort, ready: model !== null } });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    var ps = piService as any;
+    var stats = ps.getUsageStats?.() ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextPercent: null, contextWindow: 0 };
+    this.postMessage({ type: "status-update", data: { model: ps.model?.id ?? ps.model?.name ?? "pi", thinkingLevel: ps.thinkingLevel, effort: ps.effort, isStreaming: false, sessionId: ps.sessionId ?? undefined, usage: stats, contextBudget: ps.getContextBudget() } });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
