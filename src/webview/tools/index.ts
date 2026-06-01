@@ -9,7 +9,7 @@ import {
 } from "../render/engine.js";
 import { highlightCode } from "../highlight.js";
 import { html, safe } from "../render/html.js";
-import { ToolBlock } from "../components/tool-block.js";
+import { ToolBlock, shortPath } from "../components/tool-block.js";
 
 // ── Tool data shapes ─────────────────────────────────────────
 type ToolData = Record<string, unknown> & {
@@ -135,7 +135,7 @@ export function processWriteUpdate(el: ToolEl, text: string) {
         (el as any)._writeState!.rawPath = args.path;
         (el as any)._writeState.lang = getLangFromPath(args.path);
         var pathEl = el.querySelector(".tool-path");
-        if (pathEl) {pathEl.textContent = args.path;}
+        if (pathEl) {pathEl.textContent = shortPath(args.path);}
       }
     } catch (e) {
       // JSON incomplete (mid-stream) — try heuristic extraction of content.
@@ -258,7 +258,7 @@ export const editToolRenderer = {
           // Update edit count in header
           var editLabel = edits.length > 1 ? " (" + edits.length + " edits)" : "";
           var pathEl = el.querySelector(".tool-path");
-          if (pathEl) {pathEl.textContent = (args.path || "...") + editLabel;}
+          if (pathEl) {pathEl.textContent = shortPath(args.path || "...") + editLabel;}
           renderEditPreviews(el, edits);
         }
       } catch (e) {
@@ -432,7 +432,6 @@ export const readToolRenderer = {
           } else {
             var pathEl = el.querySelector(".tool-path");
             if (pathEl && pathEl.textContent) {
-              // Append range to existing path text (strip any old range first)
               var base = pathEl.textContent.replace(/:\d+(-\d+)?$/, "");
               pathEl.textContent = base + rangeLabel;
             }
@@ -754,7 +753,7 @@ export function handleToolStart(data: any) {
       if (newPath && block) {
         var pathEl = block.querySelector(".tool-path");
         if (pathEl && pathEl.textContent === "...") {
-          pathEl.textContent = newPath;
+          pathEl.textContent = shortPath(newPath);
           pathEl.setAttribute("data-path", newPath);
         }
         // Also update internal state so lang/syntax highlighting work

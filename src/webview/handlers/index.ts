@@ -734,10 +734,10 @@ export function handleBatchEnd(data: any) {
     state.chatContainer.style.overflow = "";
     state.chatContainer.style.pointerEvents = "";
     if (state._batchPrepend && state._batchFragment) {
+      // ── Prepend path: insert new content at top, keep viewport ──
       var container = state.chatContainer;
       var sentinel = state._batchFragment as any;
       var firstOld = container.firstChild as HTMLElement | null;
-      // Collect new content into a fragment, then insert all at once
       var frag = document.createDocumentFragment();
       var next = sentinel.nextSibling;
       while (next) {
@@ -751,29 +751,25 @@ export function handleBatchEnd(data: any) {
         container.insertBefore(frag, container.firstChild);
         container.scrollTop = firstOld.offsetTop;
       }
-    }
-    if (state._batchPrepend) {
       state._batchPrepend = false;
       state._isLoadingMore = false;
-      document.body.classList.remove("no-animate");
-      removeLoadingIndicator();
-    } else {
-      // Normal initial load: scroll to bottom and reveal
+      return; // ← EXIT EARLY, never fall through to normal path
+    }
+    // ── Normal initial load: scroll to bottom ──
+    requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
-          requestAnimationFrame(function () {
-            var container = state.chatContainer;
-            if (container.lastElementChild) {
-              container.lastElementChild.scrollIntoView({ block: "end", behavior: "instant" });
-            } else {
-              container.scrollTop = container.scrollHeight;
-            }
-            document.body.classList.remove("no-animate");
-            removeLoadingIndicator();
-          });
+          var container = state.chatContainer;
+          if (container.lastElementChild) {
+            container.lastElementChild.scrollIntoView({ block: "end", behavior: "instant" });
+          } else {
+            container.scrollTop = container.scrollHeight;
+          }
+          document.body.classList.remove("no-animate");
+          removeLoadingIndicator();
         });
       });
-    }
+    });
   }
 
 export function handleQueueUpdate(data: any) {

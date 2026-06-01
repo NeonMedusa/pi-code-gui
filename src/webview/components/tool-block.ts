@@ -169,7 +169,7 @@ export class ToolBlock implements Component<ToolBlockProps> {
 }
 
 /** Extract filename from a full path */
-function shortPath(path: string): string {
+export function shortPath(path: string): string {
   if (!path) { return ""; }
   var normalized = path.replace(/\\/g, "/");
   var parts = normalized.split("/");
