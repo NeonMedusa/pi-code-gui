@@ -75,39 +75,72 @@ type EventListener = (event: PiServiceEvent) => void;
 // ── SDK Resolution ───────────────────────────────────────
 
 export function resolvePiPackagePath(): string {
-  const candidates: string[] = [];
+  const pkgSuffix = path.join("node_modules", "@earendil-works", "pi-coding-agent");
+  const candidates: Set<string> = new Set();
 
-  // Project-local from pi packages (workspace install)
-  candidates.push(path.resolve(".pi/npm/node_modules/@earendil-works/pi-coding-agent"));
+  // 1. Project-local install
+  candidates.add(path.resolve(path.join(".pi", "npm", pkgSuffix)));
 
-  // Global npm / yarn / pnpm / bun locations
-  const home = process.env.HOME || process.env.USERPROFILE || "";
-  if (home) {
-    candidates.push(
-      path.join(home, ".npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
-      path.join(home, ".local/lib/node_modules/@earendil-works/pi-coding-agent"),
-      path.join(home, ".bun", "install", "global", "node_modules", "@earendil-works", "pi-coding-agent"),
-    );
+  // 2. Universal PATH scan — derive global prefixes from $PATH entries
+  const pathEnv = process.env.PATH || "";
+  const separator = process.platform === "win32" ? ";" : ":";
+  const seenPrefixes = new Set<string>();
+  for (const binDir of pathEnv.split(separator)) {
+    if (!binDir) { continue; }
+    let normBin = path.normalize(binDir);
+    if (normBin.endsWith(path.sep)) { normBin = normBin.slice(0, -1); }
+    const prefix = path.dirname(normBin);
+    if (seenPrefixes.has(normBin)) { continue; }
+    seenPrefixes.add(normBin);
+    // Unix layout: prefix/lib/node_modules/...
+    candidates.add(path.join(prefix, "lib", pkgSuffix));
+    // Windows layout: prefix/node_modules/...
+    if (process.platform === "win32") {
+      candidates.add(path.join(prefix, pkgSuffix));
+    }
   }
 
-  // nvm
+  // 3. Windows AppData (npm default on Windows)
+  const appData = process.env.APPDATA || "";
+  if (appData) {
+    candidates.add(path.join(appData, "npm", pkgSuffix));
+  }
+
+  // 4. Legacy hardcoded fallbacks (GUI-launched VS Code may have incomplete PATH)
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  if (home) {
+    candidates.add(path.join(home, ".npm-global", "lib", pkgSuffix));
+    candidates.add(path.join(home, ".local", "lib", pkgSuffix));
+    // bun global install paths
+    candidates.add(path.join(home, ".bun", "install", "global", pkgSuffix));
+    candidates.add(path.join(home, "scoop", "persist", "bun", "install", "global", pkgSuffix));
+    // npm via scoop
+    candidates.add(path.join(home, "scoop", "persist", "nodejs", "bin", pkgSuffix));
+  }
+
+  // 5. pnpm global store (Windows: %LOCALAPPDATA%\pnpm\global\<hash>\node_modules\)
+  const localAppData = process.env.LOCALAPPDATA || "";
+  if (localAppData) {
+    try {
+      const pnpmGlobal = path.join(localAppData, "pnpm", "global");
+      if (fs.existsSync(pnpmGlobal)) {
+        for (const ver of fs.readdirSync(pnpmGlobal)) {
+          candidates.add(path.join(pnpmGlobal, ver, pkgSuffix));
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // 6. nvm
   if (process.env.NVM_DIR) {
     try {
       const versionsDir = path.join(process.env.NVM_DIR, "versions", "node");
       if (fs.existsSync(versionsDir)) {
         for (const version of fs.readdirSync(versionsDir)) {
-          candidates.push(
-            path.join(versionsDir, version, "lib", "node_modules", "@earendil-works", "pi-coding-agent"),
-          );
+          candidates.add(path.join(versionsDir, version, "lib", pkgSuffix));
         }
       }
     } catch (e: unknown) { piWarn(`Non-critical failure (ignored): ${e instanceof Error ? e.message : String(e)}`); }
-  }
-
-  // Windows %APPDATA%\npm
-  const appData = process.env.APPDATA || "";
-  if (appData) {
-    candidates.push(path.join(appData, "npm", "node_modules", "@earendil-works", "pi-coding-agent"));
   }
 
   for (const candidate of candidates) {

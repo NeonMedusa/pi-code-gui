@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
+import * as cp from "node:child_process";
 import { PiService } from "./pi-service.js";
 import { PiChatViewProvider } from "./webview-view-provider.js";
 import type { PiPackageService } from "./pi-package-service.js";
@@ -1071,6 +1072,12 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   const status = await PiService.checkInstall();
 
   if (!status.installed) {
+    // Figure out the right install command for the user's package manager
+    const pm = await detectPm();
+    const installHint = pm === "npm"
+      ? "npm install -g @earendil-works/pi-coding-agent"
+      : pm + " add -g @earendil-works/pi-coding-agent";
+
     chatViewProvider?.postMessage({
       type: "status",
       data: { model: "not installed", thinkingLevel: "off", effort: "auto", ready: false },
@@ -1080,7 +1087,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
       data: {
         message:
           "Pi coding agent SDK is not installed. " +
-          'Click "Install Pi" below or run: npm install -g @earendil-works/pi-coding-agent',
+          `Click "Install Pi" below or run: ${installHint}`,
       },
     });
 
@@ -1259,11 +1266,28 @@ function restoreActiveSession(activePath: string | undefined): void {
 
 // ── Install helper ──────────────────────────────────────
 
+/** Detect the available package manager: bun > pnpm > npm. */
+async function detectPm(): Promise<string> {
+  for (const cmd of ["bun", "pnpm", "npm"]) {
+    try {
+      cp.execSync(`where ${cmd} 2>nul || which ${cmd} 2>/dev/null`, { timeout: 1000 });
+      return cmd;
+    } catch {
+      // not found, try next
+    }
+  }
+  return "npm";
+}
+
 async function installPi(): Promise<void> {
+  const pm = await detectPm();
+  const installCmd = pm === "npm"
+    ? "npm install -g @earendil-works/pi-coding-agent"
+    : pm + " add -g @earendil-works/pi-coding-agent";
   return new Promise((resolve) => {
     const term = vscode.window.createTerminal("Pi Install");
     term.show();
-    term.sendText("npm install -g @earendil-works/pi-coding-agent");
+    term.sendText(installCmd);
     term.sendText(
       'echo "✅ Pi SDK installed! Reload VS Code to use Pi Code Gui."',
     );
