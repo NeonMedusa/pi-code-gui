@@ -1639,7 +1639,7 @@ export class PiService {
     try { this.session.agent.abort(); } catch (e: any) { piWarn(`abort() failed: ${e?.message ?? e}`); }
   }
 
-  /** Resolve a pending interactive dialog (called from webview-panel.ts). */
+  /** Resolve a pending interactive dialog (called from webview). */
   resolveDialog(id: string, value: unknown): void {
     const entry = this._pendingDialogs.get(id);
     if (entry) {

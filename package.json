@@ -382,13 +382,6 @@
       }
     },
     "menus": {
-      "editor/title": [
-        {
-          "command": "pi-code-gui.addSession",
-          "group": "navigation",
-          "when": "resourceScheme != pi"
-        }
-      ],
       "view/item/context": [
         {
           "command": "pi-code-gui.revealEntry",

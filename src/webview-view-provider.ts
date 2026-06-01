@@ -555,6 +555,34 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 
   // ── API for extension.ts ───────────────────────────
 
+  /** Detach the current PiService and clean up its event listener. */
+  detachService(): void {
+    // Dispose only the listener disposables (leave view/webview handlers)
+    const toDispose = this._disposables.filter(function (d) {
+      return d !== null && d !== undefined;
+    });
+    for (var i = 0; i < toDispose.length; i++) {
+      toDispose[i].dispose();
+    }
+    this._disposables = [];
+    this._piService = null;
+    this._sidebarLoadedUpTo = 0;
+    this._tabInitialized = false;
+    this._tabStreaming = false;
+    this._tabSummary = null;
+  }
+
+  /** Switch to a different PiService (called when user clicks another session in the tree). */
+  switchSession(piService: PiService): void {
+    this.detachService();
+    this.attachService(piService);
+  }
+
+  /** Insert a command or file reference into the sidebar chat input. */
+  postCommand(command: string): void {
+    this._view?.webview.postMessage({ type: "insertCommand", command });
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   postMessage(message: any): void {
     this._view?.webview.postMessage(message);
@@ -563,4 +591,6 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
   get visible(): boolean {
     return this._view?.visible ?? false;
   }
+
+  get piService(): PiService | null { return this._piService; }
 }

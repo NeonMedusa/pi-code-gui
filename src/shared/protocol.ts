@@ -4,7 +4,7 @@
 //
 // This file is the single source of truth for every message that
 // crosses the postMessage bridge. Both src/pi-service.ts (extension)
-// and src/webview-panel.ts (webview loader) import from here.
+// and the sidebar webview import from here.
 //
 // All messages are validated at runtime via Zod schemas.
 // TypeScript types are derived from schemas with z.output<typeof S>.
