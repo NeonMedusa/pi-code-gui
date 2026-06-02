@@ -269,20 +269,8 @@ function postProcessMarkedHTML(html: string): string {
 }
 
 export function renderCodeBlockHTML(code: string, lang: string): string {
-  const cb = new CodeBlock({ code, lang, showHeader: true, showCopy: true });
-  const bodyHtml = cb.el.outerHTML;
-  const label = lang || "code";
-  const collapsed = window.__blockDefaults?.code === "collapsed";
-  const arrowEntity = collapsed ? "&#x25BC;" : "&#x25B2;";
-  const bodyClass = collapsed ? ' class="collapsed"' : "";
-  return '<div class="code-collapsible">'
-    + '<div class="code-collapsible-header">'
-    + '<span class="code-collapsible-icon">&lt;/&gt;</span>'
-    + '<span class="code-collapsible-label">' + label + '</span>'
-    + '<span class="code-collapsible-arrow">' + arrowEntity + '</span>'
-    + '</div>'
-    + '<div class="code-collapsible-body' + (collapsed ? ' collapsed' : '') + '">' + bodyHtml + '</div>'
-    + '</div>';
+  const cb = new CodeBlock({ code, lang: lang || "Text", showHeader: true, showCopy: true });
+  return cb.el.outerHTML;
 }
 
 export function renderFileContent(content: string, lang: string): string {

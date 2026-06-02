@@ -55,7 +55,6 @@ interface Window {
     read: string;
     write: string;
     edit: string;
-    code: string;
     bash: string;
   };
 }

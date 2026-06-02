@@ -241,7 +241,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
                 defaultReadState: cfg.get("defaultReadState") ?? "collapsed",
                 defaultWriteState: cfg.get("defaultWriteState") ?? "expanded",
                 defaultEditState: cfg.get("defaultEditState") ?? "expanded",
-                defaultCodeState: cfg.get("defaultCodeState") ?? "expanded",
+
                 defaultBashState: cfg.get("defaultBashState") ?? "expanded",
               },
             });
@@ -472,13 +472,6 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
       <div class="setting-row">
         <label class="setting-label">🔧 Edit</label>
         <select id="setting-edit-state" class="setting-select">
-          <option value="collapsed">Collapsed</option>
-          <option value="expanded" selected>Expanded</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <label class="setting-label">&lt;/&gt; Code</label>
-        <select id="setting-code-state" class="setting-select">
           <option value="collapsed">Collapsed</option>
           <option value="expanded" selected>Expanded</option>
         </select>

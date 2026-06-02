@@ -362,12 +362,6 @@
           "enum": ["collapsed", "expanded"],
           "description": "Default state for edit tool blocks"
         },
-        "pi-code-gui.defaultCodeState": {
-          "type": "string",
-          "default": "expanded",
-          "enum": ["collapsed", "expanded"],
-          "description": "Default state for AI-generated code blocks"
-        },
         "pi-code-gui.defaultBashState": {
           "type": "string",
           "default": "expanded",

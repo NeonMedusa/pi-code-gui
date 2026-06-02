@@ -150,7 +150,7 @@ body {
         }
 
         /* Fallback pre (when code-block-wrapper isn't used) */
-        pre {
+        pre:not(.code-block) {
           background: var(--tool-bg);
           padding: 12px;
           border-radius: 6px;
@@ -224,17 +224,15 @@ body {
 
   .code-block-wrapper {
     margin: 8px 0;
-    position: relative;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 8px;
   }
 
   .code-block {
     margin: 0;
     padding: 12px 12px;
     overflow-x: auto;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
     background: transparent;
-    position: relative;
 
     code {
       display: block;
@@ -244,29 +242,18 @@ body {
     }
   }
 
-  .code-block-wrapper:hover .code-block-header {
-    opacity: 1;
-  }
-
   .code-block-header {
-    position: absolute;
-    top: 6px;
-    right: 6px;
     display: flex;
     align-items: center;
-    gap: 4px;
-    background: var(--vscode-sideBar-background);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 2px 8px;
-    opacity: 0;
-    transition: opacity 0.15s;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: var(--vscode-input-background);
+    border-radius: 8px 8px 0 0;
     font-size: 0.8em;
-    z-index: 1;
   }
 
   .code-lang-label {
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-editor-foreground);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -274,17 +261,18 @@ body {
 
   .code-copy-btn {
     background: transparent;
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-editor-foreground);
     border: none;
     padding: 2px 6px;
     cursor: pointer;
     font-size: 0.85em;
     font-family: inherit;
     border-radius: 3px;
+    margin-left: auto;
 
     &:hover {
       background: var(--vscode-button-secondaryHoverBackground);
-      color: var(--vscode-button-secondaryForeground);
+      color: var(--vscode-button-foreground);
     }
   }
 
@@ -481,7 +469,32 @@ body {
       margin-top: 0;
       max-height: 420px; overflow-y: auto;
 
-      .code-block-wrapper { margin: 4px 0; }
+      .code-block-wrapper {
+        margin: 4px 0;
+        position: relative;
+        background: none;
+        border-radius: 0;
+      }
+      .code-block-wrapper .code-block {
+        border: none;
+        border-radius: 0;
+      }
+      .code-block-wrapper .code-block-header {
+        position: absolute;
+        top: 6px; right: 6px;
+        display: flex; align-items: center; gap: 4px;
+        background: var(--vscode-sideBar-background);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 2px 8px;
+        opacity: 0;
+        transition: opacity 0.15s;
+        z-index: 1;
+        font-size: 0.8em;
+      }
+      .code-block-wrapper:hover .code-block-header {
+        opacity: 1;
+      }
       .code-block {
         max-height: none;
         overflow-y: visible;
@@ -520,7 +533,32 @@ body {
     .tool-content {
       margin-top: 4px;
 
-      .code-block-wrapper { margin: 4px 0; }
+      .code-block-wrapper {
+        margin: 4px 0;
+        position: relative;
+        background: none;
+        border-radius: 0;
+      }
+      .code-block-wrapper .code-block {
+        border: none;
+        border-radius: 0;
+      }
+      .code-block-wrapper .code-block-header {
+        position: absolute;
+        top: 6px; right: 6px;
+        display: flex; align-items: center; gap: 4px;
+        background: var(--vscode-sideBar-background);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 2px 8px;
+        opacity: 0;
+        transition: opacity 0.15s;
+        z-index: 1;
+        font-size: 0.8em;
+      }
+      .code-block-wrapper:hover .code-block-header {
+        opacity: 1;
+      }
       .code-block { max-height: 500px; overflow-y: auto; background: transparent; border: none; border-radius: 0; padding: 0 12px 12px; }
       /* But when inside a tool-scroll-view, the wrapper handles scrolling —
          disable inner scroll to prevent double scrollbars. */
@@ -672,7 +710,7 @@ body {
   .code-collapsible-body.collapsed { display: none; }
   .code-collapsible-body .code-block-wrapper {
     margin: 4px 8px 8px;
-    position: relative;
+    background: rgba(0, 0, 0, 0.15);
   }
   .code-collapsible-body .code-block-wrapper .code-block {
     background: transparent;
@@ -681,38 +719,29 @@ body {
     padding: 0 12px 12px;
   }
   .code-collapsible-body .code-block-wrapper .code-block-header {
-    position: absolute;
-    top: 6px;
-    right: 6px;
     display: flex;
     align-items: center;
-    gap: 4px;
-    background: var(--vscode-sideBar-background);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 2px 8px;
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 1;
+    justify-content: space-between;
+    padding: 4px 12px;
+    background: var(--vscode-input-background);
+    border-radius: 6px 6px 0 0;
     font-size: 0.8em;
-  }
-  .code-collapsible-body .code-block-wrapper:hover .code-block-header {
-    opacity: 1;
   }
   .code-collapsible-body .code-lang-label { display: none; }
   .code-collapsible-body .code-copy-btn {
     background: transparent;
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-editor-foreground);
     border: none;
     padding: 2px 6px;
     cursor: pointer;
     font-size: 0.85em;
     font-family: inherit;
     border-radius: 3px;
+    margin-left: auto;
   }
   .code-collapsible-body .code-copy-btn:hover {
     background: var(--vscode-button-secondaryHoverBackground);
-    color: var(--vscode-button-secondaryForeground);
+    color: var(--vscode-button-foreground);
   }
 
   /* ═══ Compaction summary ═════════════════════════════════ */

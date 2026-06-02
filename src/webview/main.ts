@@ -217,7 +217,6 @@ let defaultBlockState = {
   read: "collapsed",
   write: "expanded",
   edit: "expanded",
-  code: "expanded",
   bash: "expanded",
 };
 window.__blockDefaults = defaultBlockState;
@@ -241,7 +240,7 @@ window.addEventListener("message", (event) => {
     if (msg.data.defaultReadState) { defaultBlockState.read = msg.data.defaultReadState; const sel = document.getElementById("setting-read-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultReadState; }
     if (msg.data.defaultWriteState) { defaultBlockState.write = msg.data.defaultWriteState; const sel = document.getElementById("setting-write-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultWriteState; }
     if (msg.data.defaultEditState) { defaultBlockState.edit = msg.data.defaultEditState; const sel = document.getElementById("setting-edit-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultEditState; }
-    if (msg.data.defaultCodeState) { defaultBlockState.code = msg.data.defaultCodeState; const sel = document.getElementById("setting-code-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultCodeState; }
+
     if (msg.data.defaultBashState) { defaultBlockState.bash = msg.data.defaultBashState; const sel = document.getElementById("setting-bash-state") as HTMLSelectElement | null; if (sel) sel.value = msg.data.defaultBashState; }
     window.__blockDefaults = defaultBlockState;
     applyFontSize(msg.data.fontSize ?? 14);
