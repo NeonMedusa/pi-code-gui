@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
-import * as cp from "node:child_process";
 import { PiService } from "./pi-service.js";
+import { PiWebviewPanel } from "./webview-panel.js";
 import { PiChatViewProvider } from "./webview-view-provider.js";
 import type { PiPackageService } from "./pi-package-service.js";
 import type { PiPackagesTreeProvider } from "./pi-packages-tree-provider.js";
@@ -15,16 +15,32 @@ import type { SessionSummary } from "./types.js";
 interface SessionWindow {
   id: string;
   piService: PiService;
+  webviewPanel: PiWebviewPanel;
   initialized: boolean;
   isStreaming: boolean;
-  /** Cached display label derived from session name */
+  /** Cached display label derived from session name or tab summary */
   label: string;
+  /** Where this session is currently being viewed. */
+  viewMode: "none" | "editor" | "sidebar";
 }
 
 const sessions: SessionWindow[] = [];
 let sessionCounter = 0;
 /** Cached extension context — set once in activate(), used throughout. */
 let extContext: vscode.ExtensionContext | null = null;
+
+/** Close any empty editor groups left from VS Code's webview restoration failure on restart.
+ *  When the extension creates webview panels with unique viewTypes (pi-chat-{random}),
+ *  VS Code saves the editor group layout but can't restore the panels. This leaves empty
+ *  groups. We clean them up here after session restoration is complete.
+ */
+async function closeEmptyEditorGroups(): Promise<void> {
+  for (const group of vscode.window.tabGroups.all) {
+    if (group.tabs.length === 0) {
+      await vscode.window.tabGroups.close(group);
+    }
+  }
+}
 
 /** Persist the set of open session file paths so they can be restored on reload. */
 async function saveOpenSessionPaths(): Promise<void> {
@@ -63,15 +79,26 @@ function primarySession(): SessionWindow | undefined {
   return sessions[0];
 }
 
-/** Create a new session (sidebar-only, no webview panel). */
-function createSession(_context: vscode.ExtensionContext): SessionWindow {
+/** Create a new session window pair */
+function createSessionWindow(context: vscode.ExtensionContext): SessionWindow {
   const id = `session-${++sessionCounter}`;
   const piService = new PiService();
+  const webviewPanel = new PiWebviewPanel(context, piService);
   const sw: SessionWindow = {
-    id, piService,
+    id, piService, webviewPanel,
     initialized: false, isStreaming: false,
     label: getGenericSessionLabel(id),
+    viewMode: "none",
   };
+
+  // Track when this panel becomes active
+  webviewPanel.onActivate = () => setActiveSession(sw);
+
+  // When the webview panel is closed (tab closed):
+  // 1. Save the session to disk
+  // 2. Remove it from open sessions
+  // If saved successfully, it will appear in Past Sessions on next refresh.
+  webviewPanel.onDispose = handlePanelDispose(sw);
 
   sessions.push(sw);
   return sw;
@@ -83,7 +110,20 @@ function getGenericSessionLabel(id: string): string {
   return `Session ${num}`;
 }
 
-/** Clean up session when it's closed. */
+/** Build a dispose handler that saves and removes a session when its panel closes. */
+function handlePanelDispose(sw: SessionWindow): (piService: PiService) => void {
+  return () => {
+    // If the sidebar is still showing this session, keep it alive
+    if (chatViewProvider?.piService === sw.piService) {
+      return;
+    }
+    sw.piService.dispose();
+    removeSession(sw);
+    void refreshPastSessionsList();
+    void saveOpenSessionPaths();
+  };
+}
+
 // ── Activate ───────────────────────────────────────────
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -113,16 +153,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const primary = primarySession();
       if (primary) {
         setActiveSession(primary);
-        chatViewProvider?.switchSession(primary.piService);
+        primary.viewMode = "editor";
+        void primary.webviewPanel.show();
       } else {
-        addSession();
+        addSession(context);
       }
     }),
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.addSession", () => {
-      addSession();
+      addSession(context);
     }),
   );
 
@@ -131,7 +172,72 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const sw = sessions.find((s) => s.id === sessionId);
       if (sw) {
         setActiveSession(sw);
+        if (sw.viewMode === "editor" || sw.viewMode === "sidebar") {
+          sw.viewMode = "editor";
+        }
+        void sw.webviewPanel.show();
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.resumeInSidebar", async (item?: SessionTreeItem | string) => {
+      try {
+        var filePath: string | undefined;
+        if (item instanceof SessionTreeItem) {
+          filePath = item.command?.arguments?.[0] as string | undefined;
+        } else if (typeof item === "string") {
+          filePath = item;
+        }
+        if (!filePath) { return; }
+        // Check if already open
+        var existing = sessions.find(function (s) {
+          return s.piService.sessionFilePath === filePath;
+        });
+        if (existing) {
+          setActiveSession(existing);
+          existing.viewMode = "sidebar";
+          chatViewProvider?.switchSession(existing.piService);
+          vscode.commands.executeCommand("workbench.view.extension.pi-code-gui");
+          return;
+        }
+        const sw = createSessionWindow(context);
+        setActiveSession(sw);
+        sw.viewMode = "sidebar";
+        await initSessionInBackground(context, sw, { openPath: filePath });
         chatViewProvider?.switchSession(sw.piService);
+        sessionTreeProvider?.refresh();
+      } catch (e: unknown) {
+        vscode.window.showErrorMessage(`Resume in sidebar failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.openInSidebar", async (item?: SessionTreeItem | string) => {
+      // Resolve session ID from tree item or string
+      var sessionId: string | undefined;
+      if (item instanceof SessionTreeItem) {
+        sessionId = item.command?.arguments?.[0] as string | undefined;
+      } else if (typeof item === "string") {
+        sessionId = item;
+      }
+      if (!sessionId) { return; }
+      const sw = sessions.find((s) => s.id === sessionId);
+      if (sw) {
+        setActiveSession(sw);
+        if (sw.viewMode === "editor") {
+          sw.webviewPanel.dispose();
+        } else if (sw.viewMode === "sidebar") {
+          vscode.commands.executeCommand("workbench.view.extension.pi-code-gui");
+          return;
+        }
+        sw.viewMode = "sidebar";
+        if (!sw.initialized) {
+          await initSessionInBackground(context, sw);
+        }
+        chatViewProvider?.switchSession(sw.piService);
+        vscode.commands.executeCommand("workbench.view.extension.pi-code-gui");
       }
     }),
   );
@@ -144,12 +250,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.sendSlashCommand", (cmd: string) => {
-      chatViewProvider?.postCommand(cmd);
+      const primary = primarySession();
+      if (primary) { primary.webviewPanel.postCommand(cmd); }
     }),
   );
   context.subscriptions.push(
     vscode.commands.registerCommand("pi-code-gui.referenceFile", (fp: string) => {
-      chatViewProvider?.postCommand(`@${fp}`);
+      const primary = primarySession();
+      if (primary) { primary.webviewPanel.postCommand(`@${fp}`); }
     }),
   );
 
@@ -193,9 +301,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       if (sw && id) {
-        setActiveSession(sw);
-        chatViewProvider?.switchSession(sw.piService);
-        chatViewProvider?.postMessage({ type: "revealEntry", entryId: id, toolCallId: tcId || "" });
+        void sw.webviewPanel.show();
+        sw.webviewPanel.postMessage({ type: "revealEntry", entryId: id, toolCallId: tcId || "" });
       }
     }),
   );
@@ -311,9 +418,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   /** Create a new session window initialized from a forked session file. */
   async function openForkedSession(forkedPath: string): Promise<void> {
-    const newSw = createSession(context);
+    const newSw = createSessionWindow(context);
     setActiveSession(newSw);
-    // sidebar-only (no webview panel);
+    void newSw.webviewPanel.show();
     sessionTreeProvider?.refresh();
 
     await initSessionInBackground(context, newSw, { openPath: forkedPath });
@@ -484,10 +591,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       try {
+        // Check if this session is already open
+        var existing = sessions.find(function (s) {
+          return s.piService.sessionFilePath === resolved;
+        });
+        if (existing) {
+          // Focus existing session
+          setActiveSession(existing);
+          existing.viewMode = "editor";
+          void existing.webviewPanel.show();
+          return;
+        }
         // Create a new session tab (like Add Pi Session) and resume into it
-        const sw = createSession(context);
+        const sw = createSessionWindow(context);
         setActiveSession(sw);
-        // sidebar-only (no webview panel);
+        void sw.webviewPanel.show();
         sessionTreeProvider?.refresh();
         void initSessionInBackground(context, sw, { openPath: resolved });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -618,7 +736,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.showWarningMessage("No active Pi session.");
         return;
       }
-      // sidebar-only (no webview panel);
+      void sw.webviewPanel.show();
       if (await sw.piService.pickModel()) {
         sessionTreeProvider?.refresh();
       }
@@ -633,7 +751,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.showWarningMessage("No active Pi session.");
         return;
       }
-      // sidebar-only (no webview panel);
+      void sw.webviewPanel.show();
       if (await sw.piService.pickThinkingLevel()) {
         sessionTreeProvider?.refresh();
       }
@@ -648,7 +766,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.showWarningMessage("No active Pi session.");
         return;
       }
-      chatViewProvider?.postCommand("/effort");
+      void sw.webviewPanel.show();
+      await sw.webviewPanel.triggerEffortPicker();
     }),
   );
 
@@ -660,12 +779,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.showWarningMessage("No active Pi session.");
         return;
       }
-      chatViewProvider?.postCommand("/contextBudget");
+      void sw.webviewPanel.show();
+      await sw.webviewPanel.triggerContextBudgetPicker();
     }),
   );
 
   // ── Step 3: Create primary session ─────────────────────
-  const primary = createSession(context);
+  const primary = createSessionWindow(context);
 
   // ── Step 3a: Register sidebar webview provider ────────
   chatViewProvider = new PiChatViewProvider(context);
@@ -688,10 +808,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerViewCommand("pi-code-gui.showPackages", "packages");
   registerViewCommand("pi-code-gui.showSettings", "settings");
 
-  // Wire session data callbacks for the sidebar webview
-  chatViewProvider.onGetSessionsTree = () => sendSessionsTree();
-  chatViewProvider.onGetSessionEntries = (sessionId: string) => sendSessionEntries(sessionId);
-
   // ── Step 3b: Register SDK-independent commands ─────
   // These must be registered synchronously so keybindings
   // (Cmd+/, Cmd+L, etc.) work immediately — the async SDK
@@ -711,7 +827,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void restoreAdditionalSessions(context, savedPaths, primary).then(() => {
         restoreActiveSession(savedActivePath);
         void saveOpenSessionPaths();
+      }).finally(() => {
+        // Clean up empty editor groups left from VS Code webview restoration failure
+        void closeEmptyEditorGroups();
       });
+    } else {
+      void closeEmptyEditorGroups();
     }
   });
 
@@ -946,13 +1067,12 @@ async function doUpdatePackage(source: string): Promise<void> {
 
 // ── Add a new session window ──────────────────────────
 
-function addSession(): void {
-  if (!extContext) { return; }
-  const sw = createSession(extContext);
+function addSession(context: vscode.ExtensionContext): void {
+  const sw = createSessionWindow(context);
   setActiveSession(sw);
-  chatViewProvider?.switchSession(sw.piService);
+  void sw.webviewPanel.show();
   sessionTreeProvider?.refresh();
-  void initSessionInBackground(extContext, sw, { fresh: true });
+  void initSessionInBackground(context, sw, { fresh: true });
 }
 
 // ── Early command registration (SDK-independent) ───────
@@ -1042,8 +1162,14 @@ function registerEarlyCommands(context: vscode.ExtensionContext): void {
 
 // ── Initialize a single session ───────────────────────
 
-function ensureTreeProvider(): void {
-  // Tree views removed — sessions are now managed in the sidebar webview.
+function ensureTreeProvider(context: vscode.ExtensionContext): void {
+  if (!sessionTreeProvider) {
+    sessionTreeProvider = new MultiSessionTreeProvider(sessions, context);
+    sessionTreeView = vscode.window.createTreeView("pi-code-gui.sessions", {
+      treeDataProvider: sessionTreeProvider,
+    });
+    context.subscriptions.push(sessionTreeView);
+  }
 }
 
 /**
@@ -1065,7 +1191,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   const fresh = opts?.fresh ?? false;
   const openPath = opts?.openPath;
   // Ensure tree provider exists ASAP so the tree view shows something
-  ensureTreeProvider();
+  ensureTreeProvider(context);
   // Start loading past sessions immediately — runs in parallel with SDK init.
   // This prevents the tree from showing an empty "Past Sessions" header
   // while the SDK loads on slow projects.
@@ -1076,22 +1202,16 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   const status = await PiService.checkInstall();
 
   if (!status.installed) {
-    // Figure out the right install command for the user's package manager
-    const pm = await detectPm();
-    const installHint = pm === "npm"
-      ? "npm install -g @earendil-works/pi-coding-agent"
-      : pm + " add -g @earendil-works/pi-coding-agent";
-
-    chatViewProvider?.postMessage({
+    sw.webviewPanel.postMessage({
       type: "status",
       data: { model: "not installed", thinkingLevel: "off", effort: "auto", ready: false },
     });
-    chatViewProvider?.postMessage({
+    sw.webviewPanel.postMessage({
       type: "error",
       data: {
         message:
           "Pi coding agent SDK is not installed. " +
-          `Click "Install Pi" below or run: ${installHint}`,
+          'Click "Install Pi" below or run: npm install -g @earendil-works/pi-coding-agent',
       },
     });
 
@@ -1119,11 +1239,11 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   }
 
   if (!result.success) {
-    chatViewProvider?.postMessage({
+    sw.webviewPanel.postMessage({
       type: "status",
       data: { model: "init failed", thinkingLevel: "off", effort: "auto", ready: false },
     });
-    chatViewProvider?.postMessage({
+    sw.webviewPanel.postMessage({
       type: "error",
       data: { message: `Pi init failed: ${result.error}` },
     });
@@ -1136,7 +1256,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
       if (action === "Retry") {
         sw.piService.dispose();
         removeSession(sw);
-        addSession();
+        addSession(context);
       }
     }
     sessionTreeProvider?.refresh();
@@ -1152,7 +1272,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   }
 
   // Ensure tree provider is registered (safe to call multiple times)
-  ensureTreeProvider();
+  ensureTreeProvider(context);
 
   // ── Ensure past sessions are loaded (started earlier in parallel with SDK init) ──
   // The event handler calls sessionTreeProvider.refresh() on every pi event,
@@ -1189,7 +1309,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   });
 
   // Notify webview that pi is ready
-  chatViewProvider?.postMessage({
+  sw.webviewPanel.postMessage({
     type: "status",
     data: {
       model: sw.piService.model?.id ?? "ready",
@@ -1200,7 +1320,7 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   });
 
   if (!sessionTreeProvider) {
-    ensureTreeProvider();
+    ensureTreeProvider(context);
   }
   // Use targeted refresh — fires with the specific session item so VS Code
   // updates its label/collapsibleState in-place rather than diffing new
@@ -1249,8 +1369,8 @@ async function restoreAdditionalSessions(
     if (p === primaryPath) { continue; }
     if (!fs.existsSync(p)) { continue; }
 
-    const sw = createSession(context);
-    // sidebar-only (no webview panel);
+    const sw = createSessionWindow(context);
+    void sw.webviewPanel.show();
     sessionTreeProvider?.refresh();
     void initSessionInBackground(context, sw, { openPath: p });
   }
@@ -1262,7 +1382,7 @@ function restoreActiveSession(activePath: string | undefined): void {
   for (const sw of sessions) {
     if (sw.piService.sessionFilePath === activePath) {
       setActiveSession(sw);
-      // sidebar-only (no webview panel);
+      void sw.webviewPanel.show();
       return;
     }
   }
@@ -1270,28 +1390,11 @@ function restoreActiveSession(activePath: string | undefined): void {
 
 // ── Install helper ──────────────────────────────────────
 
-/** Detect the available package manager: bun > pnpm > npm. */
-async function detectPm(): Promise<string> {
-  for (const cmd of ["bun", "pnpm", "npm"]) {
-    try {
-      cp.execSync(`where ${cmd} 2>nul || which ${cmd} 2>/dev/null`, { timeout: 1000 });
-      return cmd;
-    } catch {
-      // not found, try next
-    }
-  }
-  return "npm";
-}
-
 async function installPi(): Promise<void> {
-  const pm = await detectPm();
-  const installCmd = pm === "npm"
-    ? "npm install -g @earendil-works/pi-coding-agent"
-    : pm + " add -g @earendil-works/pi-coding-agent";
   return new Promise((resolve) => {
     const term = vscode.window.createTerminal("Pi Install");
     term.show();
-    term.sendText(installCmd);
+    term.sendText("npm install -g @earendil-works/pi-coding-agent");
     term.sendText(
       'echo "✅ Pi SDK installed! Reload VS Code to use Pi Code Gui."',
     );
@@ -1330,71 +1433,6 @@ async function installPi(): Promise<void> {
  *         refactor done (12 msgs)
  *         ...
  */
-
-// ── Session tree data for sidebar webview ──────────────────
-
-/** Send open and past sessions to the sidebar webview for display. */
-function sendSessionsTree(): void {
-  if (!chatViewProvider) { return; }
-  var open = sessions.map(function (sw: SessionWindow) {
-    var entryCount = 0;
-    try { entryCount = sw.piService.sessionManagerInstance?.getEntries?.().length ?? 0; } catch (_e) { void _e; }
-    return {
-      id: sw.id,
-      label: sw.piService.sessionName ?? sw.label,
-      model: sw.piService.model?.id,
-      entryCount: entryCount,
-    };
-  });
-  chatViewProvider.postMessage({ type: "sessions-tree", data: { open: open, past: [] } });
-  // Load past sessions async
-  var cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
-  PiService.listSessions(cwd).then(function (past) {
-    chatViewProvider?.postMessage({ type: "sessions-tree", data: { open: open, past: past } });
-  }).catch(function (_e) { void _e; });
-}
-
-/** Send entries for a specific session to the sidebar webview. */
-function sendSessionEntries(sessionId: string): void {
-  if (!chatViewProvider) { return; }
-  var sw = sessions.find(function (s) { return s.id === sessionId; });
-  if (!sw) { return; }
-  var entries: Array<{ id: string; type: string; preview: string }> = [];
-  try {
-    var allEntries = sw.piService.sessionManagerInstance?.getEntries?.() ?? [];
-    entries = allEntries.map(function (e: Record<string, unknown>) {
-      var preview = "";
-      var msg = e.message as Record<string, unknown> | undefined;
-      if (e.type === "message" && msg) {
-        if (msg.role === "user") {
-          preview = extractPreview(msg.content);
-        } else if (msg.role === "assistant") {
-          preview = extractPreview(msg.content);
-        } else if (msg.role === "toolResult") {
-          preview = "[tool result]";
-        }
-      } else if (e.type === "compaction") {
-        preview = "[compaction]";
-      }
-      return { id: (e.id as string) || "", type: (e.type as string) || "", preview: preview };
-    });
-  } catch (_e) { void _e; }
-  chatViewProvider.postMessage({ type: "session-entries", data: { sessionId: sessionId, entries: entries } });
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractPreview(content: any): string {
-  if (!content) { return ""; }
-  if (typeof content === "string") { return content.substring(0, 80); }
-  if (Array.isArray(content)) {
-    for (var ci = 0; ci < content.length; ci++) {
-      if (content[ci].type === "text" && content[ci].text) {
-        return content[ci].text.substring(0, 80);
-      }
-    }
-  }
-  return "";
-}
 
 class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeItem | undefined | null | void>();
@@ -1555,7 +1593,7 @@ class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeIte
   private makeSessionItem(sw: SessionWindow): SessionTreeItem {
     // Derive label from session name (via session_info), tab summary (AI-generated), or fall back to "Session N"
     const sessionName = sw.piService.sessionName
-      ?? sw.label
+      ?? sw.webviewPanel.summary
       ?? getGenericSessionLabel(sw.id);
 
     const label = sw.initialized
@@ -1919,7 +1957,7 @@ export async function deactivate(): Promise<void> {
   // Persist open sessions before disposing so we can restore on next activate
   await saveOpenSessionPaths();
   for (const sw of sessions) {
-    // panel-less: dispose handled by sidebar;
+    sw.webviewPanel.dispose();
     sw.piService.dispose();
   }
   sessions.length = 0;

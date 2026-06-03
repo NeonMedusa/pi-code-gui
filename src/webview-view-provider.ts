@@ -504,7 +504,8 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
     <div class="pi-sb-item" id="pi-sb-effort" title="Click to change effort" style="grid-area: e;">effort: auto</div>
     <div class="pi-sb-item" id="pi-sb-thinking" title="Click to change thinking level" style="grid-area: t;">thinking: off</div>
     <div class="pi-sb-item" id="pi-sb-usage" title="Click to set context budget" style="grid-area: u;">0%</div>
-    <div id="steer-split" style="grid-area: btn; display: flex; align-items: center; justify-content: flex-end; align-self: center;">
+    <div class="pi-sb-item" id="pi-sb-settings" title="Settings" style="grid-area: s;">⚙</div>
+    <div id="steer-split", style="grid-area: btn; display: flex; align-items: center; justify-content: flex-end; align-self: center;">
       <button id="abort-button" class="hidden" style="margin-right: 2px;">■ Stop</button>
       <button id="send-button" disabled title="Submit (Enter)">↵</button>
       <button id="steer-dropdown" class="hidden" title="Switch to Queue">▾</button>

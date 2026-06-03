@@ -103,6 +103,14 @@
         "title": "PiGui: Resume Session"
       },
       {
+        "command": "pi-code-gui.openInSidebar",
+        "title": "PiGui: Open Session in Sidebar"
+      },
+      {
+        "command": "pi-code-gui.resumeInSidebar",
+        "title": "PiGui: Resume in Sidebar"
+      },
+      {
         "command": "pi-code-gui.compact",
         "title": "PiGui: Compact Context"
       },
@@ -230,6 +238,11 @@
           "type": "webview",
           "id": "pi-code-gui.chat",
           "name": "Chat"
+        },
+        {
+          "type": "tree",
+          "id": "pi-code-gui.sessions",
+          "name": "Sessions"
         }
       ]
     },
@@ -396,6 +409,17 @@
           "command": "pi-code-gui.forkSession",
           "when": "view == pi-code-gui.sessions && viewItem == pastSessionEntry",
           "group": "2_actions"
+        },
+        {
+          "command": "pi-code-gui.openInSidebar",
+          "when": "view == pi-code-gui.sessions && viewItem == session",
+          "group": "1_open"
+        },
+        {
+          "command": "pi-code-gui.resumeInSidebar",
+          "title": "Resume in Sidebar",
+          "when": "view == pi-code-gui.sessions && viewItem == pastSessionEntry",
+          "group": "1_open"
         },
         {
           "command": "pi-code-gui.compact",

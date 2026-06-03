@@ -872,8 +872,8 @@ body {
     grid-template-columns: 1fr 1fr 1fr;
     grid-template-rows: auto auto;
     grid-template-areas:
-      "m  e  btn"
-      "t  u  btn";
+      "m  e  s  btn"
+      "t  u  .  btn";
     align-items: center;
     gap: 0 6px;
     padding: 4px 16px;
