@@ -136,6 +136,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   initLogger(outputChannel);
   piLog("Pi Code Gui starting...");
 
+  // After extension host restart, workspace folders may not be available yet.
+  // Without this guard, we fall back to process.cwd() which on remote servers
+  // is the server root, loading sessions from the wrong project.
+  if (!vscode.workspace.workspaceFolders?.length) {
+    piLog("Waiting for workspace folders...");
+    await new Promise<void>((resolve) => {
+      const sub = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        if (vscode.workspace.workspaceFolders?.length) {
+          sub.dispose();
+          resolve();
+        }
+      });
+    });
+    piLog(`Workspace ready: ${vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""}`);
+  }
+
   // Catch unhandled rejections/exceptions so we can see what crashes the
   // extension host before it restarts. VS Code restarts the host on
   // unhandled rejections, which orphans webviews and resets tree providers.
@@ -784,10 +800,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
-  // ── Step 3: Create primary session ─────────────────────
-  const primary = createSessionWindow(context);
-
-  // ── Step 3a: Register sidebar webview provider ────────
+  // ── Step 3: Register sidebar webview provider ────────
   chatViewProvider = new PiChatViewProvider(context);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("pi-code-gui.chat", chatViewProvider, {
@@ -796,7 +809,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   // ── Step 3b: Register view/title commands ──────────
-  // These post switchTab messages to the chat webview.
   const registerViewCommand = (cmd: string, tab: string): void => {
     context.subscriptions.push(
       vscode.commands.registerCommand(cmd, () => {
@@ -808,33 +820,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerViewCommand("pi-code-gui.showPackages", "packages");
   registerViewCommand("pi-code-gui.showSettings", "settings");
 
-  // ── Step 3b: Register SDK-independent commands ─────
+  // ── Step 3c: Register SDK-independent commands ─────
   // These must be registered synchronously so keybindings
   // (Cmd+/, Cmd+L, etc.) work immediately — the async SDK
   // init chain in initSessionInBackground can take seconds.
   registerEarlyCommands(context);
 
-  // ── Step 4: Initialize pi SDK asynchronously ───────────
-  // Snapshot saved paths BEFORE initSessionInBackground overwrites them
-  // (saveOpenSessionPaths inside that function writes only the primary session).
-  const savedPaths: string[] = context.workspaceState.get("pi-code-gui.openSessionPaths") ?? [];
+  // ── Step 4: Restore previously open sessions, or create a fresh one ──
+  const savedPaths: string[] = ((context.workspaceState.get("pi-code-gui.openSessionPaths") as string[]) ?? [])
+    .filter((p: string) => fs.existsSync(p));
   const savedActivePath: string | undefined = context.workspaceState.get("pi-code-gui.activeSessionPath") ?? undefined;
 
-  void initSessionInBackground(context, primary).then(() => {
-    if (primary.initialized) {
-      // Connect sidebar provider to the primary session
-      chatViewProvider?.attachService(primary.piService);
-      void restoreAdditionalSessions(context, savedPaths, primary).then(() => {
-        restoreActiveSession(savedActivePath);
-        void saveOpenSessionPaths();
-      }).finally(() => {
-        // Clean up empty editor groups left from VS Code webview restoration failure
-        void closeEmptyEditorGroups();
-      });
-    } else {
-      void closeEmptyEditorGroups();
+  if (savedPaths.length > 0) {
+    // Restore session counter to avoid ID collisions.
+    const savedCounter: number | undefined = context.workspaceState.get("pi-code-gui.sessionCounter");
+    if (savedCounter !== undefined && savedCounter > sessionCounter) {
+      sessionCounter = savedCounter;
     }
-  });
+    // Restore every session that was open, in order.
+    piLog(`Restoring ${savedPaths.length} open sessions...`);
+    var restorePromises: Promise<void>[] = [];
+    for (let i = 0; i < savedPaths.length; i++) {
+      const sw = createSessionWindow(context);
+      if (i === 0) { setActiveSession(sw);
+        chatViewProvider?.attachService(sw.piService);
+      }
+      void sw.webviewPanel.show();
+      restorePromises.push(initSessionInBackground(context, sw, { openPath: savedPaths[i] }));
+    }
+    // Wait for all sessions to initialize before cleaning up
+    void Promise.all(restorePromises).then(function () {
+      restoreActiveSession(savedActivePath);
+      void closeEmptyEditorGroups();
+    });
+  } else {
+    // No saved sessions — create one fresh session
+    const sw = createSessionWindow(context);
+    setActiveSession(sw);
+    void sw.webviewPanel.show();
+    void initSessionInBackground(context, sw, { fresh: true }).then(function () {
+      void closeEmptyEditorGroups();
+    });
+  }
 
   // ── Step 5: Package commands ────────────────────
   registerPackageCommands(context);
@@ -1330,6 +1357,9 @@ async function initSessionInBackground(context: vscode.ExtensionContext, sw: Ses
   await new Promise((resolve) => setTimeout(resolve, 50));
   sessionTreeProvider?.refreshSession(sw);
 
+  // Persist open session list so this session is restored on reload.
+  void saveOpenSessionPaths();
+
   console.log(`Pi Code Gui session ${sw.id} ready`);
 }
 
@@ -1350,32 +1380,6 @@ function removeSession(sw: SessionWindow): void {
  * Restore additional sessions that were open when VS Code was last closed.
  * Called after the primary session finishes initializing on activate().
  */
-async function restoreAdditionalSessions(
-  context: vscode.ExtensionContext,
-  savedPaths: string[],
-  primary: SessionWindow,
-): Promise<void> {
-  if (savedPaths.length <= 1) { return; }
-
-  const primaryPath = primary.piService.sessionFilePath;
-
-  // Restore saved session counter to avoid ID collisions
-  const savedCounter: number | undefined = context.workspaceState.get("pi-code-gui.sessionCounter");
-  if (savedCounter !== undefined && savedCounter > sessionCounter) {
-    sessionCounter = savedCounter;
-  }
-
-  for (const p of savedPaths) {
-    if (p === primaryPath) { continue; }
-    if (!fs.existsSync(p)) { continue; }
-
-    const sw = createSessionWindow(context);
-    void sw.webviewPanel.show();
-    sessionTreeProvider?.refresh();
-    void initSessionInBackground(context, sw, { openPath: p });
-  }
-}
-
 /** Restore which session was focused before reload. */
 function restoreActiveSession(activePath: string | undefined): void {
   if (!extContext || !activePath) { return; }

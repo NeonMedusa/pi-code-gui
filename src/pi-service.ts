@@ -1185,7 +1185,7 @@ export class PiService {
       } else if (entry.type === "compaction") {
         emit({
           type: "compaction-summary-message",
-          data: { summary: entry.summary ?? "", tokensBefore: entry.tokensBefore ?? 0, timestamp: entry.timestamp ?? Date.now(), entryId: entry.id },
+          data: { summary: entry.summary ?? "", tokensBefore: entry.tokensBefore ?? 0, timestamp: this._toTimestamp(entry.timestamp), entryId: entry.id },
         });
       }
     }
@@ -1193,6 +1193,13 @@ export class PiService {
   }
 
   // ── Agent event → PiServiceEvent translation ────────────
+
+  /** SDK entries store timestamps as ISO strings; protocol expects numbers. */
+  private _toTimestamp(ts: unknown): number {
+    if (typeof ts === "number") { return ts; }
+    if (ts) { return Date.parse(String(ts)); }
+    return Date.now();
+  }
 
   /** Extract plain text from a message content (string or array) */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1804,7 +1811,7 @@ export class PiService {
           this.emit({ type: "bash-end", data: { toolCallId: bashEntryId, command: msg.command ?? "", exitCode: msg.exitCode, cancelled: msg.cancelled, output: msg.output ?? "", isError: msg.exitCode !== 0 && msg.exitCode !== null, entryId: entry.id } });
         }
       } else if (entry.type === "compaction") {
-        this.emit({ type: "compaction-summary-message", data: { summary: entry.summary ?? "", tokensBefore: entry.tokensBefore ?? 0, timestamp: entry.timestamp ?? Date.now(), entryId: entry.id } });
+        this.emit({ type: "compaction-summary-message", data: { summary: entry.summary ?? "", tokensBefore: entry.tokensBefore ?? 0, timestamp: this._toTimestamp(entry.timestamp), entryId: entry.id } });
       }
     }
 
