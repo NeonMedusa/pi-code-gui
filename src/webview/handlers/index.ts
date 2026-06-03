@@ -113,7 +113,8 @@ export function createLiveCard(key: string, customType: string, label: string, c
                          msg.type === "tool-update" || msg.type === "bash-output" ||
                          msg.type === "switchTab" || msg.type === "sessionsList" ||
                          msg.type === "tabChanged" || msg.type === "resumeResult" ||
-                         msg.type === "deleteSession";
+                         msg.type === "deleteSession" ||
+                         msg.type === "sessions-tree" || msg.type === "session-entries";
                          
   // Settings messages
   var settingsTypes = ["settingsUpdate", "setZoom", "setFontSize", "getSettings", "setDefaultState"];
@@ -201,6 +202,8 @@ export function createLiveCard(key: string, customType: string, label: string, c
       case "resumeResult":
       case "settingsUpdate":
       case "setDefaultState":
+      case "sessions-tree":
+      case "session-entries":
         break;
 
       default:

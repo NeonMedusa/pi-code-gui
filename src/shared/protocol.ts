@@ -311,6 +311,36 @@ const ExtensionToWebviewSchema = z.discriminatedUnion("type", [
     }),
   }),
 
+  // Session tree
+  z.object({
+    type: z.literal("sessions-tree"),
+    data: z.object({
+      open: z.array(z.object({
+        id: z.string(),
+        label: z.string(),
+        model: z.string().optional(),
+        entryCount: z.number(),
+      })),
+      past: z.array(z.object({
+        name: z.string().optional(),
+        path: z.string(),
+        messageCount: z.number(),
+        modified: z.union([z.number(), z.string()]).optional(),
+      })),
+    }),
+  }),
+  z.object({
+    type: z.literal("session-entries"),
+    data: z.object({
+      sessionId: z.string(),
+      entries: z.array(z.object({
+        id: z.string(),
+        type: z.string(),
+        preview: z.string(),
+      })),
+    }),
+  }),
+
   // Scroll to entry
   z.object({ type: z.literal("revealEntry"), entryId: z.string(), toolCallId: z.string().optional() }),
 
@@ -389,6 +419,8 @@ const WebviewToExtensionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("resendUserMessage"), text: z.string() }),
   z.object({ type: z.literal("extension_ui_response"), id: z.string(), value: z.unknown() }),
   z.object({ type: z.literal("loadMoreMessages") }),
+  z.object({ type: z.literal("getSessionsTree") }),
+  z.object({ type: z.literal("getSessionEntries"), sessionId: z.string() }),
 ]);
 
 // ═══ Derived TypeScript types ═════════════════════════════

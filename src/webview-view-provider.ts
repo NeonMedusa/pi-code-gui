@@ -12,6 +12,10 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
   private _tabSummary: string | null = null;
   private _sidebarLoadedUpTo = 0;
 
+  // Callbacks set by extension.ts for accessing session data
+  onGetSessionsTree: (() => void) | null = null;
+  onGetSessionEntries: ((sessionId: string) => void) | null = null;
+
   constructor(private context: vscode.ExtensionContext) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -137,6 +141,14 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
               type: "tabChanged",
               data: { tab: message.tab },
             });
+            break;
+
+          case "getSessionsTree":
+            this.onGetSessionsTree?.();
+            break;
+
+          case "getSessionEntries":
+            this.onGetSessionEntries?.(message.sessionId);
             break;
 
           case "newSession":

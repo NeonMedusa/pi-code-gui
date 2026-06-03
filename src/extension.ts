@@ -688,6 +688,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerViewCommand("pi-code-gui.showPackages", "packages");
   registerViewCommand("pi-code-gui.showSettings", "settings");
 
+  // Wire session data callbacks for the sidebar webview
+  chatViewProvider.onGetSessionsTree = () => sendSessionsTree();
+  chatViewProvider.onGetSessionEntries = (sessionId: string) => sendSessionEntries(sessionId);
+
   // ── Step 3b: Register SDK-independent commands ─────
   // These must be registered synchronously so keybindings
   // (Cmd+/, Cmd+L, etc.) work immediately — the async SDK
@@ -1326,6 +1330,71 @@ async function installPi(): Promise<void> {
  *         refactor done (12 msgs)
  *         ...
  */
+
+// ── Session tree data for sidebar webview ──────────────────
+
+/** Send open and past sessions to the sidebar webview for display. */
+function sendSessionsTree(): void {
+  if (!chatViewProvider) { return; }
+  var open = sessions.map(function (sw: SessionWindow) {
+    var entryCount = 0;
+    try { entryCount = sw.piService.sessionManagerInstance?.getEntries?.().length ?? 0; } catch (_e) { void _e; }
+    return {
+      id: sw.id,
+      label: sw.piService.sessionName ?? sw.label,
+      model: sw.piService.model?.id,
+      entryCount: entryCount,
+    };
+  });
+  chatViewProvider.postMessage({ type: "sessions-tree", data: { open: open, past: [] } });
+  // Load past sessions async
+  var cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+  PiService.listSessions(cwd).then(function (past) {
+    chatViewProvider?.postMessage({ type: "sessions-tree", data: { open: open, past: past } });
+  }).catch(function (_e) { void _e; });
+}
+
+/** Send entries for a specific session to the sidebar webview. */
+function sendSessionEntries(sessionId: string): void {
+  if (!chatViewProvider) { return; }
+  var sw = sessions.find(function (s) { return s.id === sessionId; });
+  if (!sw) { return; }
+  var entries: Array<{ id: string; type: string; preview: string }> = [];
+  try {
+    var allEntries = sw.piService.sessionManagerInstance?.getEntries?.() ?? [];
+    entries = allEntries.map(function (e: Record<string, unknown>) {
+      var preview = "";
+      var msg = e.message as Record<string, unknown> | undefined;
+      if (e.type === "message" && msg) {
+        if (msg.role === "user") {
+          preview = extractPreview(msg.content);
+        } else if (msg.role === "assistant") {
+          preview = extractPreview(msg.content);
+        } else if (msg.role === "toolResult") {
+          preview = "[tool result]";
+        }
+      } else if (e.type === "compaction") {
+        preview = "[compaction]";
+      }
+      return { id: (e.id as string) || "", type: (e.type as string) || "", preview: preview };
+    });
+  } catch (_e) { void _e; }
+  chatViewProvider.postMessage({ type: "session-entries", data: { sessionId: sessionId, entries: entries } });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractPreview(content: any): string {
+  if (!content) { return ""; }
+  if (typeof content === "string") { return content.substring(0, 80); }
+  if (Array.isArray(content)) {
+    for (var ci = 0; ci < content.length; ci++) {
+      if (content[ci].type === "text" && content[ci].text) {
+        return content[ci].text.substring(0, 80);
+      }
+    }
+  }
+  return "";
+}
 
 class MultiSessionTreeProvider implements vscode.TreeDataProvider<SessionTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeItem | undefined | null | void>();

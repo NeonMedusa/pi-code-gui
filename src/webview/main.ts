@@ -79,8 +79,11 @@ window.addEventListener("message", (event) => {
   if (message.type === "switchTab") {
     switchSidebarTab(message.data?.tab ?? "chat");
   }
-  if (message.type === "sessionsList") {
-    renderHistoryList(message.data ?? [], message.activePath ?? null);
+  if (message.type === "sessions-tree") {
+    renderSessionTree(message.data);
+  }
+  if (message.type === "session-entries") {
+    renderSessionEntries(message.data);
   }
 });
 
@@ -127,88 +130,158 @@ function switchSidebarTab(tab: string): void {
   }
 
   if (tab === "history") {
-    window.__vscode.postMessage({ type: "listSessions" });
+    window.__vscode.postMessage({ type: "getSessionsTree" });
   }
   if (tab === "settings") {
     window.__vscode.postMessage({ type: "getSettings" });
   }
 }
 
-function renderHistoryList(sessions: any[], activePath: string | null): void {
-  const container = document.getElementById("history-content");
+// ── Session tree state ─────────────────────────────────
+var _sessionEntries: Record<string, any[]> = {};
+var _openSessions: any[] = [];
+var _pastSessions: any[] = [];
+var _expandedSessions: Record<string, boolean> = {};
+
+function renderSessionTree(data: any): void {
+  var container = document.getElementById("history-content");
   if (!container) return;
+  _openSessions = data.open || [];
+  _pastSessions = data.past || [];
 
-  if (!sessions || sessions.length === 0) {
-    container.innerHTML = '<p class="sidebar-placeholder">No past sessions</p>';
-    return;
+  var html = '<div class="session-tree">';
+  // Open sessions
+  if (_openSessions.length > 0) {
+    html += '<div class="tree-section"><div class="tree-section-title">Open Sessions</div>';
+    for (var i = 0; i < _openSessions.length; i++) {
+      var s = _openSessions[i];
+      var isExpanded = _expandedSessions[s.id];
+      var entries = _sessionEntries[s.id] || [];
+      html += '<div class="tree-session' + (isExpanded ? ' expanded' : '') + '" data-session-id="' + escapeAttr(s.id) + '">';
+      html += '<div class="tree-session-header">';
+      html += '<span class="tree-arrow">' + (isExpanded ? '▼' : '▶') + '</span>';
+      html += '<span class="tree-session-label">' + escapeHtml(s.label || s.id) + '</span>';
+      html += '<span class="tree-entry-count">' + s.entryCount + '</span>';
+      html += '</div>';
+      if (isExpanded) {
+        html += '<div class="tree-entries">';
+        if (entries.length === 0) {
+          html += '<div class="tree-entry loading">Loading...</div>';
+        } else {
+          for (var j = 0; j < entries.length; j++) {
+            var e = entries[j];
+            html += '<div class="tree-entry" data-entry-id="' + escapeAttr(e.id) + '" data-session-id="' + escapeAttr(s.id) + '">';
+            html += '<span class="tree-entry-icon">' + getEntryIcon(e.type) + '</span>';
+            html += '<span class="tree-entry-text">' + escapeHtml(e.preview || e.type) + '</span>';
+            html += '</div>';
+          }
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
   }
-
-  let html = '<div class="history-list">';
-  for (const s of sessions) {
-    const name = s.name || s.summary || `Session ${s.id ?? ""}`;
-    const time = timeAgo(s.modified);
-    const isActive = s.path && s.path === activePath;
-    html += `<div class="history-item${isActive ? " active" : ""}" data-path="${s.path ?? ""}">
-      <div class="history-item-content">
-        <div class="history-item-title">${escapeHtml(name)}</div>
-        ${time ? `<div class="history-item-time">${time}</div>` : ""}
-      </div>
-      <button class="history-item-delete" title="Delete session">×</button>
-    </div>`;
+  // Past sessions
+  html += '<div class="tree-section"><div class="tree-section-title">Past Sessions (' + _pastSessions.length + ')</div>';
+  if (_pastSessions.length === 0) {
+    html += '<p class="sidebar-placeholder">No past sessions</p>';
+  } else {
+    for (var k = 0; k < _pastSessions.length; k++) {
+      var p = _pastSessions[k];
+      var name = p.name || p.summary || "Session";
+      var time = timeAgo(p.modified);
+      html += '<div class="past-session-item" data-path="' + escapeAttr(p.path) + '">';
+      html += '<div class="tree-entry-text">' + escapeHtml(name) + '</div>';
+      if (time) { html += '<div class="tree-entry-time">' + time + '</div>'; }
+      html += '</div>';
+    }
   }
-  html += "</div>";
+  html += '</div></div>';
   container.innerHTML = html;
+  wireTreeEvents(container);
+}
 
-  // Click to resume
-  container.querySelectorAll(".history-item").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      if ((e.target as HTMLElement).classList.contains("history-item-delete")) { return; }
-      const path = (el as HTMLElement).dataset.path;
-      if (path) {
-        window.__vscode.postMessage({ type: "resumeSession", path });
+function renderSessionEntries(data: any): void {
+  _sessionEntries[data.sessionId] = data.entries || [];
+  // Re-render if the session is expanded
+  if (_expandedSessions[data.sessionId]) {
+    var container = document.getElementById("history-content");
+    if (container) { renderSessionTree({ open: _openSessions, past: _pastSessions }); }
+  }
+}
+
+function wireTreeEvents(container: HTMLElement): void {
+  // Session header click → toggle expand
+  container.querySelectorAll(".tree-session-header").forEach(function (header) {
+    header.addEventListener("click", function () {
+      var sessionEl = header.closest(".tree-session") as HTMLElement;
+      if (!sessionEl) return;
+      var id = sessionEl.dataset.sessionId;
+      if (!id) return;
+      if (_expandedSessions[id]) {
+        _expandedSessions[id] = false;
+      } else {
+        _expandedSessions[id] = true;
+        // Fetch entries if not loaded
+        if (!_sessionEntries[id]) {
+          window.__vscode.postMessage({ type: "getSessionEntries", sessionId: id });
+        }
+      }
+      renderSessionTree({ open: _openSessions, past: _pastSessions });
+    });
+  });
+  // Entry click → revealEntry
+  container.querySelectorAll(".tree-entry").forEach(function (entry) {
+    entry.addEventListener("click", function () {
+      var sessionId = (entry as HTMLElement).dataset.sessionId;
+      var entryId = (entry as HTMLElement).dataset.entryId;
+      if (sessionId && entryId) {
+        window.__vscode.postMessage({ type: "focusSession", sessionId: sessionId });
+        window.__vscode.postMessage({ type: "revealEntry", sessionId: sessionId, entryId: entryId });
         switchSidebarTab("chat");
       }
     });
   });
-
-  // Delete button
-  container.querySelectorAll(".history-item-delete").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const item = (btn as HTMLElement).closest(".history-item") as HTMLElement;
-      const path = item?.dataset.path;
-      if (!path) { return; }
-      window.__vscode.postMessage({ type: "deleteSession", path });
+  // Past session click → resume
+  container.querySelectorAll(".past-session-item").forEach(function (item) {
+    item.addEventListener("click", function () {
+      var path = (item as HTMLElement).dataset.path;
+      if (path) {
+        window.__vscode.postMessage({ type: "resumeSession", path: path });
+      }
     });
   });
 }
 
+function getEntryIcon(type: string): string {
+  if (type === "compaction") return "📦";
+  return "💬";
+}
+
 function timeAgo(ts: string | number | undefined): string {
   if (!ts) return "";
-  const diff = Date.now() - new Date(ts).getTime();
-  const min = Math.floor(diff / 60000);
+  var diff = Date.now() - new Date(ts).getTime();
+  var min = Math.floor(diff / 60000);
   if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const days = Math.floor(hr / 24);
+  if (min < 60) return min + "m ago";
+  var hr = Math.floor(min / 60);
+  if (hr < 24) return hr + "h ago";
+  var days = Math.floor(hr / 24);
   if (days === 1) return "yesterday";
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return days + "d ago";
   return new Date(ts).toLocaleDateString();
 }
 
 function escapeHtml(text: string): string {
-  const div = document.createElement("div");
+  var div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
 }
 
-// Listen for resumeResult
-window.addEventListener("message", (event) => {
-  const message = event.data;
-  if (message.type === "resumeResult" && !message.data?.success) {
-    console.error("Resume failed:", message.data?.error);
-  }
-});
+function escapeAttr(text: string): string {
+  return text.replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 // ── Settings ─────────────────────────────────────────────
 
