@@ -92,6 +92,7 @@ export class PiWebviewPanel {
   }
 
   private replayMessages(): void {
+    if (!this.piService.initialized) { return; }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     var pm = (event: any): void => this.postMessage(event);
     pm({ type: "sessionReset" });

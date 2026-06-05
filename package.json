@@ -243,6 +243,11 @@
           "type": "tree",
           "id": "pi-code-gui.sessions",
           "name": "Sessions"
+        },
+        {
+          "type": "tree",
+          "id": "pi-code-gui.packages",
+          "name": "Packages"
         }
       ]
     },

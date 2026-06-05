@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import { PiService } from "./pi-service.js";
 import { PiWebviewPanel } from "./webview-panel.js";
 import { PiChatViewProvider } from "./webview-view-provider.js";
-import type { PiPackageService } from "./pi-package-service.js";
-import type { PiPackagesTreeProvider } from "./pi-packages-tree-provider.js";
+import { PiPackageService } from "./pi-package-service.js";
+import { PiPackagesTreeProvider } from "./pi-packages-tree-provider.js";
 import { initLogger, piLog, piWarn } from "./logger.js";
 import { registerPhase3Commands } from "./phase3-commands.js";
 import { registerPhase4Commands } from "./phase4-commands.js";
@@ -863,11 +863,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
   }
 
-  // ── Step 5: Package commands ────────────────────
+  // ── Step 5: Register package view ───────────────
+  initPackagesTree(context);
   registerPackageCommands(context);
 }
 
 // ── Package service commands ─────────────────────────
+
+/** Initialize the packages tree view. */
+function initPackagesTree(context: vscode.ExtensionContext): void {
+  if (packagesTreeProvider) { return; }
+  if (!packageService) {
+    packageService = new PiPackageService();
+  }
+  packagesTreeProvider = new PiPackagesTreeProvider(packageService);
+  packagesTreeView = vscode.window.createTreeView("pi-code-gui.packages", {
+    treeDataProvider: packagesTreeProvider,
+  });
+  context.subscriptions.push(packagesTreeView);
+}
 
 function registerPackageCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
@@ -1044,7 +1058,7 @@ async function doInstallPackage(source: string, scope: "user" | "project" = "use
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Installing ${label}...` },
     async () => {
-      const result = await packageService.install(source, scope);
+      const result = await packageService!.install(source, scope);
       if (result.success) {
         vscode.window.showInformationMessage(`Installed ${label} (${scope})`);
         await packagesTreeProvider?.refreshAll();
@@ -1062,7 +1076,7 @@ async function doUninstallPackage(source: string, scope: "user" | "project"): Pr
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Removing ${label}...` },
     async () => {
-      const result = await packageService.uninstall(source, scope);
+      const result = await packageService!.uninstall(source, scope);
       if (result.success) {
         vscode.window.showInformationMessage(`Removed ${label}`);
         await packagesTreeProvider?.refreshAll();
@@ -1081,7 +1095,7 @@ async function doUpdatePackage(source: string): Promise<void> {
     { location: vscode.ProgressLocation.Notification, title: `Updating ${label}...` },
     async () => {
       try {
-        await packageService.update(source);
+        await packageService!.update(source);
         vscode.window.showInformationMessage(`Updated ${label}`);
         await packagesTreeProvider?.refreshAll();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

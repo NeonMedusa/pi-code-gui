@@ -302,7 +302,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
   /** Send status and replay session messages to the webview. */
   private replayMessages(): void {
     var ps = this._piService;
-    if (!ps || !this._view) { return; }
+    if (!ps || !this._view || !ps.initialized) { return; }
     var pm = (event: Record<string, unknown>): void => this.postMessage(event);
     pm({ type: "sessionReset" });
     var entries = ps.sessionManagerInstance?.getEntries?.() ?? [];
