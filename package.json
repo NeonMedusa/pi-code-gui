@@ -472,12 +472,31 @@
           "group": "1_update"
         }
       ],
+      "editor/title": [
+        {
+          "command": "pi-code-gui.addSession",
+          "group": "navigation",
+          "when": "resourceScheme != pi"
+        }
+      ],
       "view/title": [
+        {
+          "command": "pi-code-gui.addSession",
+          "when": "view == pi-code-gui.chat",
+          "group": "navigation",
+          "icon": "plus"
+        },
         {
           "command": "pi-code-gui.showSettings",
           "when": "view == pi-code-gui.chat",
           "group": "navigation",
           "icon": "gear"
+        },
+        {
+          "command": "pi-code-gui.addSession",
+          "when": "view == pi-code-gui.sessions",
+          "group": "navigation",
+          "icon": "plus"
         },
         {
           "command": "pi-code-gui.showSettings",
