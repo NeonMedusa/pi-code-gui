@@ -40,6 +40,14 @@ export function shortenPath(filePath: string): string {
   return filePath;
 }
 
+export function applyFontSize(size: number): void {
+  if (size > 0) {
+    document.documentElement.style.setProperty("--pi-font-size", size + "px");
+  } else {
+    document.documentElement.style.removeProperty("--pi-font-size");
+  }
+}
+
 export function getLangFromPath(filePath: string): string | undefined {
   if (!filePath) {return undefined;}
   const ext = filePath.split(".").pop()!.toLowerCase();

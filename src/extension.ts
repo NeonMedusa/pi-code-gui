@@ -818,7 +818,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   registerViewCommand("pi-code-gui.showChat", "chat");
   registerViewCommand("pi-code-gui.showPackages", "packages");
-  registerViewCommand("pi-code-gui.showSettings", "settings");
+  context.subscriptions.push(
+    vscode.commands.registerCommand("pi-code-gui.showSettings", async () => {
+      await chatViewProvider?.triggerSettingsPicker();
+    }),
+  );
 
   // ── Step 3c: Register SDK-independent commands ─────
   // These must be registered synchronously so keybindings

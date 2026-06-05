@@ -868,27 +868,50 @@ body {
   /* ═══ Status bar ══════════════════════════════════════════ */
 
   #pi-status-bar {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    grid-template-rows: auto auto;
-    grid-template-areas:
-      "m  e  s  btn"
-      "t  u  .  btn";
-    align-items: center;
-    gap: 0 6px;
-    padding: 4px 16px;
-    font-size: 11px;
-    color: var(--fg-primary);
-    user-select: none;
+    display: flex; align-items: center; gap: 12px;
+    padding: 5px 12px;
+    background: var(--bg-secondary, var(--vscode-sideBar-background));
+    border-top: 1px solid var(--border-color, var(--vscode-sideBar-border));
+    font-size: inherit;
+    color: var(--fg-secondary, var(--vscode-descriptionForeground));
+    min-height: 30px;
     flex-shrink: 0;
+    user-select: none;
 
     .pi-sb-item {
       display: flex; align-items: center; gap: 3px;
       cursor: pointer;
       padding: 1px 5px; border-radius: 3px;
+      white-space: nowrap;
 
       &:hover { background: var(--vscode-list-hoverBackground); }
+
+      &.spacer { flex: 1; cursor: default; pointer-events: none;
+        &:hover { background: none; }
+      }
     }
+  }
+
+  #pi-sb-dot { font-size: 0.9em; flex-shrink: 0; }
+
+  /* Sidebar uses grid layout for compact display */
+  body[data-view-mode="sidebar"] #pi-status-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "m  e  btn"
+      "t  u  btn";
+    align-items: center;
+    gap: 0 6px;
+    padding: 4px 16px;
+    font-size: 11px;
+    color: var(--fg-primary);
+    background: none;
+    border-top: none;
+    min-height: 0;
+
+    .pi-sb-item { white-space: nowrap; }
   }
 
 
@@ -1091,55 +1114,6 @@ body {
 
   /* ═══ Overlays: settings, user messages, slash autocomplete ══ */
 
-  .settings-overlay {
-    display: none;
-    position: fixed; bottom: 50px; right: 16px;
-    width: 280px;
-    background: var(--vscode-sideBar-background);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    z-index: 100;
-    box-shadow: 0 4px 16px rgb(0 0 0 / 30%);
-    padding: 12px;
-
-    &.visible { display: block; }
-
-    .settings-title { font-weight: 600; margin-bottom: 10px; color: var(--fg-primary); font-size: 0.9em; }
-
-    .settings-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 6px 0;
-      border-bottom: 1px solid var(--border-color);
-      font-size: 0.85em; color: var(--fg-secondary);
-
-      &:last-child { border-bottom: none; }
-    }
-
-    .settings-toggle {
-      width: 32px; height: 18px; border-radius: 9px;
-      background: var(--vscode-descriptionForeground);
-      cursor: pointer;
-      position: relative;
-      transition: background 0.15s;
-
-      &.on { background: var(--accent); }
-
-      &::after {
-        content: "";
-        position: absolute;
-        top: 2px; left: 2px;
-        width: 14px; height: 14px; border-radius: 50%;
-        background: white;
-        transition: left 0.15s;
-      }
-
-      &.on::after { left: 16px; }
-    }
-  }
-
-  .user-msg-selector-overlay {
-    display: none;
-    position: fixed; bottom: 60px;
     left: 16px; right: 16px;
     max-height: 260px;
     background: var(--vscode-sideBar-background);
@@ -1430,234 +1404,3 @@ body {
   display: flex;
 }
 
-.sidebar-panel-header {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px;
-}
-
-.panel-action-btn {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border: none;
-  padding: 4px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  border-radius: 2px;
-  width: 100%;
-}
-
-.panel-action-btn:hover {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.panel-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fg-primary);
-}
-
-.sidebar-panel-body {
-  flex: 1;
-  padding: 12px;
-  overflow-y: auto;
-}
-
-.sidebar-placeholder {
-  color: var(--fg-secondary);
-  text-align: center;
-  padding: 24px 12px;
-  font-size: 12px;
-}
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-}
-
-/* ═══ Session tree (in webview) ══════════════════════ */
-.session-tree { font-size: 0.9em; }
-.tree-section { margin-bottom: 12px; }
-.tree-section-title {
-  font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
-  font-size: 0.85em; color: var(--vscode-descriptionForeground);
-  padding: 8px 12px 4px;
-}
-.tree-session-header {
-  display: flex; align-items: center; gap: 4px;
-  padding: 4px 12px; cursor: pointer;
-}
-.tree-session-header:hover { background: var(--vscode-list-hoverBackground); }
-.tree-arrow { font-size: 0.7em; flex-shrink: 0; width: 1.2em; }
-.tree-session-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-entry-count {
-  background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
-  padding: 0 5px; border-radius: 8px; font-size: 0.75em;
-}
-.tree-entries { padding-left: 12px; }
-.tree-entry {
-  display: flex; align-items: center; gap: 4px;
-  padding: 2px 12px; cursor: pointer; font-size: 0.9em;
-}
-.tree-entry:hover { background: var(--vscode-list-hoverBackground); }
-.tree-entry-icon { flex-shrink: 0; }
-.tree-entry-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.tree-entry-time { font-size: 0.8em; color: var(--vscode-descriptionForeground); flex-shrink: 0; }
-.tree-entry.loading { color: var(--vscode-descriptionForeground); font-style: italic; }
-.past-session-item {
-  padding: 4px 12px; cursor: pointer;
-}
-.past-session-item:hover { background: var(--vscode-list-hoverBackground); }
-
-.history-item {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.history-item:nth-child(odd) {
-  background: color-mix(in srgb, var(--bg-primary) 90%, var(--fg-primary) 10%);
-}
-
-.history-item:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.history-item.active {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
-}
-
-.history-item.active .history-item-time {
-  color: inherit;
-  opacity: 0.8;
-}
-
-.history-item.active .history-item-delete {
-  color: inherit;
-}
-
-.history-item-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.history-item-title {
-  font-size: 12px;
-  color: var(--fg-primary);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.history-item-time {
-  font-size: 10px;
-  color: var(--fg-secondary);
-  margin-top: 3px;
-}
-
-.history-item:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.history-item.active {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
-}
-
-.history-item.active .history-item-time {
-  color: inherit;
-  opacity: 0.8;
-}
-
-.history-item.active .history-item-delete {
-  color: inherit;
-}
-
-.history-item-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.history-item-delete {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: 16px;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  border-radius: 3px;
-  opacity: 0;
-  transition: opacity 0.1s, background 0.1s;
-}
-
-.history-item:hover .history-item-delete {
-  opacity: 1;
-}
-
-.history-item-delete:hover {
-  background: var(--vscode-list-hoverBackground);
-  color: var(--error);
-}
-
-.history-item-title {
-  font-size: 12px;
-  color: var(--fg-primary);
-  font-weight: 500;
-}
-
-.history-item-time {
-  font-size: 11px;
-  color: var(--fg-secondary);
-  margin-top: 2px;
-}
-
-/* ═══ Settings panel ═════════════════════════════════ */
-
-.setting-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-}
-
-.setting-label {
-  font-size: 12px;
-  color: var(--fg-primary);
-  min-width: 70px;
-  flex-shrink: 0;
-}
-
-.setting-number {
-  width: 60px;
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  border: 1px solid var(--vscode-input-border);
-  padding: 3px 6px;
-  font-size: 12px;
-  text-align: right;
-}
-
-.setting-select {
-  flex: 1;
-  min-width: 0;
-  background: var(--vscode-dropdown-background);
-  color: var(--vscode-dropdown-foreground);
-  border: 1px solid var(--vscode-dropdown-border);
-  padding: 3px 6px;
-  font-size: 12px;
-}
-
-.setting-unit {
-  font-size: 11px;
-  color: var(--fg-secondary);
-}

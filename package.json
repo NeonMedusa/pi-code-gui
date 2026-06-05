@@ -46,6 +46,11 @@
   "contributes": {
     "commands": [
       {
+        "command": "pi-code-gui.showSettings",
+        "title": "PiGui: Show Settings",
+        "icon": "$(gear)"
+      },
+      {
         "command": "pi-code-gui.codeAgent",
         "title": "PiGui: Code Agent",
         "icon": "$(hubot)"
@@ -104,7 +109,7 @@
       },
       {
         "command": "pi-code-gui.openInSidebar",
-        "title": "PiGui: Open Session in Sidebar"
+        "title": "PiGui: Show Session in Sidebar"
       },
       {
         "command": "pi-code-gui.resumeInSidebar",
@@ -216,11 +221,6 @@
         "command": "pi-code-gui.showPackages",
         "title": "PiGui: Show Packages",
         "icon": "$(package)"
-      },
-      {
-        "command": "pi-code-gui.showSettings",
-        "title": "PiGui: Show Settings",
-        "icon": "$(gear)"
       }
     ],
     "viewsContainers": {
@@ -474,19 +474,16 @@
       ],
       "view/title": [
         {
-          "command": "pi-code-gui.showChat",
+          "command": "pi-code-gui.showSettings",
           "when": "view == pi-code-gui.chat",
-          "group": "navigation"
-        },
-        {
-          "command": "pi-code-gui.showPackages",
-          "when": "view == pi-code-gui.chat",
-          "group": "navigation"
+          "group": "navigation",
+          "icon": "gear"
         },
         {
           "command": "pi-code-gui.showSettings",
-          "when": "view == pi-code-gui.chat",
-          "group": "navigation"
+          "when": "view == pi-code-gui.sessions",
+          "group": "navigation",
+          "icon": "gear"
         }
       ]
     }

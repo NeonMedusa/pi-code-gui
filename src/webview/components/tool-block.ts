@@ -22,10 +22,12 @@ export class ToolBlock implements Component<ToolBlockProps> {
   private resultEl: HTMLElement;
   private arrowEl: HTMLElement;
 
+  private readonly _toolName: string;
   private _filePath: string | null = null;
   private _collapsed = false;
 
   constructor(props: ToolBlockProps) {
+    this._toolName = props.toolName;
     this.el = document.createElement("div");
     this.el.className = "tool-block";
     this.el.id = props.entryId
@@ -96,7 +98,7 @@ export class ToolBlock implements Component<ToolBlockProps> {
 
       // Auto-collapse when done (unless per-tool default is expanded)
       if (props.status === "done" || props.status === "error") {
-        var keepExpanded = (window.__blockDefaults as any)?.[props.toolName] === "expanded";
+        var keepExpanded = (window.__blockDefaults as any)?.[this._toolName] === "expanded";
         if (keepExpanded) {
           this._collapsed = false;
           this.bodyEl.style.display = "";

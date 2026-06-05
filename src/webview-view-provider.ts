@@ -243,6 +243,10 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
             }
             break;
 
+          case "openSettings":
+            void this.triggerSettingsPicker();
+            break;
+
           case "getSettings":
             const cfg = vscode.workspace.getConfiguration("pi-code-gui");
             this.postMessage({
@@ -431,81 +435,13 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
     </div>
   </div>
 
-  <div id="panel-history" class="sidebar-panel">
-    <div class="sidebar-panel-header">
-      <button id="btn-current-session" class="panel-action-btn">◂ Current Session</button>
-      <button id="btn-new-session" class="panel-action-btn">+ New Session</button>
-    </div>
-    <div id="history-content">
-      <p class="sidebar-placeholder">Loading sessions...</p>
-    </div>
-  </div>
-
-  <div id="panel-packages" class="sidebar-panel">
-    <div class="sidebar-panel-header">
-      <span class="panel-title">Packages</span>
-    </div>
-    <div class="sidebar-panel-body">
-      <p class="sidebar-placeholder">Coming soon</p>
-    </div>
-  </div>
-
-  <div id="panel-settings" class="sidebar-panel">
-    <div class="sidebar-panel-header">
-      <span class="panel-title">Settings</span>
-    </div>
-    <div class="sidebar-panel-body">
-      <div class="setting-row">
-        <label class="setting-label">Font size</label>
-        <input type="number" id="setting-font-size" class="setting-number" min="0" max="30" value="14">
-        <span class="setting-unit">px (0 = default)</span>
-      </div>
-      <div class="setting-row">
-        <label class="setting-label">💡 Thinking</label>
-        <select id="setting-thinking-state" class="setting-select">
-          <option value="collapsed">Collapsed</option>
-          <option value="expanded" selected>Expanded</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <label class="setting-label">📖 Read</label>
-        <select id="setting-read-state" class="setting-select">
-          <option value="collapsed">Collapsed</option>
-          <option value="expanded" selected>Expanded</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <label class="setting-label">✏️ Write</label>
-        <select id="setting-write-state" class="setting-select">
-          <option value="collapsed">Collapsed</option>
-          <option value="expanded" selected>Expanded</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <label class="setting-label">🔧 Edit</label>
-        <select id="setting-edit-state" class="setting-select">
-          <option value="collapsed">Collapsed</option>
-          <option value="expanded" selected>Expanded</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <label class="setting-label">💻 Bash</label>
-        <select id="setting-bash-state" class="setting-select">
-          <option value="collapsed" selected>Collapsed</option>
-          <option value="expanded">Expanded</option>
-        </select>
-      </div>
-    </div>
-  </div>
-  </div>
 
   <div id="pi-status-bar">
     <div class="pi-sb-item" id="pi-sb-model" title="Click to change model" style="grid-area: m;">model: ...</div>
     <div class="pi-sb-item" id="pi-sb-effort" title="Click to change effort" style="grid-area: e;">effort: auto</div>
     <div class="pi-sb-item" id="pi-sb-thinking" title="Click to change thinking level" style="grid-area: t;">thinking: off</div>
     <div class="pi-sb-item" id="pi-sb-usage" title="Click to set context budget" style="grid-area: u;">0%</div>
-    <div class="pi-sb-item" id="pi-sb-settings" title="Settings" style="grid-area: s;">⚙</div>
-    <div id="steer-split", style="grid-area: btn; display: flex; align-items: center; justify-content: flex-end; align-self: center;">
+    <div id="steer-split" style="grid-area: btn; display: flex; align-items: center; justify-content: flex-end; align-self: center;">
       <button id="abort-button" class="hidden" style="margin-right: 2px;">■ Stop</button>
       <button id="send-button" disabled title="Submit (Enter)">↵</button>
       <button id="steer-dropdown" class="hidden" title="Switch to Queue">▾</button>
@@ -513,7 +449,6 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="user-msg-selector-overlay" id="user-msg-overlay"></div>
-  <div class="settings-overlay" id="settings-overlay"></div>
   <div class="slash-autocomplete" id="slash-autocomplete"></div>
 
   <script nonce="${nonce}" src="${bundleUri}"></script>
@@ -589,4 +524,69 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   get piService(): PiService | null { return this._piService; }
+
+  /** Open VS Code quick pick for unified settings. */
+  async triggerSettingsPicker(): Promise<void> {
+    var ps = this._piService;
+    if (!ps) { return; }
+    var cfg = vscode.workspace.getConfiguration("pi-code-gui");
+    var makeToggle = function (name: string, on: boolean): string {
+      return (on ? "$(check) " : "$(circle-outline) ") + name;
+    };
+    var items: vscode.QuickPickItem[] = [
+      { label: "$(eye) Font size", description: "Current: " + (cfg.get<number>("fontSize") || "default") },
+      { label: makeToggle("Auto-compaction", ps.autoCompactionEnabled), description: "Auto-compact context when limit hit" },
+      { label: makeToggle("Auto-retry", ps.autoRetryEnabled), description: "Auto-retry on recoverable errors" },
+      { label: makeToggle("Show images", ps.showImages), description: "Display image attachments in chat" },
+      { label: makeToggle("💡 Thinking", cfg.get("defaultThinkingState") !== "collapsed"), description: "Default state for thinking blocks" },
+      { label: makeToggle("📖 Read", cfg.get("defaultReadState") !== "collapsed"), description: "Default state for read tool blocks" },
+      { label: makeToggle("✏️ Write", cfg.get("defaultWriteState") === "expanded"), description: "Default state for write tool blocks" },
+      { label: makeToggle("🔧 Edit", cfg.get("defaultEditState") === "expanded"), description: "Default state for edit tool blocks" },
+      { label: makeToggle("💻 Bash", cfg.get("defaultBashState") === "expanded"), description: "Default state for bash execution blocks" },
+    ];
+    var picked = await vscode.window.showQuickPick(items, { placeHolder: "Pi settings — click to toggle" });
+    if (!picked) { return; }
+    var label = picked.label;
+    if (label.includes("Font size")) {
+      var fontSize = await vscode.window.showInputBox({ placeHolder: "Font size in px (0 = editor default)", value: String(cfg.get<number>("fontSize") ?? 0) });
+      if (fontSize !== undefined) {
+        var num = parseInt(fontSize);
+        if (!isNaN(num) && num >= 0 && num <= 30) {
+          await cfg.update("fontSize", num, vscode.ConfigurationTarget.Global);
+          this.postMessage({ type: "settingsUpdate", data: { fontSize: num } });
+        }
+      }
+    } else if (label.includes("Auto-compaction")) {
+      await ps.toggleAutoCompaction();
+    } else if (label.includes("Auto-retry")) {
+      await ps.toggleAutoRetry();
+    } else if (label.includes("Show images")) {
+      await ps.toggleShowImages();
+    } else if (label.includes("Thinking")) {
+      var val = cfg.get("defaultThinkingState") === "collapsed" ? "expanded" : "collapsed";
+      await cfg.update("defaultThinkingState", val, vscode.ConfigurationTarget.Global);
+    } else if (label.includes("Read")) {
+      var val = cfg.get("defaultReadState") === "collapsed" ? "expanded" : "collapsed";
+      await cfg.update("defaultReadState", val, vscode.ConfigurationTarget.Global);
+    } else if (label.includes("Write")) {
+      var val = cfg.get("defaultWriteState") === "expanded" ? "collapsed" : "expanded";
+      await cfg.update("defaultWriteState", val, vscode.ConfigurationTarget.Global);
+    } else if (label.includes("Edit")) {
+      var val = cfg.get("defaultEditState") === "expanded" ? "collapsed" : "expanded";
+      await cfg.update("defaultEditState", val, vscode.ConfigurationTarget.Global);
+    } else if (label.includes("Bash")) {
+      var val = cfg.get("defaultBashState") === "expanded" ? "collapsed" : "expanded";
+      await cfg.update("defaultBashState", val, vscode.ConfigurationTarget.Global);
+    }
+    // Send block defaults FIRST (direct postMessage is immediate)
+    this.postMessage({ type: "settingsUpdate", data: {
+      defaultThinkingState: cfg.get("defaultThinkingState"),
+      defaultReadState: cfg.get("defaultReadState"),
+      defaultWriteState: cfg.get("defaultWriteState"),
+      defaultEditState: cfg.get("defaultEditState"),
+      defaultBashState: cfg.get("defaultBashState"),
+    } });
+    // Then emitSettings — its settings-update may arrive later but won't override
+    this.piService?.emitSettings?.();
+  }
 }

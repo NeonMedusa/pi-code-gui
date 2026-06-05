@@ -2115,9 +2115,20 @@ export class PiService {
   }
 
   emitSettings(): void {
+    var cfg = vscode.workspace.getConfiguration("pi-code-gui");
     this.emit({
       type: "settings-update",
-      data: { autoCompaction: this._autoCompactionEnabled, autoRetry: this._autoRetryEnabled, showImages: this._showImages },
+      data: {
+        autoCompaction: this._autoCompactionEnabled,
+        autoRetry: this._autoRetryEnabled,
+        showImages: this._showImages,
+        fontSize: cfg.get<number>("fontSize") ?? 14,
+        defaultThinkingState: cfg.get<string>("defaultThinkingState") ?? "collapsed",
+        defaultReadState: cfg.get<string>("defaultReadState") ?? "collapsed",
+        defaultWriteState: cfg.get<string>("defaultWriteState") ?? "expanded",
+        defaultEditState: cfg.get<string>("defaultEditState") ?? "expanded",
+        defaultBashState: cfg.get<string>("defaultBashState") ?? "expanded",
+      },
     });
   }
 

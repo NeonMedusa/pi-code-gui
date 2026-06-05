@@ -308,6 +308,12 @@ const ExtensionToWebviewSchema = z.discriminatedUnion("type", [
       autoCompaction: z.boolean(),
       autoRetry: z.boolean(),
       showImages: z.boolean(),
+      fontSize: z.number().optional(),
+      defaultThinkingState: z.string().optional(),
+      defaultReadState: z.string().optional(),
+      defaultWriteState: z.string().optional(),
+      defaultEditState: z.string().optional(),
+      defaultBashState: z.string().optional(),
     }),
   }),
 

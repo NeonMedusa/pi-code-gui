@@ -8,7 +8,7 @@ import {
   getCompactReadLabel, registerToolRenderer, getToolRenderer,
   hideWelcome, resetChat, scrollToBottom, updateStreamingState,
   renderToolResultTruncated, renderBlockToHTML,
-  shortenPath, renderCodeBlockHTML,
+  shortenPath, renderCodeBlockHTML, applyFontSize,
   setupCodeBlockHandlers,
 } from "../render/engine.js";
 import { validateExtensionToWebview } from "../../shared/protocol.js";
@@ -113,9 +113,8 @@ export function createLiveCard(key: string, customType: string, label: string, c
                          msg.type === "tool-update" || msg.type === "bash-output" ||
                          msg.type === "switchTab" || msg.type === "sessionsList" ||
                          msg.type === "tabChanged" || msg.type === "resumeResult" ||
-                         msg.type === "deleteSession" ||
-                         msg.type === "sessions-tree" || msg.type === "session-entries";
-                         
+                         msg.type === "deleteSession";
+
   // Settings messages
   var settingsTypes = ["settingsUpdate", "setZoom", "setFontSize", "getSettings", "setDefaultState"];
   if (settingsTypes.indexOf(msg.type) >= 0) { skipValidation = true; }
@@ -200,10 +199,10 @@ export function createLiveCard(key: string, customType: string, label: string, c
       case "sessionsList":
       case "tabChanged":
       case "resumeResult":
-      case "settingsUpdate":
       case "setDefaultState":
-      case "sessions-tree":
-      case "session-entries":
+        break;
+      case "settingsUpdate":
+        handleSettingsUpdate(msg.data);
         break;
 
       default:
@@ -1378,6 +1377,14 @@ export function sendPrompt(): void {
 
   state.sendButton.addEventListener("click", sendPrompt);
 
+  // Fallback: keypress for sending (keydown unreliable in some environments)
+  state.promptInput.addEventListener("keypress", function (e) {
+    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      sendPrompt();
+    }
+  });
+
   state.abortButton.addEventListener("click", function () {
     window.__vscode.postMessage({ type: "abort" });
   });
@@ -1446,7 +1453,10 @@ let sbSettings = document.getElementById("pi-sb-settings");
     }
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__piDebug = (window as any).__piDebug || {};
   state.promptInput.addEventListener("keydown", function (e) {
+    (window as any).__piDebug._lastKey = { key: e.key, shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey };
     // #8: Tab to accept slash autocomplete
     if (state.slashAutocompleteOpen && e.key === "Tab") {
       e.preventDefault();
@@ -1495,8 +1505,8 @@ let sbSettings = document.getElementById("pi-sb-settings");
         return;
       }
     }
-    // Enter: accept user msg or slash autocomplete if open, otherwise send
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Enter handling (userMsgSelector / slashAutocomplete accept)
+    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       if (state.userMsgSelectorOpen) {
         e.preventDefault();
         var idx = state.userMsgSelectedIdx;
@@ -1506,9 +1516,7 @@ let sbSettings = document.getElementById("pi-sb-settings");
           resizePromptInput();
         }
         closeUserMsgSelector();
-        return;
-      }
-      if (state.slashAutocompleteOpen) {
+      } else if (state.slashAutocompleteOpen) {
         e.preventDefault();
         var sel = state.slashAutocomplete.querySelector(".slash-item.selected");
         if (sel) {
@@ -1517,11 +1525,7 @@ let sbSettings = document.getElementById("pi-sb-settings");
         state.slashAutocomplete.classList.remove("visible");
         state.slashAutocompleteOpen = false;
         state.promptInput.focus();
-        return;
       }
-      closeAllOverlays();
-      e.preventDefault();
-      sendPrompt();
     }
   });
 
@@ -1667,6 +1671,18 @@ export function handleSettingsUpdate(data: any) {
     if (data) {
       state.settingsState = data;
       renderSettingsPanel();
+      // Update __blockDefaults for collapsible blocks
+      var bd = window.__blockDefaults || {} as any;
+      if (data.defaultThinkingState) { bd.thinking = data.defaultThinkingState; }
+      if (data.defaultReadState) { bd.read = data.defaultReadState; }
+      if (data.defaultWriteState) { bd.write = data.defaultWriteState; }
+      if (data.defaultEditState) { bd.edit = data.defaultEditState; }
+      if (data.defaultBashState) { bd.bash = data.defaultBashState; }
+      window.__blockDefaults = bd;
+    }
+    // Also apply font size if present in the update
+    if (data && typeof data.fontSize === "number") {
+      applyFontSize(data.fontSize);
     }
   }
 
@@ -1718,14 +1734,7 @@ export function renderSettingsPanel() {
   }
 
 export function toggleSettingsPanel() {
-    if (state.settingsOpen) {
-      closeAllOverlays();
-    } else {
-      closeAllOverlays();
-      state.settingsOpen = true;
-      state.settingsOverlay.classList.add("visible");
-      window.__vscode.postMessage({ type: "getSettings" });
-    }
+    window.__vscode.postMessage({ type: "openSettings" });
   }
 
 export function closeAllOverlays() {

@@ -220,6 +220,10 @@ export class PiWebviewPanel {
             break;
 
           // Request settings state (#3)
+          case "openSettings":
+            void this.triggerSettingsPicker();
+            break;
+
           case "getSettings":
             this.piService.emitSettings();
             this.piService.emitScopedModels();
@@ -469,15 +473,15 @@ export class PiWebviewPanel {
   </div>
 
   <div id="pi-status-bar">
-    <div class="pi-sb-item" id="pi-sb-model" title="Click to change model" style="grid-area: m;">model: ...</div>
-    <div class="pi-sb-item" id="pi-sb-effort" title="Click to change effort" style="grid-area: e;">effort: auto</div>
-    <div class="pi-sb-item" id="pi-sb-thinking" title="Click to change thinking level" style="grid-area: t;">thinking: off</div>
-    <div class="pi-sb-item" id="pi-sb-usage" title="Click to set context budget" style="grid-area: u;">0%</div>
-    <div class="pi-sb-item" id="pi-sb-settings" title="Settings" style="grid-area: s;">⚙</div>
+    <span id="pi-sb-dot" style="flex-shrink:0; font-weight:700;">○</span>
+    <div class="pi-sb-item" id="pi-sb-model" title="Click to change model">π Pi</div>
+    <div class="pi-sb-item" id="pi-sb-thinking" title="Click to change thinking level">thinking: off</div>
+    <div class="pi-sb-item" id="pi-sb-effort" title="Click to change effort">effort: auto</div>
+    <div class="pi-sb-item spacer" style="flex:1"></div>
+    <div class="pi-sb-item" id="pi-sb-usage" title="Click to set context budget">0%</div>
   </div>
 
   <div class="user-msg-selector-overlay" id="user-msg-overlay"></div>
-  <div class="settings-overlay" id="settings-overlay"></div>
   <div class="slash-autocomplete" id="slash-autocomplete"></div>
 
     <script nonce="${nonce}" src="${bundleUri}"></script>
@@ -543,45 +547,62 @@ export class PiWebviewPanel {
     await ps.setEffort(picked.label);
   }
 
-  /** Open VS Code quick pick for settings */
+  /** Open VS Code quick pick for unified settings. */
   private async triggerSettingsPicker(): Promise<void> {
-    const ps = this.piService;
-    const makeToggleLabel = (name: string, on: boolean): string =>
-      `${on ? "$(check)" : "$(circle-outline)"} ${name}`;
-
-    const items: vscode.QuickPickItem[] = [
-      {
-        label: makeToggleLabel("Auto-compaction", ps.autoCompactionEnabled),
-        description: "Automatically compact context when limit is hit",
-      },
-      {
-        label: makeToggleLabel("Auto-retry", ps.autoRetryEnabled),
-        description: "Automatically retry on recoverable errors",
-      },
-      {
-        label: makeToggleLabel("Show images", ps.showImages),
-        description: "Display image attachments in chat",
-      },
-      {
-        label: "$(graph) Context budget",
-        description: `Current: ${ps.getContextBudget() === 0 ? "model default" : formatBudget(ps.getContextBudget())}`,
-      },
+    var ps = this.piService;
+    var cfg = vscode.workspace.getConfiguration("pi-code-gui");
+    var makeToggle = function (name: string, on: boolean): string {
+      return (on ? "$(check) " : "$(circle-outline) ") + name;
+    };
+    var items: vscode.QuickPickItem[] = [
+      { label: "$(eye) Font size", description: "Current: " + (cfg.get<number>("fontSize") || "default") },
+      { label: makeToggle("Auto-compaction", ps.autoCompactionEnabled), description: "Auto-compact context when limit hit" },
+      { label: makeToggle("Auto-retry", ps.autoRetryEnabled), description: "Auto-retry on recoverable errors" },
+      { label: makeToggle("Show images", ps.showImages), description: "Display image attachments in chat" },
+      { label: makeToggle("💡 Thinking", cfg.get("defaultThinkingState") !== "collapsed"), description: "Default state for thinking blocks" },
+      { label: makeToggle("📖 Read", cfg.get("defaultReadState") !== "collapsed"), description: "Default state for read tool blocks" },
+      { label: makeToggle("✏️ Write", cfg.get("defaultWriteState") !== "expanded"), description: "Default state for write tool blocks" },
+      { label: makeToggle("🔧 Edit", cfg.get("defaultEditState") !== "expanded"), description: "Default state for edit tool blocks" },
+      { label: makeToggle("💻 Bash", cfg.get("defaultBashState") !== "expanded"), description: "Default state for bash execution blocks" },
     ];
-
-    const picked = await vscode.window.showQuickPick(items, {
-      placeHolder: "Pi settings — select to toggle or change",
-    });
+    var picked = await vscode.window.showQuickPick(items, { placeHolder: "Pi settings — click to toggle" });
     if (!picked) { return; }
-
-    if (picked.label.includes("Auto-compaction")) {
+    var label = picked.label;
+    if (label.includes("Font size")) {
+      var fontSize = await vscode.window.showInputBox({ placeHolder: "Font size in px (0 = editor default)", value: String(cfg.get<number>("fontSize") ?? 0) });
+      if (fontSize !== undefined) {
+        var num = parseInt(fontSize);
+        if (!isNaN(num) && num >= 0 && num <= 30) {
+          await cfg.update("fontSize", num, vscode.ConfigurationTarget.Global);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (this as any).postMessage({ type: "settingsUpdate", data: { fontSize: num } });
+        }
+      }
+    } else if (label.includes("Auto-compaction")) {
       await ps.toggleAutoCompaction();
-    } else if (picked.label.includes("Auto-retry")) {
+    } else if (label.includes("Auto-retry")) {
       await ps.toggleAutoRetry();
-    } else if (picked.label.includes("Show images")) {
+    } else if (label.includes("Show images")) {
       await ps.toggleShowImages();
-    } else if (picked.label.includes("Context budget")) {
-      await this.triggerContextBudgetPicker();
+    } else if (label.includes("Thinking")) {
+      var val = cfg.get("defaultThinkingState") === "collapsed" ? "expanded" : "collapsed";
+      await cfg.update("defaultThinkingState", val, vscode.ConfigurationTarget.Global);
+    } else if (label.includes("Read")) {
+      var val = cfg.get("defaultReadState") === "collapsed" ? "expanded" : "collapsed";
+      await cfg.update("defaultReadState", val, vscode.ConfigurationTarget.Global);
+    } else if (label.includes("Write")) {
+      var val = cfg.get("defaultWriteState") === "expanded" ? "collapsed" : "expanded";
+      await cfg.update("defaultWriteState", val, vscode.ConfigurationTarget.Global);
+    } else if (label.includes("Edit")) {
+      var val = cfg.get("defaultEditState") === "expanded" ? "collapsed" : "expanded";
+      await cfg.update("defaultEditState", val, vscode.ConfigurationTarget.Global);
+    } else if (label.includes("Bash")) {
+      var val = cfg.get("defaultBashState") === "expanded" ? "collapsed" : "expanded";
+      await cfg.update("defaultBashState", val, vscode.ConfigurationTarget.Global);
     }
+    // Refresh webview with new settings
+    this.piService.emitSettings();
+    this.piService.emitScopedModels();
   }
 
   /** Load older session messages (triggered by scrolling to top in webview). */
