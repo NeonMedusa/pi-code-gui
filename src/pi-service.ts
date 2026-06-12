@@ -1,7 +1,6 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import * as vscode from "vscode";
-import { createBridgeTools } from "./bridge-tools.js";
 import { type PiServiceEvent, validateExtensionToWebview } from "./types.js";
 import { piLog, piWarn } from "./logger.js";
 
@@ -521,26 +520,6 @@ export class PiService {
       }
       return { success: false, error: `Failed to load pi-ai: ${msg}` };
     }
-    // Load typebox for defineTool usage (with retry — npm install may still
-    // be populating node_modules when the extension host first activates).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let Type: any;
-    try {
-      const Typebox = await Promise.any([
-        importWithRetry(
-          path.join(this._piRoot, "node_modules/typebox/build/index.mjs"),
-          1, 0
-        ),
-        importWithRetry(
-          path.join(this._piRoot, "../../typebox/build/index.mjs"),
-          1, 0
-        ),
-      ]);
-      Type = Typebox.Type ?? Typebox;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (e2: any) {
-      return { success: false, error: `Failed to load typebox: ${e2.message ?? e2}` };
-    }
 
     const SDK = this.SDK;
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -677,7 +656,7 @@ export class PiService {
     try {
       tools = [
         ...SDK.createCodingTools(cwd),
-        ...createBridgeTools(SDK.defineTool, Type),
+
       ];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
@@ -2355,8 +2334,7 @@ export class PiService {
 
     // Group by source for a cleaner pick list
     const builtinTools = allTools.filter((t) => t.source === "builtin");
-    const bridgeTools = allTools.filter((t) => t.source === "sdk" && t.name.startsWith("vscode_"));
-    const extensionTools = allTools.filter((t) => t.source !== "builtin" && !t.name.startsWith("vscode_"));
+    const extensionTools = allTools.filter((t) => t.source !== "builtin");
 
     const items: vscode.QuickPickItem[] = [];
 
@@ -2375,7 +2353,6 @@ export class PiService {
     };
 
     addGroup("Built-in", builtinTools);
-    addGroup("VS Code Bridge", bridgeTools);
     addGroup("Extension", extensionTools);
 
     const picked = await vscode.window.showQuickPick(items, {
